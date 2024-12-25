@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer (LolipopJ Edition)
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             0.1.0-2024/12/21
+// @version             0.1.0-2024/12/25
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer. Display preview images (support single image, multiple images, moving images); Download animation(.zip); Sorting the search page by favorite count(and display it). Updated for the latest search page.
 // @description:zh-CN   原项目：https://github.com/Ocrosoft/PixivPreviewer。显示预览图（支持单图，多图，动图）；动图压缩包下载；搜索页按热门度（收藏数）排序并显示收藏数。
 // @description:ja      元のプロジェクト: https://github.com/Ocrosoft/PixivPreviewer。プレビュー画像の表示（単一画像、複数画像、動画のサポート）; アニメーションのダウンロード（.zip）; お気に入りの数で検索ページをソートします（そして表示します）。 最新の検索ページ用に更新されました。
@@ -17,82 +17,525 @@
 // @require             https://raw.githubusercontent.com/Tampermonkey/utils/refs/heads/main/requires/gh_2215_make_GM_xhr_more_parallel_again.js
 // ==/UserScript==
 
-// src/pixiv-previewer.ts
-function ILog() {
-  this.prefix = "";
-  this.v = function(value) {
-    if (level <= this.LogLevel.Verbose) {
-      console.log(this.prefix + value);
+// src/constants/index.ts
+var g_version = "0.1.0";
+var g_getUgoiraUrl = "/ajax/illust/#id#/ugoira_meta";
+var g_getNovelUrl = "/ajax/search/novels/#key#?word=#key#&p=#page#";
+var g_loadingImage = "https://pp-1252089172.cos.ap-chengdu.myqcloud.com/loading.gif";
+var g_maxXhr = 64;
+var g_defaultSettings = {
+  lang: -1,
+  enablePreview: 1,
+  enableAnimePreview: 1,
+  enableSort: 1,
+  enableAnimeDownload: 1,
+  original: 0,
+  previewDelay: 300,
+  previewByKey: 0,
+  previewKey: 17,
+  previewFullScreen: 0,
+  pageCount: 3,
+  favFilter: 0,
+  aiFilter: 0,
+  hideFavorite: 0,
+  hideFollowed: 0,
+  hideByTag: 0,
+  hideByTagList: "",
+  linkBlank: 1,
+  pageByKey: 0,
+  fullSizeThumb: 0,
+  enableNovelSort: 1,
+  novelPageCount: 3,
+  novelFavFilter: 0,
+  novelHideFavorite: 0,
+  novelHideFollowed: 0,
+  logLevel: 1,
+  version: g_version
+};
+var PREVIEW_WRAPPER_MIN_SIZE = 48;
+var PREVIEW_WRAPPER_BORDER_RADIUS = 8;
+var PREVIEW_WRAPPER_DISTANCE_TO_MOUSE = 20;
+var PREVIEW_WRAPPER_BORDER_WIDTH = 2;
+
+// src/enums/index.ts
+var LogLevel = /* @__PURE__ */ ((LogLevel2) => {
+  LogLevel2[LogLevel2["None"] = 0] = "None";
+  LogLevel2[LogLevel2["Error"] = 1] = "Error";
+  LogLevel2[LogLevel2["Warning"] = 2] = "Warning";
+  LogLevel2[LogLevel2["Info"] = 3] = "Info";
+  LogLevel2[LogLevel2["Elements"] = 4] = "Elements";
+  return LogLevel2;
+})(LogLevel || {});
+
+// src/utils/debounce.ts
+function debounce(func, delay = 100) {
+  let timeoutId = null;
+  return function(...args) {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
     }
+    timeoutId = setTimeout(() => {
+      func(...args);
+    }, delay);
   };
-  this.i = function(info) {
-    if (level <= this.LogLevel.Info) {
-      console.info(this.prefix + info);
-    }
-  };
-  this.w = function(warning) {
-    if (level <= this.LogLevel.Warning) {
-      console.warn(this.prefix + warning);
-    }
-  };
-  this.e = function(error) {
-    if (level <= this.LogLevel.Error) {
-      console.error(this.prefix + error);
-    }
-  };
-  this.d = function(element) {
-    if (level <= this.LogLevel.Verbose) {
-      console.log(element);
-    }
-  };
-  this.setLogLevel = function(logLevel) {
-    level = logLevel;
-  };
-  this.LogLevel = {
+}
+var debounce_default = debounce;
+
+// src/utils/logger.ts
+var ILog = class {
+  prefix = "Pixiv Preview: ";
+  LogLevel = {
     Verbose: 0,
     Info: 1,
     Warning: 2,
     Error: 3
   };
-  let level = this.LogLevel.Warning;
-}
+  level = this.LogLevel.Warning;
+  v(value) {
+    if (this.level <= this.LogLevel.Verbose) {
+      console.log(this.prefix + value);
+    }
+  }
+  i(info) {
+    if (this.level <= this.LogLevel.Info) {
+      console.info(this.prefix + info);
+    }
+  }
+  w(warning) {
+    if (this.level <= this.LogLevel.Warning) {
+      console.warn(this.prefix + warning);
+    }
+  }
+  e(error) {
+    if (this.level <= this.LogLevel.Error) {
+      console.error(this.prefix + error);
+    }
+  }
+  d(data) {
+    if (this.level <= this.LogLevel.Verbose) {
+      console.log(String(data));
+    }
+  }
+  setLogLevel(logLevel) {
+    this.level = logLevel;
+  }
+};
 var iLog = new ILog();
-var GM__xmlHttpRequest;
-if ("undefined" != typeof GM_xmlhttpRequest) {
-  GM__xmlHttpRequest = GM_xmlhttpRequest;
-} else {
-  GM__xmlHttpRequest = GM.xmlHttpRequest;
-}
-function base64ArrayBuffer(arrayBuffer, off, byteLength) {
-  let base64 = "";
-  const encodings = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-  const bytes = new Uint8Array(arrayBuffer);
-  const byteRemainder = byteLength % 3;
-  const mainLength = off + byteLength - byteRemainder;
-  let a, b, c, d;
-  let chunk;
-  for (let i = off; i < mainLength; i = i + 3) {
-    chunk = bytes[i] << 16 | bytes[i + 1] << 8 | bytes[i + 2];
-    a = (chunk & 16515072) >> 18;
-    b = (chunk & 258048) >> 12;
-    c = (chunk & 4032) >> 6;
-    d = chunk & 63;
-    base64 += encodings[a] + encodings[b] + encodings[c] + encodings[d];
+function DoLog(level, msgOrElement) {
+  if (level <= 1 /* Error */) {
+    let prefix = "%c";
+    let param = "";
+    if (level == 1 /* Error */) {
+      prefix += "[Error]";
+      param = "color:#ff0000";
+    } else if (level == 2 /* Warning */) {
+      prefix += "[Warning]";
+      param = "color:#ffa500";
+    } else if (level == 3 /* Info */) {
+      prefix += "[Info]";
+      param = "color:#000000";
+    } else if (level == 4 /* Elements */) {
+      prefix += "Elements";
+      param = "color:#000000";
+    }
+    if (level != 4 /* Elements */) {
+      console.log(prefix + msgOrElement, param);
+    } else {
+      console.log(msgOrElement);
+    }
   }
-  if (byteRemainder == 1) {
-    chunk = bytes[mainLength];
-    a = (chunk & 252) >> 2;
-    b = (chunk & 3) << 4;
-    base64 += encodings[a] + encodings[b] + "==";
-  } else if (byteRemainder == 2) {
-    chunk = bytes[mainLength] << 8 | bytes[mainLength + 1];
-    a = (chunk & 64512) >> 10;
-    b = (chunk & 1008) >> 4;
-    c = (chunk & 15) << 2;
-    base64 += encodings[a] + encodings[b] + encodings[c] + "=";
-  }
-  return base64;
 }
+
+// src/utils/mouse-monitor.ts
+var MouseMonitor = class {
+  /** 鼠标相对网页的位置 */
+  mousePos = [0, 0];
+  /** 鼠标相对视窗的绝对位置 */
+  mouseAbsPos = [0, 0];
+  constructor() {
+    document.addEventListener("mousemove", (mouseMoveEvent) => {
+      this.mousePos = [mouseMoveEvent.pageX, mouseMoveEvent.pageY];
+      this.mouseAbsPos = [mouseMoveEvent.clientX, mouseMoveEvent.clientY];
+    });
+  }
+};
+var mouseMonitor = new MouseMonitor();
+var mouse_monitor_default = mouseMonitor;
+
+// src/utils/url.ts
+var getIllustPagesRequestUrl = (id) => {
+  return `/ajax/illust/${id}/pages`;
+};
+var getUgoiraMetadataRequestUrl = (id) => {
+  return `/ajax/illust/${id}/ugoira_meta`;
+};
+
+// src/features/preview.ts
+var isLoad = false;
+var loadIllustPreview = (options) => {
+  if (isLoad) return;
+  const { previewDelay, enableAnimePreview } = options;
+  class PreviewedIllust {
+    /** 当前正在预览的作品元素 */
+    illustElement;
+    /** 预览作品是否初始化 */
+    initialized = false;
+    /** 图片的链接 */
+    regularUrls;
+    /** 图片的原图链接 */
+    originalUrls;
+    /** 当前预览图片的页数 */
+    currentPage;
+    /** 当前预览图片的总页数 */
+    pageCount;
+    /** 保存的鼠标位置 */
+    #prevMousePos;
+    /** 预览图片或动图容器 */
+    previewWrapperElement;
+    /** 预览图片或动图加载状态 */
+    previewLoadingElement;
+    /** 当前预览的图片或动图 */
+    previewImageElement;
+    /** 当前预览的是第几张图片标记 */
+    pageCountElement;
+    /** 下载原图按钮 */
+    downloadOriginalElement;
+    /** 关闭预览组件，重置初始值 */
+    reset() {
+      this.illustElement = $();
+      this.initialized = false;
+      this.regularUrls = [];
+      this.originalUrls = [];
+      this.currentPage = 1;
+      this.pageCount = 1;
+      this.#prevMousePos = [0, 0];
+      this.previewWrapperElement?.remove();
+      this.previewWrapperElement = $(document.createElement("div")).attr("id", "pp-wrapper").css({
+        position: "fixed",
+        "z-index": "999999",
+        border: `${PREVIEW_WRAPPER_BORDER_WIDTH}px solid rgb(0, 150, 250)`,
+        "border-radius": `${PREVIEW_WRAPPER_BORDER_RADIUS}px`,
+        background: "rgba(31, 31, 31, 0.8)",
+        "backdrop-filter": "blur(4px)",
+        "text-align": "center"
+      }).hide().appendTo($("body"));
+      this.previewLoadingElement = $(
+        new Image(PREVIEW_WRAPPER_MIN_SIZE, PREVIEW_WRAPPER_MIN_SIZE)
+      ).attr("id", "pp-loading").attr("src", g_loadingImage).css({
+        "border-radius": "50%"
+      }).hide().appendTo(this.previewWrapperElement);
+      this.previewImageElement = $(new Image()).attr("id", "pp-image").css({
+        "border-radius": `${PREVIEW_WRAPPER_BORDER_RADIUS}px`
+      }).hide().appendTo(this.previewWrapperElement);
+      this.pageCountElement = $(
+        '<div style="display: flex;-webkit-box-align: center;align-items: center;box-sizing: border-box;margin-left: auto;height: 20px;color: rgb(255, 255, 255);font-size: 10px;line-height: 12px;font-weight: bold;flex: 0 0 auto;padding: 4px 6px;background: rgba(0, 0, 0, 0.32);border-radius: 10px;margin-top:5px;margin-right:5px;"><svg viewBox="0 0 9 10" width="9" height="10" style="stroke: none;line-height: 0;font-size: 0px;fill: currentcolor;"><path d="M8,3 C8.55228475,3 9,3.44771525 9,4 L9,9 C9,9.55228475 8.55228475,10 8,10 L3,10 C2.44771525,10 2,9.55228475 2,9 L6,9 C7.1045695,9 8,8.1045695 8,7 L8,3 Z M1,1 L6,1 C6.55228475,1 7,1.44771525 7,2 L7,7 C7,7.55228475 6.55228475,8 6,8 L1,8 C0.44771525,8 0,7.55228475 0,7 L0,2 C0,1.44771525 0.44771525,1 1,1 Z"></path></svg><span style="margin-left:2px;" class="pp-page">0/0</span></div>'
+      ).attr("id", "pp-page-count").css({
+        position: "absolute",
+        top: "0px",
+        right: "0px"
+      }).hide().appendTo(this.previewWrapperElement);
+      this.downloadOriginalElement = $();
+      this.unbindImagePreviewEvents();
+    }
+    constructor() {
+      this.reset();
+    }
+    //#region 预览图片功能
+    /** 初始化预览容器，显示第一张图片 */
+    setImage({
+      illustElement,
+      regularUrls,
+      originalUrls
+    }) {
+      this.reset();
+      this.initPreviewWrapper();
+      this.illustElement = illustElement;
+      this.regularUrls = regularUrls;
+      this.originalUrls = originalUrls;
+      this.currentPage = 1;
+      this.pageCount = regularUrls.length;
+      regularUrls.map((url2) => {
+        const preloadImage = new Image();
+        preloadImage.src = url2;
+      });
+      this.bindImagePreviewEvents();
+      this.updateImagePreview();
+    }
+    bindImagePreviewEvents() {
+      this.previewImageElement.on("load", this.onIllustLoad);
+      this.previewImageElement.on("mousewheel", this.onPreviewImageMouseWheel);
+      $(document).on("mousemove", this.onMouseMove);
+    }
+    unbindImagePreviewEvents() {
+      this.previewImageElement.off();
+      $(document).off("mousemove", this.onMouseMove);
+    }
+    /** 显示 this.currentPage 指向的图片 */
+    updateImagePreview() {
+      const currentImageUrl = this.regularUrls[this.currentPage - 1];
+      this.previewImageElement.attr("src", currentImageUrl);
+      if (this.pageCount > 1) {
+        this.pageCountElement.text(`${this.currentPage}/${this.pageCount}`);
+        this.pageCountElement.show();
+      }
+    }
+    nextPage() {
+      if (this.currentPage < this.pageCount) {
+        this.currentPage += 1;
+      } else {
+        this.currentPage = 1;
+      }
+      this.updateImagePreview();
+    }
+    prevPage() {
+      if (this.currentPage > 1) {
+        this.currentPage -= 1;
+      } else {
+        this.currentPage = this.pageCount;
+      }
+      this.updateImagePreview();
+    }
+    onPreviewImageMouseWheel = (mouseWheelEvent) => {
+      mouseWheelEvent.preventDefault();
+      if (mouseWheelEvent.originalEvent.wheelDelta < 0) {
+        this.nextPage();
+      } else {
+        this.prevPage();
+      }
+    };
+    //#endregion
+    //#region 预览动图功能
+    setUgoiraSrc() {
+    }
+    //#endregion
+    /** 初始化显示预览容器 */
+    initPreviewWrapper() {
+      this.previewWrapperElement.show();
+      this.previewLoadingElement.show();
+      this.adjustPreviewWrapper({
+        baseOnMousePos: true
+      });
+    }
+    onIllustLoad = () => {
+      this.initialized = true;
+      this.previewLoadingElement.hide();
+      this.previewImageElement.show();
+      this.previewImageElement.css({
+        width: "",
+        height: ""
+      });
+      this.adjustPreviewWrapper({
+        baseOnMousePos: false
+      });
+    };
+    onMouseMove = (mouseMoveEvent) => {
+      if (mouseMoveEvent.ctrlKey) {
+        return;
+      }
+      const currentElement = $(mouseMoveEvent.target);
+      if (currentElement.is(this.previewWrapperElement) || currentElement.is(this.previewImageElement)) {
+      } else if (currentElement.is(this.illustElement)) {
+        this.adjustPreviewWrapper({
+          baseOnMousePos: true
+        });
+      } else {
+        this.reset();
+      }
+    };
+    /**
+     * 调整预览容器的位置与大小
+     * @param `baseOnMousePos` 是否根据当前鼠标所在位置调整
+     * @param `illustSize` 作品的实际大小
+     */
+    adjustPreviewWrapper({
+      baseOnMousePos = true
+    } = {}) {
+      const [mousePosX, mousePosY] = baseOnMousePos ? mouse_monitor_default.mouseAbsPos : this.#prevMousePos;
+      this.#prevMousePos = [mousePosX, mousePosY];
+      const [illustWidth, illustHeight] = [
+        this.previewImageElement.width() || this.previewLoadingElement.width(),
+        this.previewImageElement.height() || this.previewLoadingElement.height()
+      ];
+      const screenWidth = document.documentElement.clientWidth;
+      const screenHeight = document.documentElement.clientHeight;
+      const isShowLeft = mousePosX > screenWidth / 2;
+      const isShowTop = mousePosY > screenHeight / 2;
+      const illustRatio = illustWidth / illustHeight;
+      const screenRestWidth = isShowLeft ? mousePosX - PREVIEW_WRAPPER_DISTANCE_TO_MOUSE : screenWidth - mousePosX - PREVIEW_WRAPPER_DISTANCE_TO_MOUSE;
+      const screenRestRatio = screenRestWidth / screenHeight;
+      const isFitToFullHeight = screenRestRatio > illustRatio;
+      let fitToScreenScale = "1.000";
+      if (this.initialized) {
+        if (isFitToFullHeight) {
+          fitToScreenScale = (screenHeight / illustHeight).toFixed(3);
+        } else {
+          const screenRestHeight = isShowTop ? mousePosY : screenHeight - mousePosY;
+          fitToScreenScale = Math.min(
+            screenRestWidth / illustWidth,
+            screenRestHeight / illustHeight
+          ).toFixed(3);
+        }
+      }
+      const previewImageFitWidth = illustWidth * Number(fitToScreenScale);
+      const previewImageFitHeight = illustHeight * Number(fitToScreenScale);
+      const previewWrapperElementPos = {
+        left: "",
+        right: "",
+        top: "",
+        bottom: ""
+      };
+      if (isShowLeft) {
+        previewWrapperElementPos.right = `${screenWidth - mousePosX + PREVIEW_WRAPPER_DISTANCE_TO_MOUSE}px`;
+      } else {
+        previewWrapperElementPos.left = `${mousePosX + PREVIEW_WRAPPER_DISTANCE_TO_MOUSE}px`;
+      }
+      if (this.initialized && isFitToFullHeight) {
+        previewWrapperElementPos.top = "0px";
+      } else {
+        if (isShowTop) {
+          previewWrapperElementPos.bottom = `${screenHeight - mousePosY}px`;
+        } else {
+          previewWrapperElementPos.top = `${mousePosY}px`;
+        }
+      }
+      this.previewWrapperElement.css(previewWrapperElementPos);
+      this.previewImageElement.css({
+        width: `${previewImageFitWidth}px`,
+        height: `${previewImageFitHeight}px`
+      });
+    }
+  }
+  const previewIllust = previewIllustWithCache();
+  const debouncePreviewIllust = debounce_default(previewIllust, previewDelay);
+  $(document).mouseover(onMouseOverIllust);
+  function onMouseOverIllust(mouseOverEvent) {
+    const target = $(mouseOverEvent.target);
+    if (!target.is("IMG")) {
+      return;
+    }
+    if (mouseOverEvent.ctrlKey) {
+      return;
+    }
+    debouncePreviewIllust(target);
+  }
+  function previewIllustWithCache() {
+    const previewedIllust = new PreviewedIllust();
+    let currentHoveredIllustId = "";
+    const getIllustPagesCache = {};
+    const getUgoiraMetadataCache = {};
+    return (target) => {
+      const illustMetadata = getIllustMetadata(target);
+      if (!illustMetadata) {
+        return;
+      }
+      const { illustId: illustId2, illustType: illustType2 } = illustMetadata;
+      currentHoveredIllustId = illustId2;
+      if (illustType2 === 2 /* UGOIRA */ && !enableAnimePreview) {
+        iLog.i("Anime preview disabled.");
+        return;
+      }
+      if (illustType2 === 0 /* ILLUST */) {
+        if (getIllustPagesCache[illustId2]) {
+          previewedIllust.setImage({
+            illustElement: target,
+            ...getIllustPagesCache[illustId2]
+          });
+          return;
+        }
+        $.ajax(getIllustPagesRequestUrl(illustId2), {
+          method: "GET",
+          success: (data) => {
+            if (data.error) {
+              iLog.e(
+                `Get an error while requesting illust url: ${data.message}`
+              );
+              return;
+            }
+            const urls = data.body.map((item) => item.urls);
+            const regularUrls = urls.map((url2) => url2.regular);
+            const originalUrls = urls.map((url2) => url2.original);
+            getIllustPagesCache[illustId2] = {
+              regularUrls,
+              originalUrls
+            };
+            if (currentHoveredIllustId !== illustId2) return;
+            previewedIllust.setImage({
+              illustElement: target,
+              regularUrls,
+              originalUrls
+            });
+          },
+          error: (err) => {
+            iLog.e(`Get an error while requesting illust url: ${err}`);
+          }
+        });
+      } else if (illustType2 === 2 /* UGOIRA */) {
+        if (getUgoiraMetadataCache[illustId2]) {
+          return;
+        }
+        $.ajax(getUgoiraMetadataRequestUrl(illustId2), {
+          method: "GET",
+          success: (data) => {
+            if (data.error) {
+              iLog.e(
+                `Get an error while requesting ugoira metadata: ${data.message}`
+              );
+              return;
+            }
+            getUgoiraMetadataCache[illustId2] = data.body;
+            if (currentHoveredIllustId !== illustId2) return;
+            const { src, originalSrc, mime_type, frames } = data.body;
+          },
+          error: (err) => {
+            iLog.e(`Get an error while requesting ugoira metadata: ${err}`);
+          }
+        });
+      } else {
+        iLog.e("Unknown illust type.");
+        return;
+      }
+    };
+  }
+  function getIllustMetadata(img) {
+    let imgLink = img.parent();
+    while (!imgLink.is("A")) {
+      imgLink = imgLink.parent();
+      if (!imgLink.length) {
+        iLog.i("\u672A\u80FD\u627E\u5230\u5F53\u524D\u4F5C\u54C1\u7684\u94FE\u63A5\u5143\u7D20");
+        return null;
+      }
+    }
+    const illustHref = imgLink.attr("href");
+    const illustHrefMatch = illustHref.match(/\/artworks\/(\d+)/);
+    if (!illustHrefMatch) {
+      iLog.w("\u5F53\u524D\u4F5C\u54C1\u4E0D\u652F\u6301\u9884\u89C8\uFF0C\u8DF3\u8FC7");
+      return null;
+    }
+    const illustId2 = illustHrefMatch[1];
+    const ugoiraSvg = imgLink.children("div:first").find("svg:first");
+    const illustType2 = ugoiraSvg.length ? 2 /* UGOIRA */ : 0 /* ILLUST */;
+    return {
+      /** 作品 ID */
+      illustId: illustId2,
+      /** 作品类型 */
+      illustType: illustType2
+    };
+  }
+  function createPlayer2(options2) {
+    const canvas = document.createElement("canvas");
+    const p = new ZipImagePlayer({
+      canvas,
+      chunkSize: 3e5,
+      loop: true,
+      autoStart: true,
+      debug: false,
+      ...options2
+    });
+    p.canvas = canvas;
+    return p;
+  }
+  isLoad = true;
+};
 function ZipImagePlayer(options) {
   this.op = options;
   this._URL = window.URL || window.webkitURL || window.MozURL || window.MSURL;
@@ -364,7 +807,7 @@ ZipImagePlayer.prototype = {
     this._loadFrame += 1;
     const off = this._fileDataStart(this._files[meta.file].off);
     const end = off + this._files[meta.file].len;
-    let url;
+    let url2;
     const mime_type = this.op.metadata.mime_type || "image/png";
     if (this._URL) {
       let slice;
@@ -386,21 +829,21 @@ ZipImagePlayer.prototype = {
         bb.append(slice);
         blob = bb.getBlob();
       }
-      url = this._URL.createObjectURL(blob);
-      this._loadImage(frame, url, true);
+      url2 = this._URL.createObjectURL(blob);
+      this._loadImage(frame, url2, true);
     } else {
-      url = "data:" + mime_type + ";base64," + base64ArrayBuffer(this._buf, off, end - off);
-      this._loadImage(frame, url, false);
+      url2 = "data:" + mime_type + ";base64," + base64ArrayBuffer(this._buf, off, end - off);
+      this._loadImage(frame, url2, false);
     }
   },
-  _loadImage: function(frame, url, isBlob) {
+  _loadImage: function(frame, url2, isBlob) {
     const _this = this;
     const image = new Image();
     const meta = this.op.metadata.frames[frame];
     image.addEventListener("load", function() {
       _this._debugLog("Loaded " + meta.file + " to frame " + frame);
       if (isBlob) {
-        _this._URL.revokeObjectURL(url);
+        _this._URL.revokeObjectURL(url2);
       }
       if (_this._dead) {
         return;
@@ -425,7 +868,7 @@ ZipImagePlayer.prototype = {
         }
       }
     });
-    image.src = url;
+    image.src = url2;
   },
   _setLoadingState: function(state) {
     if (this._loadingState != state) {
@@ -537,88 +980,42 @@ ZipImagePlayer.prototype = {
     return this._failed;
   }
 };
-var checkJQuery = function() {
-  const jqueryCdns = [
-    "http://code.jquery.com/jquery-2.2.4.min.js",
-    "https://ajax.aspnetcdn.com/ajax/jquery/jquery-2.2.4.min.js",
-    "https://ajax.googleapis.com/ajax/libs/jquery/2.2.4/jquery.min.js",
-    "https://cdn.staticfile.org/jquery/2.2.4/jquery.min.js",
-    "https://apps.bdimg.com/libs/jquery/2.2.4/jquery.min.js"
-  ];
-  function isJQueryValid() {
-    try {
-      const wd = unsafeWindow;
-      if (wd.jQuery && !wd.$) {
-        wd.$ = wd.jQuery;
-      }
-      $();
-      return true;
-    } catch (exception) {
-      return false;
-    }
+function base64ArrayBuffer(arrayBuffer, off, byteLength) {
+  let base64 = "";
+  const encodings = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  const bytes = new Uint8Array(arrayBuffer);
+  const byteRemainder = byteLength % 3;
+  const mainLength = off + byteLength - byteRemainder;
+  let a, b, c, d;
+  let chunk;
+  for (let i = off; i < mainLength; i = i + 3) {
+    chunk = bytes[i] << 16 | bytes[i + 1] << 8 | bytes[i + 2];
+    a = (chunk & 16515072) >> 18;
+    b = (chunk & 258048) >> 12;
+    c = (chunk & 4032) >> 6;
+    d = chunk & 63;
+    base64 += encodings[a] + encodings[b] + encodings[c] + encodings[d];
   }
-  function insertJQuery(url) {
-    const script = document.createElement("script");
-    script.src = url;
-    document.head.appendChild(script);
-    return script;
+  if (byteRemainder == 1) {
+    chunk = bytes[mainLength];
+    a = (chunk & 252) >> 2;
+    b = (chunk & 3) << 4;
+    base64 += encodings[a] + encodings[b] + "==";
+  } else if (byteRemainder == 2) {
+    chunk = bytes[mainLength] << 8 | bytes[mainLength + 1];
+    a = (chunk & 64512) >> 10;
+    b = (chunk & 1008) >> 4;
+    c = (chunk & 15) << 2;
+    base64 += encodings[a] + encodings[b] + encodings[c] + "=";
   }
-  function converProtocolIfNeeded(url) {
-    const isHttps = location.href.indexOf("https://") != -1;
-    const urlIsHttps = url.indexOf("https://") != -1;
-    if (isHttps && !urlIsHttps) {
-      return url.replace("http://", "https://");
-    } else if (!isHttps && urlIsHttps) {
-      return url.replace("https://", "http://");
-    }
-    return url;
-  }
-  function waitAndCheckJQuery(cdnIndex, resolve) {
-    if (cdnIndex >= jqueryCdns.length) {
-      iLog.e("\u65E0\u6CD5\u52A0\u8F7D JQuery\uFF0C\u6B63\u5728\u9000\u51FA\u3002");
-      resolve(false);
-      return;
-    }
-    const url = converProtocolIfNeeded(jqueryCdns[cdnIndex]);
-    iLog.i("\u5C1D\u8BD5\u7B2C " + (cdnIndex + 1) + " \u4E2A JQuery CDN\uFF1A" + url + "\u3002");
-    const script = insertJQuery(url);
-    setTimeout(function() {
-      if (isJQueryValid()) {
-        iLog.i("\u5DF2\u52A0\u8F7D JQuery\u3002");
-        resolve(true);
-      } else {
-        iLog.w("\u65E0\u6CD5\u8BBF\u95EE\u3002");
-        script.remove();
-        waitAndCheckJQuery(cdnIndex + 1, resolve);
-      }
-    }, 100);
-  }
-  return new Promise(function(resolve) {
-    if (isJQueryValid()) {
-      iLog.i("\u5DF2\u52A0\u8F7D jQuery\u3002");
-      resolve(true);
-    } else {
-      iLog.i("\u672A\u53D1\u73B0 JQuery\uFF0C\u5C1D\u8BD5\u52A0\u8F7D\u3002");
-      waitAndCheckJQuery(0, resolve);
-    }
-  });
-};
-var Lang = {
-  // 自动选择
-  auto: -1,
-  // 中文-中国大陆
-  zh_CN: 0,
-  // 英语-美国
-  en_US: 1,
-  // 俄语-俄罗斯
-  ru_RU: 2,
-  // 日本語-日本
-  ja_JP: 3
-};
+  return base64;
+}
+
+// src/i18n/index.ts
 var Texts = {};
-Texts[Lang.zh_CN] = {
+Texts[0 /* zh_CN */] = {
   // 安装或更新后弹出的提示
-  install_title: "\u6B22\u8FCE\u4F7F\u7528 PixivPreviewer v",
+  install_title: "\u6B22\u8FCE\u4F7F\u7528 Pixiv Previewer ",
   install_body: '<div style="position: absolute;left: 50%;top: 30%;font-size: 20px; color: white;transform:translate(-50%,0);"><p style="text-indent: 2em;">\u6B22\u8FCE\u53CD\u9988\u95EE\u9898\u548C\u63D0\u51FA\u5EFA\u8BAE\uFF01><a style="color: green;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer/feedback" target="_blank">\u53CD\u9988\u9875\u9762</a><</p><br><p style="text-indent: 2em;">\u5982\u679C\u60A8\u662F\u7B2C\u4E00\u6B21\u4F7F\u7528\uFF0C\u63A8\u8350\u5230<a style="color: green;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer" target="_blank"> \u8BE6\u60C5\u9875 </a>\u67E5\u770B\u811A\u672C\u4ECB\u7ECD\u3002</p></div>',
   upgrade_body: "<h3>\uFF08\u91CD\u8981\uFF09\u5173\u4E8E\u6392\u5E8F\u529F\u80FD</h3>&nbsp&nbsp\u9996\u5148\u611F\u8C22\u5404\u4F4D\u7684\u4F7F\u7528\uFF0C\u7531\u4E8E\u6700\u8FD1\u6BD4\u8F83\u5FD9\uFF0C\u62B1\u6B49\u73B0\u5728\u624D\u505A\u51FA\u56DE\u5E94\u3002\u5982\u679C\u5404\u4F4D\u6700\u8FD1\u4F7F\u7528\u8FC7\u6392\u5E8F\u529F\u80FD\uFF0C\u53EF\u80FD\u6216\u591A\u6216\u5C11\u90FD\u9047\u5230\u8FC7\u641C\u7D22\u7ED3\u679C\u4E3A 0 \u7684\u95EE\u9898\uFF0C\u4E0B\u9762\u7B80\u5355\u8BF4\u4E00\u4E0B\u539F\u56E0\u548C\u540E\u7EED\u7684\u5E94\u5BF9\u65B9\u6848\u3002<br>&nbsp&nbsp\u811A\u672C\u7684\u539F\u7406\u662F\u83B7\u53D6\u6307\u5B9A\u9875\u9762\u5185\u6240\u6709\u4F5C\u54C1\u7684\u6536\u85CF\u91CF\uFF0C\u518D\u8FDB\u884C\u6392\u5E8F\u3002Pixiv \u6700\u8FD1\u5BF9\u77ED\u65F6\u95F4\u5185\u83B7\u53D6\u4F5C\u54C1\u4FE1\u606F\u8FDB\u884C\u4E86\u6B21\u6570\u9650\u5236\uFF0C\u8868\u73B0\u4E3A\u6240\u6709\u8BF7\u6C42\u8FD4\u56DE\u9519\u8BEF\uFF0C\u5BFC\u81F4\u663E\u793A 0 \u4E2A\u4F5C\u54C1\u3002\u4EE5\u6392\u5E8F\u4E09\u9875\u4E3A\u4F8B\uFF0C\u7531\u4E8E\u6CA1\u6709\u6279\u91CF\u63A5\u53E3\uFF0C\u811A\u672C\u4F1A\u5411 Pixiv \u8BF7\u6C42\u591A\u8FBE 180 \u4E2A\u4F5C\u54C1\u7684\u6536\u85CF\u91CF\u6570\u636E\uFF0C\u8FD9\u5BF9\u4E00\u822C\u9650\u5236\u6BCF\u5206\u949F\u8BBF\u95EE 30~60 \u6B21\u7684\u8BF7\u6C42\u9650\u5236\u6765\u8BF4\u975E\u5E38\u591A\u4E86\uFF0C\u6240\u4EE5\u4E5F\u5E0C\u671B\u5927\u5BB6\u80FD\u591F\u7406\u89E3 Pixiv \u7684\u505A\u6CD5\uFF0C\u540C\u65F6\u4E0D\u8981\u5C06\u9875\u6570\u8BBE\u7F6E\u5F97\u592A\u5927\u3002<br>&nbsp&nbsp\u81F3\u4E8E\u5E94\u5BF9\u65B9\u6848\uFF0C\u76EE\u524D\u6709\u4EE5\u4E0B\u51E0\u79CD\uFF1A<ul><li>1.\u9075\u5FAA\u63A5\u53E3\u9650\u5236\uFF0C\u53EF\u80FD\u6392\u5E8F\u4E00\u9875\u8981\u82B1\u8D39\u4E00\u5206\u949F\u3002</li><li>2.\u4F7F\u7528\u7B2C\u4E09\u65B9\u670D\u52A1\uFF0C\u76EE\u524D\u770B\u6765\u4E5F\u6CA1\u6709\u670D\u52A1\u80FD\u591F\u63D0\u4F9B\u6279\u91CF\uFF0C\u6216\u8005\u80FD\u9876\u5F97\u4F4F\u8FD9\u4E48\u591A\u8BF7\u6C42\u7684\u3002</li><li>3.\u7528\u670D\u52A1\u5668\u63D0\u4F9B\u6536\u85CF\u91CF\u7684\u77ED\u65F6\u95F4\u7F13\u5B58\uFF0C\u5E76\u9075\u5FAA\u63A5\u53E3\u9650\u5236\uFF0C\u6210\u672C\u548C\u98CE\u9669\u5F88\u9AD8\u3002</li><li>\u7981\u7528\u811A\u672C\u7684\u6392\u5E8F\u529F\u80FD\u3002</li></ul>&nbsp&nbsp\u6700\u540E\u518D\u6B21\u611F\u8C22\u5927\u5BB6\u7684\u4F7F\u7528\uFF0C\u5982\u679C\u5BF9\u4E0A\u8FF0\u95EE\u9898\u6709\u597D\u7684\u5EFA\u8BAE\uFF0C\u6B22\u8FCE\u5728 GreasyFork/Github \u4E0A\u63D0\u51FA\u3002\u6700\u540E\u7684\u6700\u540E\uFF0C\u8FD9\u4E2A\u7248\u672C\u76EE\u524D\u53EF\u4EE5\u6B63\u5E38\u4F7F\u7528\u6392\u5E8F\u529F\u80FD\uFF0C\u5982\u679C\u540E\u9762\u7A81\u7136\u65E0\u6CD5\u6B63\u5E38\u4F7F\u7528\u6216\u8005\u5173\u95ED\u4E86\u6392\u5E8F\u529F\u80FD\uFF0C\u4E5F\u5E0C\u671B\u5404\u4F4D\u80FD\u591F\u7406\u89E3\u3002",
   // 设置项
@@ -666,7 +1063,7 @@ Texts[Lang.zh_CN] = {
   nsort_hideFollowed: "\u6392\u5E8F\u65F6\u9690\u85CF\u5DF2\u5173\u6CE8\u4F5C\u8005\u4F5C\u54C1",
   text_sort: "\u6392\u5E8F"
 };
-Texts[Lang.en_US] = {
+Texts[1 /* en_US */] = {
   install_title: "Welcome to PixivPreviewer v",
   install_body: '<div style="position: absolute;left: 50%;top: 30%;font-size: 20px; color: white;transform:translate(-50%,0);"><p style="text-indent: 2em;">Feedback questions and suggestions are welcome! ><a style="color: green;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer/feedback" target="_blank">Feedback Page</a><</p><br><p style="text-indent: 2em;">If you are using it for the first time, it is recommended to go to the<a style="color: green;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer" target="_blank"> Details Page </a>to see the script introduction.</p></div>',
   upgrade_body: "<h3>(Important) About the sorting function</h3>&nbsp&nbspFirst of all, thank you for using it. I'm very busy recently, so I'm sorry to respond now. If you have used the sorting function recently, you may have encountered the problem that the search result is 0 more or less. Let me briefly explain the reasons and follow-up solutions. <br>&nbsp&nbsp The principle of the script is to obtain the collections of all works in the specified page, and then sort them. Pixiv recently limited the number of times to obtain work information in a short period of time, which showed that all requests returned errors, resulting in the display of 0 works. Taking sorting three pages as an example, since there is no batch interface, the script will request the collection data of up to 180 works from Pixiv, which is very much for the general limit of 30~60 visits per minute, so I hope You can understand Pixiv's approach, and don't make the page count too large. <br>&nbsp&nbsp As for the solutions, there are currently the following: <ul><li>1. Following the interface restrictions, it may take a minute to sort a page. </li><li>2. Using third-party services, it seems that there is no service that can provide batches, or can withstand so many requests. </li><li>3. It is costly and risky to use the server to provide a short-term cache of collections and follow interface restrictions. </li><li>Disable sorting of scripts. </li></ul>&nbsp&nbsp Finally, thank you again for your use. If you have good suggestions for the above problems, you are welcome to put forward them on GreasyFork/Github. Finally, the sorting function can be used normally in this version. If the sorting function suddenly cannot be used normally or the sorting function is turned off, I hope you can understand.",
@@ -712,26 +1109,26 @@ Texts[Lang.en_US] = {
   nsort_hideFollowed: "Hide artworks of followed authors when sorting",
   text_sort: "sort"
 };
-Texts[Lang.ru_RU] = {
+Texts[2 /* ru_RU */] = {
   install_title: "\u0414\u043E\u0431\u0440\u043E \u043F\u043E\u0436\u0430\u043B\u043E\u0432\u0430\u0442\u044C \u0432 PixivPreviewer v",
   install_body: '<div style="position: absolute;left: 50%;top: 30%;font-size: 20px; color: white;transform:translate(-50%,0);"><p style="text-indent: 2em;">\u0412\u043E\u043F\u0440\u043E\u0441\u044B \u0438 \u043F\u0440\u0435\u0434\u043B\u043E\u0436\u0435\u043D\u0438\u044F \u043F\u0440\u0438\u0432\u0435\u0442\u0441\u0442\u0432\u0443\u044E\u0442\u0441\u044F! ><a style="color: green;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer/feedback" target="_blank">\u0421\u0442\u0440\u0430\u043D\u0438\u0446\u0430 \u043E\u0431\u0440\u0430\u0442\u043D\u043E\u0439 \u0441\u0432\u044F\u0437\u0438</a><</p><br><p style="text-indent: 2em;">\u0415\u0441\u043B\u0438 \u0432\u044B \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0435\u0442\u0435 \u044D\u0442\u043E \u0432\u043F\u0435\u0440\u0432\u044B\u0435, \u0440\u0435\u043A\u043E\u043C\u0435\u043D\u0434\u0443\u0435\u0442\u0441\u044F \u043F\u0435\u0440\u0435\u0439\u0442\u0438 \u043A<a style="color: green;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer" target="_blank"> \u0421\u0442\u0440\u0430\u043D\u0438\u0446\u0435 \u043F\u043E\u0434\u0440\u043E\u0431\u043D\u043E\u0441\u0442\u0435\u0439 </a>, \u0447\u0442\u043E\u0431\u044B \u043F\u043E\u0441\u043C\u043E\u0442\u0440\u0435\u0442\u044C \u0432\u0432\u0435\u0434\u0435\u043D\u0438\u0435 \u0432 \u0441\u043A\u0440\u0438\u043F\u0442.</p></div>',
-  upgrade_body: Texts[Lang.en_US].upgrade_body,
+  upgrade_body: Texts[1 /* en_US */].upgrade_body,
   setting_language: "\u042F\u0437\u044B\u043A",
   setting_preview: "\u041F\u0440\u0435\u0434\u043F\u0440\u043E\u0441\u043C\u043E\u0442\u0440",
-  setting_animePreview: Texts[Lang.en_US].setting_animePreview,
+  setting_animePreview: Texts[1 /* en_US */].setting_animePreview,
   setting_sort: "\u0421\u043E\u0440\u0442\u0438\u0440\u043E\u0432\u043A\u0430 (\u0421\u0442\u0440\u0430\u043D\u0438\u0446\u0430 \u043F\u043E\u0438\u0441\u043A\u0430)",
   setting_anime: "\u0410\u043D\u0438\u043C\u0430\u0446\u0438\u044F \u0441\u043A\u0430\u0447\u0438\u0432\u0430\u043D\u0438\u044F (\u0421\u0442\u0440\u0430\u043D\u0438\u0446\u044B \u043F\u0440\u0435\u0434\u043F\u0440\u043E\u0441\u043C\u043E\u0442\u0440\u0430 \u0438 Artwork)",
   setting_origin: "\u041F\u0440\u0438 \u043F\u0440\u0435\u0434\u043F\u0440\u043E\u0441\u043C\u043E\u0442\u0440\u0435, \u043F\u043E\u043A\u0430\u0437\u044B\u0432\u0430\u0442\u044C \u0438\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u044F \u0441 \u043E\u0440\u0438\u0433\u0438\u043D\u0430\u043B\u044C\u043D\u044B\u043C \u043A\u0430\u0447\u0435\u0441\u0442\u0432\u043E\u043C (\u043C\u0435\u0434\u043B\u0435\u043D\u043D\u043E)",
   setting_previewDelay: "\u0417\u0430\u0434\u0435\u0440\u0436\u043A\u0430 \u043E\u0442\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u044F \u043F\u0440\u0435\u0434\u043F\u0440\u043E\u0441\u043C\u043E\u0442\u0440\u0430 \u0438\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u044F (\u041C\u0438\u043B\u043B\u0438\u043E\u043D \u0441\u0435\u043A\u0443\u043D\u0434)",
-  setting_previewByKey: Texts[Lang.en_US].setting_previewByKey,
-  setting_previewByKeyHelp: Texts[Lang.en_US].setting_previewByKeyHelp,
+  setting_previewByKey: Texts[1 /* en_US */].setting_previewByKey,
+  setting_previewByKeyHelp: Texts[1 /* en_US */].setting_previewByKeyHelp,
   setting_maxPage: "\u041C\u0430\u043A\u0441\u0438\u043C\u0430\u043B\u044C\u043D\u043E\u0435 \u043A\u043E\u043B\u0438\u0447\u0435\u0441\u0442\u0432\u043E \u0441\u0442\u0440\u0430\u043D\u0438\u0446, \u043F\u043E\u0434\u0441\u0447\u0438\u0442\u0430\u043D\u043D\u044B\u0445 \u0437\u0430 \u0441\u043E\u0440\u0442\u0438\u0440\u043E\u0432\u043A\u0443",
   setting_hideWork: "\u0421\u043A\u0440\u044B\u0442\u044C \u0440\u0430\u0431\u043E\u0442\u044B \u0441 \u043A\u043E\u043B\u0438\u0447\u0435\u0441\u0442\u0432\u043E\u043C \u0437\u0430\u043A\u043B\u0430\u0434\u043E\u043A \u043C\u0435\u043D\u044C\u0448\u0435 \u0443\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D\u043D\u043E\u0433\u043E \u0437\u043D\u0430\u0447\u0435\u043D\u0438\u044F",
-  setting_hideAiWork: Texts[Lang.en_US].setting_hideAiWork,
+  setting_hideAiWork: Texts[1 /* en_US */].setting_hideAiWork,
   setting_hideFav: "\u041F\u0440\u0438 \u0441\u043E\u0440\u0442\u0438\u0440\u043E\u0432\u043A\u0435, \u0441\u043A\u0440\u044B\u0442\u044C \u0438\u0437\u0431\u0440\u0430\u043D\u043D\u043E\u0435",
   setting_hideFollowed: "\u041F\u0440\u0438 \u0441\u043E\u0440\u0442\u0438\u0440\u043E\u0432\u043A\u0435, \u0441\u043A\u0440\u044B\u0442\u044C \u0440\u0430\u0431\u043E\u0442\u044B \u0445\u0443\u0434\u043E\u0436\u043D\u0438\u043A\u043E\u0432 \u043D\u0430 \u043A\u043E\u0442\u043E\u0440\u044B\u0445 \u043F\u043E\u0434\u043F\u0438\u0441\u0430\u043D\u044B",
-  setting_hideByTag: Texts[Lang.en_US].setting_hideByTag,
-  setting_hideByTagPlaceholder: Texts[Lang.en_US].setting_hideByTagPlaceholder,
+  setting_hideByTag: Texts[1 /* en_US */].setting_hideByTag,
+  setting_hideByTagPlaceholder: Texts[1 /* en_US */].setting_hideByTagPlaceholder,
   setting_clearFollowingCache: "\u041A\u044D\u0448",
   setting_clearFollowingCacheHelp: "\u0421\u043B\u0435\u0434\u0443\u044E\u0449\u0430\u044F \u0438\u043D\u0444\u043E\u0440\u043C\u0430\u0446\u0438\u044F \u043E \u0445\u0443\u0434\u043E\u0436\u043D\u0438\u043A\u0430\u0445 \u0431\u0443\u0434\u0435\u0442 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u0430 \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u043E \u0432 \u0442\u0435\u0447\u0435\u043D\u0438\u0435 \u043E\u0434\u043D\u043E\u0433\u043E \u0434\u043D\u044F, \u0435\u0441\u043B\u0438 \u0432\u044B \u0445\u043E\u0442\u0438\u0442\u0435 \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u0435\u0451 \u043D\u0435\u043C\u0435\u0434\u043B\u0435\u043D\u043D\u043E, \u043D\u0430\u0436\u043C\u0438\u0442\u0435 \u043D\u0430 \u044D\u0442\u0443 \u043A\u043D\u043E\u043F\u043A\u0443, \u0447\u0442\u043E\u0431\u044B \u043E\u0447\u0438\u0441\u0442\u0438\u0442\u044C \u043A\u044D\u0448",
   setting_followingCacheCleared: "\u0413\u043E\u0442\u043E\u0432\u043E, \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u0435 \u0441\u0442\u0440\u0430\u043D\u0438\u0446\u0443.",
@@ -740,8 +1137,8 @@ Texts[Lang.ru_RU] = {
   setting_save: "\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C",
   setting_reset: "\u0421\u0431\u0440\u043E\u0441\u0438\u0442\u044C",
   setting_resetHint: "\u042D\u0442\u043E \u0443\u0434\u0430\u043B\u0438\u0442 \u0432\u0441\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 \u0438 \u0443\u0441\u0442\u0430\u043D\u043E\u0432\u0438\u0442 \u0438\u0445 \u043F\u043E \u0443\u043C\u043E\u043B\u0447\u0430\u043D\u0438\u044E. \u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0438\u0442\u044C?",
-  setting_novelSort: Texts[Lang.en_US].setting_novelSort,
-  setting_novelMaxPage: Texts[Lang.en_US].setting_novelMaxPage,
+  setting_novelSort: Texts[1 /* en_US */].setting_novelSort,
+  setting_novelMaxPage: Texts[1 /* en_US */].setting_novelMaxPage,
   setting_novelHideWork: "\u0421\u043A\u0440\u044B\u0442\u044C \u0440\u0430\u0431\u043E\u0442\u044B \u0441 \u043A\u043E\u043B\u0438\u0447\u0435\u0441\u0442\u0432\u043E\u043C \u0437\u0430\u043A\u043B\u0430\u0434\u043E\u043A \u043C\u0435\u043D\u044C\u0448\u0435 \u0443\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D\u043D\u043E\u0433\u043E \u0437\u043D\u0430\u0447\u0435\u043D\u0438\u044F",
   setting_novelHideFav: "\u041F\u0440\u0438 \u0441\u043E\u0440\u0442\u0438\u0440\u043E\u0432\u043A\u0435, \u0441\u043A\u0440\u044B\u0442\u044C \u0438\u0437\u0431\u0440\u0430\u043D\u043D\u043E\u0435",
   sort_noWork: "\u041D\u0435\u0442 \u0440\u0430\u0431\u043E\u0442 \u0434\u043B\u044F \u043E\u0442\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u044F (%1 works hidden)",
@@ -752,13 +1149,13 @@ Texts[Lang.ru_RU] = {
   sort_filtering: "\u0424\u0438\u043B\u044C\u0442\u0440\u0430\u0446\u0438\u044F %1 \u0440\u0430\u0431\u043E\u0442 \u0441 \u043A\u043E\u043B\u0438\u0447\u0435\u0441\u0442\u0432\u043E\u043C \u0437\u0430\u043A\u043B\u0430\u0434\u043E\u043A \u043C\u0435\u043D\u044C\u0448\u0435 \u0447\u0435\u043C %2",
   sort_filteringHideFavorite: " \u0438\u0437\u0431\u0440\u0430\u043D\u043D\u044B\u0435 \u0440\u0430\u0431\u043E\u0442\u044B \u0438 ",
   sort_fullSizeThumb: "\u041F\u043E\u043A\u0430\u0437\u0430\u0442\u044C \u043D\u0435\u043E\u0442\u0440\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u043D\u043D\u043E\u0435 \u0438\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u0435 (\u0421\u0442\u0440\u0430\u043D\u0438\u0446\u044B \u043F\u043E\u0438\u0441\u043A\u0430 \u0438 Artwork)",
-  nsort_getWorks: Texts[Lang.en_US].nsort_getWorks,
-  nsort_sorting: Texts[Lang.en_US].nsort_sorting,
-  nsort_hideFav: Texts[Lang.en_US].nsort_hideFav,
-  nsort_hideFollowed: Texts[Lang.en_US].nsort_hideFollowed,
-  text_sort: Texts[Lang.en_US].text_sort
+  nsort_getWorks: Texts[1 /* en_US */].nsort_getWorks,
+  nsort_sorting: Texts[1 /* en_US */].nsort_sorting,
+  nsort_hideFav: Texts[1 /* en_US */].nsort_hideFav,
+  nsort_hideFollowed: Texts[1 /* en_US */].nsort_hideFollowed,
+  text_sort: Texts[1 /* en_US */].text_sort
 };
-Texts[Lang.ja_JP] = {
+Texts[3 /* ja_JP */] = {
   install_title: "Welcome to PixivPreviewer v",
   install_body: '<div style="position: absolute;left: 50%;top: 30%;font-size: 20px; color: white;transform:translate(-50%,0);"><p style="text-indent: 2em;"\u3054\u610F\u898B\u3084\u63D0\u6848\u306F\u5927\u6B53\u8FCE\u3067\u3059! ><a style="color: green;" href="https://greasyfork.org/ja/scripts/30766-pixiv-previewer/feedback" target="_blank">\u30D5\u30A3\u30FC\u30C9\u30D0\u30C3\u30AF\u30DA\u30FC\u30B8</a><</p><br><p style="text-indent: 2em;">\u521D\u3081\u3066\u4F7F\u3046\u5834\u5408\u306F\u3001<a style="color: green;" href="https://greasyfork.org/ja/scripts/30766-pixiv-previewer" target="_blank"> \u8A73\u7D30\u30DA\u30FC\u30B8 </a>\u3067\u30B9\u30AF\u30EA\u30D7\u30C8\u306E\u7D39\u4ECB\u3092\u898B\u308B\u3053\u3068\u3092\u304A\u52E7\u3081\u3057\u307E\u3059\u3002</p></div>',
   upgrade_body: "<h3>(\u6CE8\u610F\uFF01) \u4E26\u3079\u66FF\u3048\u6A5F\u80FD\u306B\u3064\u3044\u3066</h3>&nbsp&nbsp\u3054\u5229\u7528\u3044\u305F\u3060\u304D\u3042\u308A\u304C\u3068\u3046\u3054\u3056\u3044\u307E\u3059\u3002\u6700\u8FD1\u306F\u3068\u3066\u3082\u5FD9\u3057\u304F\u3001\u8FD4\u4FE1\u304C\u9045\u308C\u3066\u3057\u307E\u3044\u7533\u3057\u8A33\u3042\u308A\u307E\u305B\u3093\u3002\u6700\u8FD1\u4E26\u3079\u66FF\u3048\u6A5F\u80FD\u3092\u4F7F\u3063\u3066\u3044\u308B\u5834\u5408\u3001\u691C\u7D22\u7D50\u679C\u304C0\u306B\u306A\u308B\u3053\u3068\u304C\u3042\u308B\u304B\u3082\u3057\u308C\u307E\u305B\u3093\u3002\u305D\u306E\u7406\u7531\u3068\u5BFE\u7B56\u3092\u7C21\u5358\u306B\u8AAC\u660E\u3055\u305B\u3066\u3044\u305F\u3060\u304D\u307E\u3059\u3002 <br>&nbsp&nbsp \u3053\u306E\u30B9\u30AF\u30EA\u30D7\u30C8\u306F\u3001\u6307\u5B9A\u3055\u308C\u305F\u30DA\u30FC\u30B8\u5185\u306E\u3059\u3079\u3066\u306E\u4F5C\u54C1\u306E\u30B3\u30EC\u30AF\u30B7\u30E7\u30F3\u3092\u53D6\u5F97\u3057\u3001\u305D\u308C\u3089\u3092\u4E26\u3079\u66FF\u3048\u308B\u306E\u3082\u306E\u3067\u3059\u3002\u6700\u8FD1\u3001Pixiv\u306F\u77ED\u6642\u9593\u306B\u4F5C\u54C1\u60C5\u5831\u3092\u53D6\u5F97\u3059\u308B\u56DE\u6570\u3092\u5236\u9650\u3057\u3001\u3059\u3079\u3066\u306E\u30EA\u30AF\u30A8\u30B9\u30C8\u304C\u30A8\u30E9\u30FC\u3092\u8FD4\u3059\u3053\u3068\u304C\u3042\u308A\u3001\u691C\u7D22\u7D50\u679C\u304C0\u4EF6\u3068\u8868\u793A\u3055\u308C\u308B\u3053\u3068\u304C\u3042\u308A\u307E\u3059\u3002\u4F8B\u3048\u3070\u30013\u30DA\u30FC\u30B8\u3092\u4E26\u3079\u66FF\u3048\u308B\u5834\u5408\u3001\u30B9\u30AF\u30EA\u30D7\u30C8\u306F\u6700\u5927180\u4EF6\u306E\u4F5C\u54C1\u306E\u30B3\u30EC\u30AF\u30B7\u30E7\u30F3\u30C7\u30FC\u30BF\u3092Pixiv\u304B\u3089\u30EA\u30AF\u30A8\u30B9\u30C8\u3059\u308B\u3053\u3068\u306B\u306A\u308A\u307E\u3059\u304C\u3001\u4E00\u822C\u7684\u306B\u306F30\u301C60\u56DE/\u5206\u306E\u5236\u9650\u304C\u3042\u308B\u305F\u3081\u3001Pixiv\u306E\u4ED5\u69D8\u3092\u7406\u89E3\u3057\u3066\u3044\u305F\u3060\u304D\u3001\u3053\u308C\u3092\u56DE\u907F\u3059\u308B\u305F\u3081\u4E00\u6C17\u306B\u30BD\u30FC\u30C8\u3059\u308B\u30DA\u30FC\u30B8\u306E\u5024\u3092\u3092\u5927\u304D\u304F\u3057\u306A\u3044\u3067\u304F\u3060\u3055\u3044\u3002  <br>&nbsp&nbsp \u89E3\u6C7A\u7B56\u3068\u3057\u3066\u3001\u73FE\u5728\u4EE5\u4E0B\u306E\u3088\u3046\u306A\u65B9\u6CD5\u3092\u8003\u3048\u3066\u3044\u307E\u3059\uFF1A<ul><li>1. \u30A4\u30F3\u30BF\u30FC\u30D5\u30A7\u30A4\u30B9\u306E\u5236\u9650\u306B\u5F93\u3063\u3066\u30011\u30DA\u30FC\u30B8\u306E\u30BD\u30FC\u30C8\u306B1\u5206\u307B\u3069\u304B\u304B\u308B\u3053\u3068\u304C\u3042\u308A\u307E\u3059\u3002</li><li>2. \u30B5\u30FC\u30C9\u30D1\u30FC\u30C6\u30A3\u306E\u30B5\u30FC\u30D3\u30B9\u3092\u5229\u7528\u3059\u308B\u3082\u306E\u306E\u3001\u30D0\u30C3\u30C1\u51E6\u7406\u304C\u3067\u304D\u308B\u30B5\u30FC\u30D3\u30B9\u304C\u306A\u3044\u3088\u3046\u3067\u3059\u3057\u3001\u305D\u308C\u3060\u3051\u306E\u30EA\u30AF\u30A8\u30B9\u30C8\u306B\u8010\u3048\u3089\u308C\u308B\u3082\u306E\u3082\u306A\u3055\u305D\u3046\u3067\u3059\u3002</li><li>3. \u30B5\u30FC\u30D0\u30FC\u3092\u4F7F\u3063\u3066\u30B3\u30EC\u30AF\u30B7\u30E7\u30F3\u306E\u77ED\u671F\u30AD\u30E3\u30C3\u30B7\u30E5\u3092\u63D0\u4F9B\u3057\u3001\u30A4\u30F3\u30BF\u30FC\u30D5\u30A7\u30A4\u30B9\u306E\u5236\u9650\u306B\u5F93\u3046\u3053\u3068\u306F\u3001\u30B3\u30B9\u30C8\u304C\u304B\u304B\u308B\u4E0A\u306B\u30EA\u30B9\u30AF\u3082\u4F34\u3044\u307E\u3059\u3002</li><li>\u30B9\u30AF\u30EA\u30D7\u30C8\u306E\u30BD\u30FC\u30C8\u6A5F\u80FD\u3092\u7121\u52B9\u306B\u3059\u308B\u3002</li></ul>&nbsp&nbsp \u6700\u5F8C\u306B\u3001\u6539\u3081\u3066\u3054\u5229\u7528\u3044\u305F\u3060\u304D\u3042\u308A\u304C\u3068\u3046\u3054\u3056\u3044\u307E\u3059\u3002\u4E0A\u8A18\u306E\u554F\u984C\u306B\u3064\u3044\u3066\u826F\u3044\u63D0\u6848\u304C\u3042\u308C\u3070\u3001GreasyFork/Github\u3067\u304A\u6C17\u8EFD\u306B\u63D0\u6848\u3057\u3066\u304F\u3060\u3055\u3044\u3002\u6700\u5F8C\u306B\u3001\u3053\u306E\u30D0\u30FC\u30B8\u30E7\u30F3\u3067\u306F\u30BD\u30FC\u30C8\u6A5F\u80FD\u304C\u6B63\u5E38\u306B\u4F7F\u7528\u3067\u304D\u307E\u3059\u3002\u305F\u3060\u3057\u3001\u30BD\u30FC\u30C8\u6A5F\u80FD\u304C\u7A81\u7136\u6B63\u5E38\u306B\u4F7F\u7528\u3067\u304D\u306A\u304F\u306A\u3063\u305F\u308A\u3001\u30BD\u30FC\u30C8\u6A5F\u80FD\u304C\u30AA\u30D5\u306B\u306A\u3063\u305F\u5834\u5408\u306F\u3001\u3054\u7406\u89E3\u3044\u305F\u3060\u3051\u308B\u3068\u5E78\u3044\u3067\u3059\u3002",
@@ -776,8 +1173,8 @@ Texts[Lang.ja_JP] = {
   setting_hideAiWork: "AI\u306E\u4F5C\u54C1\u3092\u975E\u8868\u793A\u306B\u3059\u308B",
   setting_hideFav: "\u30D6\u30C3\u30AF\u30DE\u30FC\u30AF\u6570\u3092\u30BD\u30FC\u30C8\u6642\u306B\u975E\u8868\u793A\u306B\u3059\u308B",
   setting_hideFollowed: "\u30BD\u30FC\u30C8\u6642\u306B\u30D5\u30A9\u30ED\u30FC\u3057\u3066\u3044\u308B\u30A2\u30FC\u30C6\u30A3\u30B9\u30C8\u306E\u4F5C\u54C1\u3092\u975E\u8868\u793A",
-  setting_hideByTag: Texts[Lang.en_US].setting_hideByTag,
-  setting_hideByTagPlaceholder: Texts[Lang.en_US].setting_hideByTagPlaceholder,
+  setting_hideByTag: Texts[1 /* en_US */].setting_hideByTag,
+  setting_hideByTagPlaceholder: Texts[1 /* en_US */].setting_hideByTagPlaceholder,
   setting_clearFollowingCache: "\u30AD\u30E3\u30C3\u30B7\u30E5",
   setting_clearFollowingCacheHelp: "\u30D5\u30A9\u30ED\u30FC\u3057\u3066\u3044\u308B\u30A2\u30FC\u30C6\u30A3\u30B9\u30C8\u306E\u60C5\u5831\u304C\u30ED\u30FC\u30AB\u30EB\u306B1\u65E5\u4FDD\u5B58\u3055\u308C\u307E\u3059\u3002\u3059\u3050\u306B\u66F4\u65B0\u3057\u305F\u3044\u5834\u5408\u306F\u3001\u3053\u306E\u30AD\u30E3\u30C3\u30B7\u30E5\u3092\u30AF\u30EA\u30A2\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
   setting_followingCacheCleared: "\u6210\u529F\u3057\u307E\u3057\u305F\u3002\u30DA\u30FC\u30B8\u3092\u66F4\u65B0\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
@@ -804,114 +1201,84 @@ Texts[Lang.ja_JP] = {
   nsort_hideFollowed: "\u30BD\u30FC\u30C8\u6642\u306B\u30D5\u30A9\u30ED\u30FC\u6E08\u307F\u4F5C\u8005\u306E\u4F5C\u54C1\u3092\u975E\u8868\u793A",
   text_sort: "\u30BD\u30FC\u30C8"
 };
-var LogLevel = {
-  None: 0,
-  Error: 1,
-  Warning: 2,
-  Info: 3,
-  Elements: 4
-};
-function DoLog(level, msgOrElement) {
-  if (level <= g_logLevel) {
-    let prefix = "%c";
-    let param = "";
-    if (level == LogLevel.Error) {
-      prefix += "[Error]";
-      param = "color:#ff0000";
-    } else if (level == LogLevel.Warning) {
-      prefix += "[Warning]";
-      param = "color:#ffa500";
-    } else if (level == LogLevel.Info) {
-      prefix += "[Info]";
-      param = "color:#000000";
-    } else if (level == LogLevel.Elements) {
-      prefix += "Elements";
-      param = "color:#000000";
-    }
-    if (level != LogLevel.Elements) {
-      console.log(prefix + msgOrElement, param);
-    } else {
-      console.log(msgOrElement);
-    }
-    if (++g_logCount > 512) {
-      g_logCount = 0;
+var i18n_default = Texts;
+
+// src/utils/jquery.ts
+var JQUERY_VERSION = "2.2.4";
+var checkJQuery = function() {
+  const jqueryCdns = [
+    `http://code.jquery.com/jquery-${JQUERY_VERSION}.min.js`,
+    `https://ajax.aspnetcdn.com/ajax/jquery/jquery-${JQUERY_VERSION}.min.js`,
+    `https://ajax.googleapis.com/ajax/libs/jquery/${JQUERY_VERSION}/jquery.min.js`,
+    `https://cdn.staticfile.org/jquery/${JQUERY_VERSION}/jquery.min.js`,
+    `https://apps.bdimg.com/libs/jquery/${JQUERY_VERSION}/jquery.min.js`
+  ];
+  function isJQueryValid() {
+    try {
+      const wd = unsafeWindow;
+      if (wd.jQuery && !wd.$) {
+        wd.$ = wd.jQuery;
+      }
+      $();
+      return true;
+    } catch (exception) {
+      return false;
     }
   }
-}
-var g_language = Lang.zh_CN;
-var g_version = "3.7.10";
+  function insertJQuery(url2) {
+    const script = document.createElement("script");
+    script.src = url2;
+    document.head.appendChild(script);
+    return script;
+  }
+  function converProtocolIfNeeded(url2) {
+    const isHttps = location.href.indexOf("https://") != -1;
+    const urlIsHttps = url2.indexOf("https://") != -1;
+    if (isHttps && !urlIsHttps) {
+      return url2.replace("http://", "https://");
+    } else if (!isHttps && urlIsHttps) {
+      return url2.replace("https://", "http://");
+    }
+    return url2;
+  }
+  function waitAndCheckJQuery(cdnIndex, resolve) {
+    if (cdnIndex >= jqueryCdns.length) {
+      iLog.e("\u65E0\u6CD5\u52A0\u8F7D jQuery\uFF0C\u6B63\u5728\u9000\u51FA\u3002");
+      resolve(false);
+      return;
+    }
+    const url2 = converProtocolIfNeeded(jqueryCdns[cdnIndex]);
+    iLog.i("\u5C1D\u8BD5\u7B2C " + (cdnIndex + 1) + " \u4E2A jQuery CDN\uFF1A" + url2 + "\u3002");
+    const script = insertJQuery(url2);
+    setTimeout(function() {
+      if (isJQueryValid()) {
+        iLog.i("\u5DF2\u52A0\u8F7D jQuery\u3002");
+        resolve(true);
+      } else {
+        iLog.w("\u65E0\u6CD5\u8BBF\u95EE\u3002");
+        script.remove();
+        waitAndCheckJQuery(cdnIndex + 1, resolve);
+      }
+    }, 100);
+  }
+  return new Promise(function(resolve) {
+    if (isJQueryValid()) {
+      iLog.i("\u5DF2\u52A0\u8F7D jQuery\u3002");
+      resolve(true);
+    } else {
+      iLog.i("\u672A\u53D1\u73B0 jQuery\uFF0C\u5C1D\u8BD5\u52A0\u8F7D\u3002");
+      waitAndCheckJQuery(0, resolve);
+    }
+  });
+};
+
+// src/index.ts
+var g_language = 0 /* zh_CN */;
 var g_csrfToken = "";
-var g_logCount = 0;
 var g_pageType = -1;
-var g_getArtworkUrl = "/ajax/illust/#id#/pages";
-var g_getUgoiraUrl = "/ajax/illust/#id#/ugoira_meta";
-var g_getNovelUrl = "/ajax/search/novels/#key#?word=#key#&p=#page#";
-var g_mousePos = { x: 0, y: 0 };
-var g_loadingImage = "https://pp-1252089172.cos.ap-chengdu.myqcloud.com/loading.gif";
 var initialUrl = location.href;
-var g_defaultSettings = {
-  lang: -1,
-  enablePreview: 1,
-  enableAnimePreview: 1,
-  enableSort: 1,
-  enableAnimeDownload: 1,
-  original: 0,
-  previewDelay: 200,
-  previewByKey: 0,
-  previewKey: 17,
-  previewFullScreen: 0,
-  pageCount: 3,
-  favFilter: 0,
-  aiFilter: 0,
-  hideFavorite: 0,
-  hideFollowed: 0,
-  hideByTag: 0,
-  hideByTagList: "",
-  linkBlank: 1,
-  pageByKey: 0,
-  fullSizeThumb: 0,
-  enableNovelSort: 1,
-  novelPageCount: 3,
-  novelFavFilter: 0,
-  novelHideFavorite: 0,
-  novelHideFollowed: 0,
-  logLevel: 1,
-  version: g_version
-};
 var g_settings;
-var g_logLevel = LogLevel.Error;
-var g_maxXhr = 64;
 var g_sortComplete = true;
-var PageType = {
-  // 搜索（不包含小说搜索）
-  Search: 0,
-  // 关注的新作品
-  BookMarkNew: 1,
-  // 发现
-  Discovery: 2,
-  // 用户主页
-  Member: 3,
-  // 首页
-  Home: 4,
-  // 排行榜
-  Ranking: 5,
-  // 大家的新作品
-  NewIllust: 6,
-  // R18
-  R18: 7,
-  // 自己的收藏页
-  BookMark: 8,
-  // 动态
-  Stacc: 9,
-  // 作品详情页（处理动图预览及下载）
-  Artwork: 10,
-  // 小说页
-  NovelSearch: 11,
-  // 搜索顶部 tab
-  SearchTop: 12,
-  // 总数
-  PageTypeCount: 13
-};
 var Pages = {};
 function findToolbarCommon() {
   const rootToolbar = $("#root").find("ul:last").get(0);
@@ -931,7 +1298,7 @@ function processElementListCommon(lis) {
   $.each(lis, function(i, e) {
     const li = $(e);
     const ctlAttrs = {
-      illustId: 0,
+      illustId: "",
       illustType: 0,
       pageCount: 1
     };
@@ -939,20 +1306,19 @@ function processElementListCommon(lis) {
     const animationSvg = imageLink.children("div:first").find("svg:first");
     const pageCountSpan = imageLink.children("div:last").find("span:last");
     if (imageLink == null) {
-      DoLog(LogLevel.Warning, "Can not found img or imageLink, skip this.");
+      DoLog(2 /* Warning */, "Can not found img or imageLink, skip this.");
       return;
     }
     const link = imageLink.attr("href");
     if (link == null) {
-      DoLog(LogLevel.Warning, "Invalid href, skip this.");
+      DoLog(2 /* Warning */, "Invalid href, skip this.");
       return;
     }
     const linkMatched = link.match(/artworks\/(\d+)/);
-    const illustId = "";
     if (linkMatched) {
       ctlAttrs.illustId = linkMatched[1];
     } else {
-      DoLog(LogLevel.Error, "Get illustId failed, skip this list item!");
+      DoLog(1 /* Error */, "Get illustId failed, skip this list item!");
       return;
     }
     if (animationSvg.length > 0) {
@@ -1012,13 +1378,13 @@ function findLiByImgTag() {
   });
   return lis;
 }
-Pages[PageType.Search] = {
+Pages[0 /* Search */] = {
   PageTypeString: "SearchPage",
-  CheckUrl: function(url) {
+  CheckUrl: function(url2) {
     return /^https?:\/\/www.pixiv.net\/tags\/.*\/(artworks|illustrations|manga)/.test(
-      url
+      url2
     ) || /^https?:\/\/www.pixiv.net\/en\/tags\/.*\/(artworks|illustrations|manga)/.test(
-      url
+      url2
     );
   },
   ProcessPageElements: function() {
@@ -1027,8 +1393,8 @@ Pages[PageType.Search] = {
       controlElements: []
     };
     const sections = $("section");
-    DoLog(LogLevel.Info, "Page has " + sections.length + " <section>.");
-    DoLog(LogLevel.Elements, sections);
+    DoLog(3 /* Info */, "Page has " + sections.length + " <section>.");
+    DoLog(4 /* Elements */, sections);
     let premiumSectionIndex = -1;
     let resultSectionIndex = 0;
     if (sections.length == 0) {
@@ -1069,8 +1435,8 @@ Pages[PageType.Search] = {
     }
     returnMap.loadingComplete = true;
     this.private.imageListConrainer = ul.get(0);
-    DoLog(LogLevel.Info, "Process page elements complete.");
-    DoLog(LogLevel.Elements, returnMap);
+    DoLog(3 /* Info */, "Process page elements complete.");
+    DoLog(4 /* Elements */, returnMap);
     this.private.returnMap = returnMap;
     return returnMap;
   },
@@ -1100,10 +1466,10 @@ Pages[PageType.Search] = {
     returnMap: null
   }
 };
-Pages[PageType.BookMarkNew] = {
+Pages[1 /* BookMarkNew */] = {
   PageTypeString: "BookMarkNewPage",
-  CheckUrl: function(url) {
-    return /^https:\/\/www.pixiv.net\/bookmark_new_illust.php.*/.test(url) || /^https:\/\/www.pixiv.net\/bookmark_new_illust_r18.php.*/.test(url);
+  CheckUrl: function(url2) {
+    return /^https:\/\/www.pixiv.net\/bookmark_new_illust.php.*/.test(url2) || /^https:\/\/www.pixiv.net\/bookmark_new_illust_r18.php.*/.test(url2);
   },
   ProcessPageElements: function() {
     const returnMap = {
@@ -1111,14 +1477,14 @@ Pages[PageType.BookMarkNew] = {
       controlElements: []
     };
     const sections = $("section");
-    DoLog(LogLevel.Info, "Page has " + sections.length + " <section>.");
-    DoLog(LogLevel.Elements, sections);
+    DoLog(3 /* Info */, "Page has " + sections.length + " <section>.");
+    DoLog(4 /* Elements */, sections);
     const lis = sections.find("ul").find("li");
     processElementListCommon(lis);
     returnMap.controlElements = $(".pp-control");
     returnMap.loadingComplete = true;
-    DoLog(LogLevel.Info, "Process page elements complete.");
-    DoLog(LogLevel.Elements, returnMap);
+    DoLog(3 /* Info */, "Process page elements complete.");
+    DoLog(4 /* Elements */, returnMap);
     this.private.returnMap = returnMap;
     if (g_settings.fullSizeThumb) {
       if (!this.private.returnMap.loadingComplete) {
@@ -1142,10 +1508,10 @@ Pages[PageType.BookMarkNew] = {
     returnMap: null
   }
 };
-Pages[PageType.Discovery] = {
+Pages[2 /* Discovery */] = {
   PageTypeString: "DiscoveryPage",
-  CheckUrl: function(url) {
-    return /^https?:\/\/www.pixiv.net\/discovery.*/.test(url);
+  CheckUrl: function(url2) {
+    return /^https?:\/\/www.pixiv.net\/discovery.*/.test(url2);
   },
   ProcessPageElements: function() {
     const returnMap = {
@@ -1154,18 +1520,18 @@ Pages[PageType.Discovery] = {
     };
     const containerDiv = $(".gtm-illust-recommend-zone");
     if (containerDiv.length > 0) {
-      DoLog(LogLevel.Info, "Found container div.");
-      DoLog(LogLevel.Elements, containerDiv);
+      DoLog(3 /* Info */, "Found container div.");
+      DoLog(4 /* Elements */, containerDiv);
     } else {
-      DoLog(LogLevel.Error, "Can not found container div.");
+      DoLog(1 /* Error */, "Can not found container div.");
       return returnMap;
     }
     const lis = containerDiv.find("ul").children("li");
     processElementListCommon(lis);
     returnMap.controlElements = $(".pp-control");
     returnMap.loadingComplete = true;
-    DoLog(LogLevel.Info, "Process page elements complete.");
-    DoLog(LogLevel.Elements, returnMap);
+    DoLog(3 /* Info */, "Process page elements complete.");
+    DoLog(4 /* Elements */, returnMap);
     this.private.returnMap = returnMap;
     return returnMap;
   },
@@ -1183,10 +1549,10 @@ Pages[PageType.Discovery] = {
     returnMap: null
   }
 };
-Pages[PageType.Member] = {
+Pages[3 /* Member */] = {
   PageTypeString: "MemberPage/MemberIllustPage/MemberBookMark",
-  CheckUrl: function(url) {
-    return /^https?:\/\/www.pixiv.net\/(en\/)?users\/\d+/.test(url);
+  CheckUrl: function(url2) {
+    return /^https?:\/\/www.pixiv.net\/(en\/)?users\/\d+/.test(url2);
   },
   ProcessPageElements: function() {
     const returnMap = {
@@ -1194,15 +1560,15 @@ Pages[PageType.Member] = {
       controlElements: []
     };
     const lis = findLiByImgTag();
-    DoLog(LogLevel.Elements, lis);
+    DoLog(4 /* Elements */, lis);
     const sections = $("section");
-    DoLog(LogLevel.Info, "Page has " + sections.length + " <section>.");
-    DoLog(LogLevel.Elements, sections);
+    DoLog(3 /* Info */, "Page has " + sections.length + " <section>.");
+    DoLog(4 /* Elements */, sections);
     processElementListCommon(lis);
     returnMap.controlElements = $(".pp-control");
     returnMap.loadingComplete = true;
-    DoLog(LogLevel.Info, "Process page elements complete.");
-    DoLog(LogLevel.Elements, returnMap);
+    DoLog(3 /* Info */, "Process page elements complete.");
+    DoLog(4 /* Elements */, returnMap);
     this.private.returnMap = returnMap;
     if (g_settings.fullSizeThumb) {
       if (!this.private.returnMap.loadingComplete) {
@@ -1227,10 +1593,10 @@ Pages[PageType.Member] = {
     returnMap: null
   }
 };
-Pages[PageType.Home] = {
+Pages[4 /* Home */] = {
   PageTypeString: "HomePage",
-  CheckUrl: function(url) {
-    return /https?:\/\/www.pixiv.net\/?$/.test(url) || /https?:\/\/www.pixiv.net\/en\/?$/.test(url) || /https?:\/\/www.pixiv.net\/cate_r18\.php$/.test(url) || /https?:\/\/www.pixiv.net\/en\/cate_r18\.php$/.test(url);
+  CheckUrl: function(url2) {
+    return /https?:\/\/www.pixiv.net\/?$/.test(url2) || /https?:\/\/www.pixiv.net\/en\/?$/.test(url2) || /https?:\/\/www.pixiv.net\/cate_r18\.php$/.test(url2) || /https?:\/\/www.pixiv.net\/en\/cate_r18\.php$/.test(url2);
   },
   ProcessPageElements: function() {
     const returnMap = {
@@ -1241,8 +1607,8 @@ Pages[PageType.Home] = {
     processElementListCommon(lis);
     returnMap.controlElements = $(".pp-control");
     returnMap.loadingComplete = true;
-    DoLog(LogLevel.Info, "Process page elements complete.");
-    DoLog(LogLevel.Elements, returnMap);
+    DoLog(3 /* Info */, "Process page elements complete.");
+    DoLog(4 /* Elements */, returnMap);
     this.private.returnMap = returnMap;
     if (g_settings.fullSizeThumb) {
       if (!this.private.returnMap.loadingComplete) {
@@ -1266,10 +1632,10 @@ Pages[PageType.Home] = {
     returnMap: null
   }
 };
-Pages[PageType.Ranking] = {
+Pages[5 /* Ranking */] = {
   PageTypeString: "RankingPage",
-  CheckUrl: function(url) {
-    return /^https?:\/\/www.pixiv.net\/ranking.php.*/.test(url);
+  CheckUrl: function(url2) {
+    return /^https?:\/\/www.pixiv.net\/ranking.php.*/.test(url2);
   },
   ProcessPageElements: function() {
     const returnMap = {
@@ -1277,8 +1643,8 @@ Pages[PageType.Ranking] = {
       controlElements: []
     };
     const works = $("._work");
-    DoLog(LogLevel.Info, "Found .work, length: " + works.length);
-    DoLog(LogLevel.Elements, works);
+    DoLog(3 /* Info */, "Found .work, length: " + works.length);
+    DoLog(4 /* Elements */, works);
     works.each(function(i, e) {
       const _this = $(e);
       const ctlAttrs = {
@@ -1312,8 +1678,8 @@ Pages[PageType.Ranking] = {
       returnMap.controlElements.push(e);
     });
     returnMap.loadingComplete = true;
-    DoLog(LogLevel.Info, "Process page elements complete.");
-    DoLog(LogLevel.Elements, returnMap);
+    DoLog(3 /* Info */, "Process page elements complete.");
+    DoLog(4 /* Elements */, returnMap);
     this.private.returnMap = returnMap;
     return returnMap;
   },
@@ -1331,10 +1697,10 @@ Pages[PageType.Ranking] = {
     returnMap: null
   }
 };
-Pages[PageType.NewIllust] = {
+Pages[6 /* NewIllust */] = {
   PageTypeString: "NewIllustPage",
-  CheckUrl: function(url) {
-    return /^https?:\/\/www.pixiv.net\/new_illust.php.*/.test(url);
+  CheckUrl: function(url2) {
+    return /^https?:\/\/www.pixiv.net\/new_illust.php.*/.test(url2);
   },
   ProcessPageElements: function() {
     const returnMap = {
@@ -1345,8 +1711,8 @@ Pages[PageType.NewIllust] = {
     processElementListCommon(lis);
     returnMap.controlElements = $(".pp-control");
     returnMap.loadingComplete = true;
-    DoLog(LogLevel.Info, "Process page elements complete.");
-    DoLog(LogLevel.Elements, returnMap);
+    DoLog(3 /* Info */, "Process page elements complete.");
+    DoLog(4 /* Elements */, returnMap);
     this.private.returnMap = returnMap;
     if (g_settings.fullSizeThumb) {
       if (!this.private.returnMap.loadingComplete) {
@@ -1370,10 +1736,10 @@ Pages[PageType.NewIllust] = {
     returnMap: null
   }
 };
-Pages[PageType.R18] = {
+Pages[7 /* R18 */] = {
   PageTypeString: "R18Page",
-  CheckUrl: function(url) {
-    return /^https?:\/\/www.pixiv.net\/cate_r18.php.*/.test(url);
+  CheckUrl: function(url2) {
+    return /^https?:\/\/www.pixiv.net\/cate_r18.php.*/.test(url2);
   },
   ProcessPageElements: function() {
   },
@@ -1381,10 +1747,10 @@ Pages[PageType.R18] = {
   },
   HasAutoLoad: false
 };
-Pages[PageType.BookMark] = {
+Pages[8 /* BookMark */] = {
   PageTypeString: "BookMarkPage",
-  CheckUrl: function(url) {
-    return /^https:\/\/www.pixiv.net\/bookmark.php\/?$/.test(url);
+  CheckUrl: function(url2) {
+    return /^https:\/\/www.pixiv.net\/bookmark.php\/?$/.test(url2);
   },
   ProcessPageElements: function() {
     const returnMap = {
@@ -1392,13 +1758,13 @@ Pages[PageType.BookMark] = {
       controlElements: []
     };
     const images = $(".image-item");
-    DoLog(LogLevel.Info, "Found images, length: " + images.length);
-    DoLog(LogLevel.Elements, images);
+    DoLog(3 /* Info */, "Found images, length: " + images.length);
+    DoLog(4 /* Elements */, images);
     images.each(function(i, e) {
       const _this = $(e);
       const work = _this.find("._work");
       if (work.length === 0) {
-        DoLog(LogLevel.Warning, "Can not found ._work, skip this.");
+        DoLog(2 /* Warning */, "Can not found ._work, skip this.");
         return;
       }
       const ctlAttrs = {
@@ -1408,14 +1774,14 @@ Pages[PageType.BookMark] = {
       };
       const href = work.attr("href");
       if (href == null || href === "") {
-        DoLog(LogLevel.Warning, "Can not found illust id, skip this.");
+        DoLog(2 /* Warning */, "Can not found illust id, skip this.");
         return;
       }
       const matched = href.match(/artworks\/(\d+)/);
       if (matched) {
         ctlAttrs.illustId = matched[1];
       } else {
-        DoLog(LogLevel.Warning, "Can not found illust id, skip this.");
+        DoLog(2 /* Warning */, "Can not found illust id, skip this.");
         return;
       }
       if (work.hasClass("multiple")) {
@@ -1433,8 +1799,8 @@ Pages[PageType.BookMark] = {
       returnMap.controlElements.push(control.get(0));
     });
     returnMap.loadingComplete = true;
-    DoLog(LogLevel.Info, "Process page elements complete.");
-    DoLog(LogLevel.Elements, returnMap);
+    DoLog(3 /* Info */, "Process page elements complete.");
+    DoLog(4 /* Elements */, returnMap);
     this.private.returnMap = returnMap;
     return returnMap;
   },
@@ -1452,10 +1818,10 @@ Pages[PageType.BookMark] = {
     returnMap: null
   }
 };
-Pages[PageType.Stacc] = {
+Pages[9 /* Stacc */] = {
   PageTypeString: "StaccPage",
-  CheckUrl: function(url) {
-    return /^https:\/\/www.pixiv.net\/stacc.*/.test(url);
+  CheckUrl: function(url2) {
+    return /^https:\/\/www.pixiv.net\/stacc.*/.test(url2);
   },
   ProcessPageElements: function() {
     const returnMap = {
@@ -1463,8 +1829,8 @@ Pages[PageType.Stacc] = {
       controlElements: []
     };
     const works = $("._work");
-    DoLog(LogLevel.Info, "Found .work, length: " + works.length);
-    DoLog(LogLevel.Elements, works);
+    DoLog(3 /* Info */, "Found .work, length: " + works.length);
+    DoLog(4 /* Elements */, works);
     works.each(function(i, e) {
       const _this = $(e);
       const ctlAttrs = {
@@ -1498,8 +1864,8 @@ Pages[PageType.Stacc] = {
       returnMap.controlElements.push(e);
     });
     returnMap.loadingComplete = true;
-    DoLog(LogLevel.Info, "Process page elements complete.");
-    DoLog(LogLevel.Elements, returnMap);
+    DoLog(3 /* Info */, "Process page elements complete.");
+    DoLog(4 /* Elements */, returnMap);
     this.private.returnMap = returnMap;
     return returnMap;
   },
@@ -1517,10 +1883,10 @@ Pages[PageType.Stacc] = {
     returnMap: null
   }
 };
-Pages[PageType.Artwork] = {
+Pages[10 /* Artwork */] = {
   PageTypeString: "ArtworkPage",
-  CheckUrl: function(url) {
-    return /^https:\/\/www.pixiv.net\/artworks\/.*/.test(url) || /^https:\/\/www.pixiv.net\/en\/artworks\/.*/.test(url);
+  CheckUrl: function(url2) {
+    return /^https:\/\/www.pixiv.net\/artworks\/.*/.test(url2) || /^https:\/\/www.pixiv.net\/en\/artworks\/.*/.test(url2);
   },
   ProcessPageElements: function() {
     const canvas = $("main").find("figure").find("canvas");
@@ -1536,8 +1902,8 @@ Pages[PageType.Artwork] = {
     processElementListCommon(lis);
     returnMap.controlElements = $(".pp-control");
     returnMap.loadingComplete = true;
-    DoLog(LogLevel.Info, "Process page elements complete.");
-    DoLog(LogLevel.Elements, returnMap);
+    DoLog(3 /* Info */, "Process page elements complete.");
+    DoLog(4 /* Elements */, returnMap);
     this.private.returnMap = returnMap;
     if (g_settings.fullSizeThumb) {
       if (!this.private.returnMap.loadingComplete) {
@@ -1595,22 +1961,22 @@ Pages[PageType.Artwork] = {
       }).mouseleave(function() {
         $(this).css("opacity", "0.4");
       }).click(function() {
-        let illustId = "";
+        let illustId2 = "";
         const matched = location.href.match(/artworks\/(\d+)/);
         if (matched) {
-          illustId = matched[1];
-          DoLog(LogLevel.Info, "IllustId=" + illustId);
+          illustId2 = matched[1];
+          DoLog(3 /* Info */, "IllustId=" + illustId2);
         } else {
-          DoLog(LogLevel.Error, "Can not found illust id!");
+          DoLog(1 /* Error */, "Can not found illust id!");
           return;
         }
-        $.ajax(g_getUgoiraUrl.replace("#id#", illustId), {
+        $.ajax(g_getUgoiraUrl.replace("#id#", illustId2), {
           method: "GET",
           success: function(json) {
-            DoLog(LogLevel.Elements, json);
+            DoLog(4 /* Elements */, json);
             if (json.error == true) {
               DoLog(
-                LogLevel.Error,
+                1 /* Error */,
                 "Server response an error: " + json.message
               );
               return;
@@ -1619,7 +1985,7 @@ Pages[PageType.Artwork] = {
             newWindow.location = json.body.originalSrc;
           },
           error: function() {
-            DoLog(LogLevel.Error, "Request zip file failed!");
+            DoLog(1 /* Error */, "Request zip file failed!");
           }
         });
       });
@@ -1637,10 +2003,10 @@ Pages[PageType.Artwork] = {
     returnMap: null
   }
 };
-Pages[PageType.NovelSearch] = {
+Pages[11 /* NovelSearch */] = {
   PageTypeString: "NovelSearchPage",
-  CheckUrl: function(url) {
-    return /^https:\/\/www.pixiv.net\/tags\/.*\/novels/.test(url) || /^https:\/\/www.pixiv.net\/en\/tags\/.*\/novels/.test(url);
+  CheckUrl: function(url2) {
+    return /^https:\/\/www.pixiv.net\/tags\/.*\/novels/.test(url2) || /^https:\/\/www.pixiv.net\/en\/tags\/.*\/novels/.test(url2);
   },
   ProcessPageElements: function() {
     const returnMap = {
@@ -1671,10 +2037,10 @@ Pages[PageType.NovelSearch] = {
     returnMap: null
   }
 };
-Pages[PageType.SearchTop] = {
+Pages[12 /* SearchTop */] = {
   PageTypeString: "SearchTopPage",
-  CheckUrl: function(url) {
-    return /^https?:\/\/www.pixiv.net(\/en)?\/tags\/[^/*]/.test(url);
+  CheckUrl: function(url2) {
+    return /^https?:\/\/www.pixiv.net(\/en)?\/tags\/[^/*]/.test(url2);
   },
   ProcessPageElements: function() {
     const returnMap = {
@@ -1682,8 +2048,8 @@ Pages[PageType.SearchTop] = {
       controlElements: []
     };
     const sections = $("section");
-    DoLog(LogLevel.Info, "Page has " + sections.length + " <section>.");
-    DoLog(LogLevel.Elements, sections);
+    DoLog(3 /* Info */, "Page has " + sections.length + " <section>.");
+    DoLog(4 /* Elements */, sections);
     let premiumSectionIndex = -1;
     let resultSectionIndex = 0;
     if (sections.length == 0) {
@@ -1721,8 +2087,8 @@ Pages[PageType.SearchTop] = {
     }
     returnMap.loadingComplete = true;
     this.private.imageListConrainer = ul.get(0);
-    DoLog(LogLevel.Info, "Process page elements complete.");
-    DoLog(LogLevel.Elements, returnMap);
+    DoLog(3 /* Info */, "Process page elements complete.");
+    DoLog(4 /* Elements */, returnMap);
     this.private.returnMap = returnMap;
     return returnMap;
   },
@@ -1752,605 +2118,15 @@ Pages[PageType.SearchTop] = {
     returnMap: null
   }
 };
-function preventDefault(e) {
-  e.preventDefault();
-}
-var wheelOpt = { passive: false };
 var wheelEvent = "onwheel" in document.createElement("div") ? "wheel" : "mousewheel";
-function disableScroll() {
-  window.addEventListener(wheelEvent, preventDefault, wheelOpt);
-}
-function enableScroll() {
-  window.removeEventListener(wheelEvent, preventDefault, wheelOpt);
-}
-var autoLoadInterval = null;
-function PixivPreview() {
-  let previewTargetIllustId = "";
-  function createPlayer(opts) {
-    const canvas = document.createElement("canvas");
-    const options = {
-      canvas,
-      chunkSize: 3e5,
-      loop: true,
-      autoStart: true,
-      debug: false
-    };
-    if (opts) {
-      for (const name in opts) {
-        options[name] = opts[name];
-      }
-    }
-    const p = new ZipImagePlayer(options);
-    p.canvas = canvas;
-    return p;
-  }
-  function ActivePreview() {
-    const returnMap = Pages[g_pageType].GetProcessedPageElements();
-    if (!returnMap.loadingComplete) {
-      DoLog(LogLevel.Error, "Page not load, should not call Preview!");
-      return;
-    }
-    function togglePreviewDiv() {
-      const div = $(".pp-main");
-      if (div.length == 0) {
-        return;
-      }
-      if (div.css("display") == "none") {
-        iLog.i("Show main.");
-        AdjustDivPosition();
-        div.show();
-        if (g_settings.previewFullScreen) {
-          disableScroll();
-        }
-      } else {
-        iLog.i("Hide main.");
-        div.hide();
-        enableScroll();
-      }
-    }
-    function showPreviewDiv() {
-      const div = $(".pp-main");
-      if (div.length == 0) {
-        return;
-      }
-      if (div.css("display") == "none") {
-        iLog.i("Show main.");
-        AdjustDivPosition();
-        div.show();
-        if (g_settings.previewFullScreen) {
-          disableScroll();
-        }
-      }
-    }
-    if (g_settings.previewByKey) {
-      $(document).unbind("keydown");
-      $(document).keydown((e) => {
-        if (e.keyCode != g_settings.previewKey) {
-          return;
-        }
-        togglePreviewDiv();
-      });
-    }
-    $(returnMap.controlElements).mouseenter(function(e) {
-      if (e.ctrlKey) {
-        return;
-      }
-      const startTime = (/* @__PURE__ */ new Date()).getTime();
-      const delay = parseInt(
-        g_settings.previewDelay == null ? g_defaultSettings.previewDelay : g_settings.previewDelay
-      );
-      const _this = $(this);
-      const illustId = _this.attr("illustId");
-      const illustType = _this.attr("illustType");
-      const pageCount = _this.attr("pageCount");
-      if (illustId == null) {
-        DoLog(
-          LogLevel.Error,
-          "Can not found illustId in this element's attrbutes."
-        );
-        return;
-      }
-      if (illustType == null) {
-        DoLog(
-          LogLevel.Error,
-          "Can not found illustType in this element's attrbutes."
-        );
-        return;
-      }
-      if (pageCount == null) {
-        DoLog(
-          LogLevel.Error,
-          "Can not found pageCount in this element's attrbutes."
-        );
-        return;
-      }
-      previewTargetIllustId = illustId;
-      if (Number(illustType) === 2 && !g_settings.enableAnimePreview) {
-        iLog.i("Anime preview disabled.");
-        return;
-      }
-      g_mousePos = { x: e.pageX, y: e.pageY };
-      const previewDiv = $(document.createElement("div")).addClass("pp-main").attr("illustId", illustId).css({
-        position: "absolute",
-        "z-index": "999999",
-        left: g_mousePos.x + "px",
-        top: g_mousePos.y + "px",
-        "border-style": "solid",
-        "border-color": "#6495ed",
-        "border-width": "2px",
-        "border-radius": "20px",
-        width: "48px",
-        height: "48px",
-        "background-image": "url(https://pp-1252089172.cos.ap-chengdu.myqcloud.com/transparent.png)",
-        display: "none",
-        "text-align": "center"
-      });
-      $(".pp-main").remove();
-      $("body").append(previewDiv);
-      if (g_settings.previewFullScreen) {
-        previewDiv.css({ background: "#ffffff80", position: "fixed" });
-        previewDiv.click((e2) => {
-          if ($(e2.target).hasClass("pp-image")) {
-            return;
-          }
-          togglePreviewDiv();
-        });
-      }
-      if (!g_settings.previewByKey) {
-        const waitTime = delay - ((/* @__PURE__ */ new Date()).getTime() - startTime);
-        if (waitTime > 0) {
-          setTimeout(showPreviewDiv, waitTime);
-        } else {
-          showPreviewDiv();
-        }
-      }
-      const loadingImg = $(new Image()).addClass("pp-loading").attr("src", g_loadingImage).css({
-        position: "absolute",
-        "border-radius": "20px",
-        left: "0px",
-        top: "0px"
-      });
-      previewDiv.append(loadingImg);
-      const loadImg = $(new Image()).addClass("pp-image").css({
-        height: "0px",
-        width: "0px",
-        display: "none",
-        "border-radius": "20px"
-      });
-      previewDiv.append(loadImg);
-      const originIcon = $(new Image()).addClass("pp-original").attr(
-        "src",
-        "https://source.pixiv.net/www/images/pixivcomic-favorite.png"
-      ).css({
-        position: "absolute",
-        bottom: "5px",
-        right: "5px",
-        display: "none"
-      });
-      previewDiv.append(originIcon);
-      originIcon.click(function() {
-        window.open($(previewDiv).children("img")[1].src);
-      });
-      const pageCountHTML = '<div class="pp-pageCount" style="display: flex;-webkit-box-align: center;align-items: center;box-sizing: border-box;margin-left: auto;height: 20px;color: rgb(255, 255, 255);font-size: 10px;line-height: 12px;font-weight: bold;flex: 0 0 auto;padding: 4px 6px;background: rgba(0, 0, 0, 0.32);border-radius: 10px;margin-top:5px;margin-right:5px;"><svg viewBox="0 0 9 10" width="9" height="10" style="stroke: none;line-height: 0;font-size: 0px;fill: currentcolor;"><path d="M8,3 C8.55228475,3 9,3.44771525 9,4 L9,9 C9,9.55228475 8.55228475,10 8,10 L3,10 C2.44771525,10 2,9.55228475 2,9 L6,9 C7.1045695,9 8,8.1045695 8,7 L8,3 Z M1,1 L6,1 C6.55228475,1 7,1.44771525 7,2 L7,7 C7,7.55228475 6.55228475,8 6,8 L1,8 C0.44771525,8 0,7.55228475 0,7 L0,2 C0,1.44771525 0.44771525,1 1,1 Z"></path></svg><span style="margin-left:2px;" class="pp-page">0/0</span></div>';
-      const pageCountDiv = $(pageCountHTML).css({
-        position: "absolute",
-        top: "0px",
-        display: "none",
-        right: "0px"
-      });
-      previewDiv.append(pageCountDiv);
-      $(".pp-main").mouseleave(function(e2) {
-        if (g_settings.previewFullScreen) {
-          return;
-        }
-        $(this).remove();
-      });
-      let url = "";
-      if (true) {
-        if (illustType == 2) {
-          url = g_getUgoiraUrl.replace("#id#", illustId);
-        } else {
-          url = g_getArtworkUrl.replace("#id#", illustId);
-        }
-        $.ajax(url, {
-          method: "GET",
-          success: function(json) {
-            DoLog(LogLevel.Info, "Got artwork urls:");
-            DoLog(LogLevel.Elements, json);
-            if (json.error === true) {
-              DoLog(
-                LogLevel.Error,
-                "Server responsed an error: " + json.message
-              );
-              return;
-            }
-            if (illustId != previewTargetIllustId) {
-              DoLog(LogLevel.Info, "Drop this preview request.");
-              return;
-            }
-            if (illustType == 2) {
-              const regular = json.body.src;
-              const original = json.body.originalSrc;
-              const mime = json.body.mime_type;
-              const frames = json.body.frames;
-              DoLog(LogLevel.Info, "Process urls complete.");
-              DoLog(LogLevel.Info, regular);
-              DoLog(LogLevel.Info, original);
-              ViewUgoira(
-                regular,
-                original,
-                mime,
-                frames,
-                g_settings.original,
-                illustId
-              );
-            } else {
-              const regular = [];
-              const original = [];
-              for (let i = 0; i < json.body.length; i++) {
-                regular.push(json.body[i].urls.regular);
-                original.push(json.body[i].urls.original);
-              }
-              DoLog(LogLevel.Info, "Process urls complete.");
-              DoLog(LogLevel.Elements, regular);
-              DoLog(LogLevel.Elements, original);
-              ViewImages(regular, 0, original, g_settings.original, illustId);
-            }
-          },
-          error: function(data) {
-            DoLog(LogLevel.Error, "Request image urls failed!");
-            if (data) {
-              DoLog(LogLevel.Elements, data);
-            }
-          }
-        });
-      }
-    });
-    $(returnMap.controlElements).mouseleave(function(e) {
-      if (g_settings.previewByKey) {
-        return;
-      }
-      const _this = $(this);
-      const illustId = _this.attr("illustId");
-      const illustType = _this.attr("illustType");
-      const pageCount = _this.attr("pageCount");
-      let moveToElement = $(e.relatedTarget);
-      let isMoveToPreviewElement = false;
-      while (true) {
-        if (moveToElement.hasClass("pp-main") && moveToElement.attr("illustId") == illustId) {
-          isMoveToPreviewElement = true;
-        }
-        if (moveToElement.parent().length < 1) {
-          break;
-        }
-        moveToElement = moveToElement.parent();
-      }
-      if (!isMoveToPreviewElement) {
-        $(".pp-main").remove();
-      }
-    });
-    $(returnMap.controlElements).mousemove(function(e) {
-      if (e.ctrlKey || e.buttons & 4) {
-        return;
-      }
-      g_mousePos.x = e.pageX;
-      g_mousePos.y = e.pageY;
-      if (!(g_settings.previewByKey && $(".pp-main").css("display") != "none")) {
-        AdjustDivPosition();
-      }
-    });
-    if (Pages[g_pageType].HasAutoLoad && autoLoadInterval == null) {
-      autoLoadInterval = setInterval(ProcessAutoLoad, 1e3);
-      DoLog(LogLevel.Info, "Auto load interval set.");
-    }
-    unsafeWindow.PreviewCallback = PreviewCallback;
-    DoLog(LogLevel.Info, "Callback function was inserted.");
-    DoLog(LogLevel.Elements, unsafeWindow.PreviewCallback);
-    DoLog(LogLevel.Info, "Preview enable succeed!");
-  }
-  function DeactivePreview() {
-    const returnMap = Pages[g_pageType].GetProcessedPageElements();
-    if (!returnMap.loadingComplete) {
-      DoLog(LogLevel.Error, "Page not load, should not call Preview!");
-      return;
-    }
-    $(returnMap.controlElements).unbind("mouseenter").unbind("mouseleave").unbind("mousemove");
-    if (autoLoadInterval) {
-      clearInterval(autoLoadInterval);
-      autoLoadInterval = null;
-    }
-    DoLog(LogLevel.Info, "Preview disable succeed!");
-  }
-  function PreviewCallback(canvasWidth, canvasHeight) {
-    DoLog(
-      LogLevel.Info,
-      "iframe callback, width: " + canvasWidth + ", height: " + canvasHeight
-    );
-    const size = AdjustDivPosition();
-    $(".pp-loading").hide();
-    $(".pp-iframe").css({ width: size.width, height: size.height }).show();
-  }
-  function AdjustDivPosition() {
-    const fromMouseToDiv = 30;
-    const screenWidth = document.documentElement.clientWidth;
-    const screenHeight = document.documentElement.clientHeight;
-    let left = 0;
-    let top = document.body.scrollTop + document.documentElement.scrollTop;
-    let width = 0, height = 0;
-    const ugoira = $(".pp-main").find("canvas").length > 0;
-    if (ugoira) {
-      width = $(".pp-image").get(0) == null ? 0 : $(".pp-image").get(0).width;
-      height = $(".pp-image").get(0) == null ? 0 : $(".pp-image").get(0).height;
-    } else {
-      $(".pp-image").css({ width: "", height: "" });
-      width = $(".pp-image").get(0) == null ? 0 : $(".pp-image").get(0).width;
-      height = $(".pp-image").get(0) == null ? 0 : $(".pp-image").get(0).height;
-    }
-    let newWidth = 48, newHeight = 48;
-    if (g_settings.previewFullScreen) {
-      newWidth = screenWidth;
-      newHeight = height / width * newWidth;
-      if (newHeight > screenHeight) {
-        newHeight = screenHeight;
-        newWidth = newHeight / height * width;
-      }
-      newHeight -= 5;
-      newWidth -= 5;
-      $(".pp-image").css({ height: newHeight + "px", width: newWidth + "px" });
-      $(".pp-main").css({
-        left: "0px",
-        top: "0px",
-        width: screenWidth - 5,
-        height: screenHeight - 5
-      });
-      return {
-        width: newWidth,
-        height: newHeight
-      };
-    }
-    const isShowOnLeft = g_mousePos.x > screenWidth / 2;
-    if (width > 0 && height > 0) {
-      newWidth = isShowOnLeft ? g_mousePos.x - fromMouseToDiv : screenWidth - g_mousePos.x - fromMouseToDiv;
-      newHeight = height / width * newWidth;
-      if (newHeight > screenHeight) {
-        newHeight = screenHeight;
-        newWidth = newHeight / height * width;
-      }
-      newWidth -= 5;
-      newHeight -= 5;
-      $(".pp-image").css({ height: newHeight + "px", width: newWidth + "px" });
-      $(".pp-loading").css({
-        left: newWidth / 2 - 24 + "px",
-        top: newHeight / 2 - 24 + "px"
-      });
-    }
-    if (top + newHeight <= g_mousePos.y) {
-      top = g_mousePos.y - newHeight - fromMouseToDiv;
-    }
-    left = isShowOnLeft ? g_mousePos.x - newWidth - fromMouseToDiv : g_mousePos.x + fromMouseToDiv;
-    $(".pp-main").css({
-      left: left + "px",
-      top: top + "px",
-      width: newWidth,
-      height: newHeight
-    });
-    return {
-      width: newWidth,
-      height: newHeight
-    };
-  }
-  let displayTargetIllustId = "";
-  function ViewImages(regular, index, original, isShowOriginal, illustId) {
-    displayTargetIllustId = illustId;
-    if (!regular || regular.length === 0) {
-      DoLog(LogLevel.Error, "Regular url array is null, can not view images!");
-      return;
-    }
-    if (index == null || index < 0 || index >= regular.length) {
-      DoLog(
-        LogLevel.Error,
-        "Index(" + index + ") out of range, can not view images!"
-      );
-      return;
-    }
-    if (original == null || original.length === 0) {
-      DoLog(
-        LogLevel.Warning,
-        "Original array is null, replace it with regular array."
-      );
-      original = regular;
-    }
-    if (original.length < regular) {
-      DoLog(
-        LogLevel.Warning,
-        "Original array's length is less than regular array, replace it with regular array."
-      );
-      original = regular;
-    }
-    if (isShowOriginal == null) {
-      isShowOriginal = false;
-    }
-    if (original.length > 1) {
-      $(".pp-page").text(index + 1 + "/" + regular.length);
-      $(".pp-pageCount").show();
-    }
-    if (isShowOriginal) {
-      $(".pp-image").addClass("original");
-    } else {
-      $(".pp-image").removeClass("original");
-    }
-    g_settings.original = isShowOriginal ? 1 : 0;
-    $(".pp-original, .pp-pageCount").hide();
-    if ($(".pp-image").attr("index") == null || $(".pp-image").attr("pageCount") != regular.length) {
-      $(".pp-image").attr("pageCount", regular.length);
-      $(".pp-image").on("click", function(ev) {
-        const _this = $(this);
-        let isOriginal = _this.hasClass("original");
-        let index2 = _this.attr("index");
-        if (index2 == null) {
-          index2 = 0;
-        } else {
-          index2 = parseInt(index2);
-        }
-        if (ev.ctrlKey) {
-          isOriginal = !isOriginal;
-          ViewImages(regular, index2, original, isOriginal, illustId);
-        } else if (ev.shiftKey) {
-          window.open(original[index2]);
-        } else {
-          if (regular.length == 1) {
-            return;
-          }
-          if (++index2 >= regular.length) {
-            index2 = 0;
-          }
-          ViewImages(regular, index2, original, isOriginal, illustId);
-          for (let i = index2 + 1; i < regular.length && i <= index2 + 3; i++) {
-            const image = new Image();
-            image.src = isOriginal ? original[i] : regular[i];
-          }
-        }
-      });
-      $(".pp-image").bind("mousewheel", function(ev) {
-        const _this = $(this);
-        const isOriginal = _this.hasClass("original");
-        let index2 = _this.attr("index");
-        if (index2 == null) {
-          index2 = 0;
-        } else {
-          index2 = parseInt(index2);
-        }
-        if (regular.length == 1) {
-          return;
-        }
-        if (ev.originalEvent.wheelDelta < 0) {
-          if (++index2 >= regular.length) {
-            index2 = 0;
-          }
-        } else {
-          if (--index2 < 0) {
-            index2 = regular.length - 1;
-          }
-        }
-        ViewImages(regular, index2, original, isOriginal, illustId);
-        for (let i = index2 + 1; i < regular.length && i <= index2 + 3; i++) {
-          const image = new Image();
-          image.src = isOriginal ? original[i] : regular[i];
-        }
-      });
-      if (!g_settings.previewFullScreen) {
-        $(".pp-image").mouseenter(function() {
-          disableScroll();
-        }).mouseleave(function() {
-          enableScroll();
-        });
-      }
-      $(".pp-image").on("load", function() {
-        if (displayTargetIllustId != previewTargetIllustId) {
-          DoLog(LogLevel.Info, "(2)Drop this preview request.");
-          return;
-        }
-        const _this = $(this);
-        const size = AdjustDivPosition();
-        const isShowOriginal2 = _this.hasClass("original");
-        $(".pp-loading").css("display", "none");
-        $(".pp-image").css("display", "");
-        if (regular.length > 1) {
-          $(".pp-pageCount").show();
-        }
-        if (isShowOriginal2) {
-          $(".pp-original").show();
-        }
-        for (let i = index + 1; i < regular.length && i <= index + 3; i++) {
-          const image = new Image();
-          image.src = isShowOriginal2 ? original[i] : regular[i];
-        }
-      }).on("error", function() {
-        DoLog(LogLevel.Error, "Load image failed!");
-      });
-    }
-    $(".pp-image").attr("src", isShowOriginal ? original[index] : regular[index]).attr("index", index);
-  }
-  let g_ugoriaPlayer;
-  function ViewUgoira(regular, original, mime, frames, isShowOriginal, illustId) {
-    displayTargetIllustId = illustId;
-    if (isShowOriginal == null) {
-      isShowOriginal = false;
-    }
-    g_settings.original = isShowOriginal ? 1 : 0;
-    if (!g_settings.previewFullScreen) {
-      $(".pp-image").mouseenter(function() {
-        disableScroll();
-      }).mouseleave(function() {
-        enableScroll();
-      });
-    }
-    if (g_ugoriaPlayer) {
-      g_ugoriaPlayer.stop();
-    }
-    g_ugoriaPlayer = createPlayer({
-      source: regular,
-      metadata: {
-        mime_type: mime,
-        frames
-      }
-    });
-    $(g_ugoriaPlayer.canvas).mouseenter(function() {
-      disableScroll();
-    }).mouseleave(function() {
-      enableScroll();
-    });
-    $(g_ugoriaPlayer).on("frameLoaded", function(ev, frame) {
-      if (displayTargetIllustId != previewTargetIllustId) {
-        return;
-      }
-      if (frame != 0) {
-        return;
-      }
-      const img = $(".pp-image");
-      img.after(g_ugoriaPlayer.canvas);
-      img.remove();
-      const canvas = $(g_ugoriaPlayer.canvas);
-      canvas.addClass("pp-image");
-      $(".pp-loading").css("display", "none");
-      const w = ev.currentTarget._frameImages[0].width;
-      const h = ev.currentTarget._frameImages[0].height;
-      canvas.attr({ width: w, height: h }).css({ "border-radius": "20px" });
-      canvas.attr({ originWidth: w, originHeight: h });
-      AdjustDivPosition();
-    });
-  }
-  function ProcessAutoLoad() {
-    if (Pages[g_pageType].GetProcessedPageElements() == null) {
-      DoLog(LogLevel.Error, "Call ProcessPageElements first!");
-      return;
-    }
-    const oldReturnMap = Pages[g_pageType].GetProcessedPageElements();
-    const newReturnMap = Pages[g_pageType].ProcessPageElements();
-    if (newReturnMap.loadingComplete) {
-      if (oldReturnMap.controlElements.length != newReturnMap.controlElements.length || newReturnMap.forceUpdate) {
-        DoLog(
-          LogLevel.Info,
-          "Page loaded " + (newReturnMap.controlElements.length - oldReturnMap.controlElements.length) + " new work(s)."
-        );
-        if (g_settings.linkBlank) {
-          $(newReturnMap.controlElements).find("a").attr("target", "_blank");
-        }
-        SetTargetBlank(newReturnMap);
-        DeactivePreview();
-        ActivePreview();
-        return;
-      } else if (oldReturnMap.controlElements.length > newReturnMap.controlElements.length) {
-        DoLog(LogLevel.Warning, "works become less?");
-        Pages[g_pageType].private.returnMap = oldReturnMap;
-        return;
-      }
-    }
-    DoLog(LogLevel.Info, "Page not change.");
-  }
-  ActivePreview();
-}
+var autoLoadInterval;
 var imageElementTemplate = null;
+var GM__xmlHttpRequest;
+if ("undefined" != typeof GM_xmlhttpRequest) {
+  GM__xmlHttpRequest = GM_xmlhttpRequest;
+} else {
+  GM__xmlHttpRequest = GM.xmlHttpRequest;
+}
 function PixivSK(callback) {
   if (g_settings.pageCount < 1 || g_settings.favFilter < 0) {
     g_settings.pageCount = 1;
@@ -2361,37 +2137,37 @@ function PixivSK(callback) {
   let currentPage = 0;
   let works = [];
   let worksCount = 0;
-  if (g_pageType != PageType.Search) {
+  if (g_pageType != 0 /* Search */) {
     return;
   }
   const getWorks = function(onloadCallback) {
     $("#progress").text(
-      Texts[g_language].sort_getWorks.replace("%1", currentGettingPageCount + 1).replace("%2", g_settings.pageCount)
+      i18n_default[g_language].sort_getWorks.replace("%1", currentGettingPageCount + 1).replace("%2", g_settings.pageCount)
     );
-    let url = currentUrl.replace(/p=\d+/, "p=" + currentPage);
+    let url2 = currentUrl.replace(/p=\d+/, "p=" + currentPage);
     if (location.href.indexOf("?") != -1) {
       let param = location.href.split("?")[1];
       param = param.replace(/^p=\d+/, "");
       param = param.replace(/&p=\d+/, "");
-      url += "&" + param;
+      url2 += "&" + param;
     }
-    if (url.indexOf("order=") == -1) {
-      url += "&order=date_d";
+    if (url2.indexOf("order=") == -1) {
+      url2 += "&order=date_d";
     }
-    if (url.indexOf("mode=") == -1) {
-      url += "&mode=all";
+    if (url2.indexOf("mode=") == -1) {
+      url2 += "&mode=all";
     }
-    if (url.indexOf("s_mode=") == -1) {
-      url += "&s_mode=s_tag_full";
+    if (url2.indexOf("s_mode=") == -1) {
+      url2 += "&s_mode=s_tag_full";
     }
-    DoLog(LogLevel.Info, "getWorks url: " + url);
+    DoLog(3 /* Info */, "getWorks url: " + url2);
     const req = new XMLHttpRequest();
-    req.open("GET", url, true);
+    req.open("GET", url2, true);
     req.onload = function(event) {
       onloadCallback(req);
     };
     req.onerror = function(event) {
-      DoLog(LogLevel.Error, "Request search page error!");
+      DoLog(1 /* Error */, "Request search page error!");
     };
     req.send(null);
   };
@@ -2408,7 +2184,7 @@ function PixivSK(callback) {
           async: true,
           success: function(data) {
             if (data == null || data.error) {
-              DoLog(LogLevel.Error, "Following response contains an error.");
+              DoLog(1 /* Error */, "Following response contains an error.");
               resolve([]);
               return;
             }
@@ -2427,7 +2203,7 @@ function PixivSK(callback) {
             );
           },
           error: function() {
-            DoLog(LogLevel.Error, "Request following failed.");
+            DoLog(1 /* Error */, "Request following failed.");
             resolve([]);
           }
         }
@@ -2440,18 +2216,18 @@ function PixivSK(callback) {
       try {
         user_id = dataLayer[0].user_id;
       } catch (ex) {
-        DoLog(LogLevel.Error, "Get user id failed.");
+        DoLog(1 /* Error */, "Get user id failed.");
         resolve([]);
         return;
       }
-      $("#progress").text(Texts[g_language].sort_getPublicFollowing);
+      $("#progress").text(i18n_default[g_language].sort_getPublicFollowing);
       const following = GetLocalStorage("followingOfUid-" + user_id) || GetCookie("followingOfUid-" + user_id);
       if (following != null && following != "null") {
         resolve(following);
         return;
       }
       getFollowingOfType(user_id, "show").then(function(members) {
-        $("#progress").text(Texts[g_language].sort_getPrivateFollowing);
+        $("#progress").text(i18n_default[g_language].sort_getPrivateFollowing);
         getFollowingOfType(user_id, "hide").then(function(members2) {
           const following2 = members.concat(members2);
           SetLocalStorage("followingOfUid-" + user_id, following2);
@@ -2483,23 +2259,23 @@ function PixivSK(callback) {
           }
         });
         works = tempWorks;
-        DoLog(LogLevel.Info, hideWorkCount + " works were hide.");
-        DoLog(LogLevel.Elements, works);
+        DoLog(3 /* Info */, hideWorkCount + " works were hide.");
+        DoLog(4 /* Elements */, works);
         resolve();
       });
     });
   };
   const filterAndSort = function() {
     return new Promise(function(resolve, reject) {
-      DoLog(LogLevel.Info, "Start sort.");
-      DoLog(LogLevel.Elements, works);
-      let text = Texts[g_language].sort_filtering.replace(
+      DoLog(3 /* Info */, "Start sort.");
+      DoLog(4 /* Elements */, works);
+      let text = i18n_default[g_language].sort_filtering.replace(
         "%2",
         g_settings.favFilter
       );
       text = text.replace(
         "%1",
-        g_settings.hideFavorite ? Texts[g_language].sort_filteringHideFavorite : ""
+        g_settings.hideFavorite ? i18n_default[g_language].sort_filteringHideFavorite : ""
       );
       $("#progress").text(text);
       const tmp = [];
@@ -2534,51 +2310,51 @@ function PixivSK(callback) {
           }
           return 0;
         });
-        DoLog(LogLevel.Info, "Sort complete.");
-        DoLog(LogLevel.Elements, works);
+        DoLog(3 /* Info */, "Sort complete.");
+        DoLog(4 /* Elements */, works);
         resolve();
       });
     });
   };
   if (currentPage === 0) {
-    let url = location.href;
-    if (url.indexOf("&p=") == -1 && url.indexOf("?p=") == -1) {
-      DoLog(LogLevel.Warning, "Can not found page in url.");
-      if (url.indexOf("?") == -1) {
-        url += "?p=1";
-        DoLog(LogLevel.Info, 'Add "?p=1": ' + url);
+    let url2 = location.href;
+    if (url2.indexOf("&p=") == -1 && url2.indexOf("?p=") == -1) {
+      DoLog(2 /* Warning */, "Can not found page in url.");
+      if (url2.indexOf("?") == -1) {
+        url2 += "?p=1";
+        DoLog(3 /* Info */, 'Add "?p=1": ' + url2);
       } else {
-        url += "&p=1";
-        DoLog(LogLevel.Info, 'Add "&p=1": ' + url);
+        url2 += "&p=1";
+        DoLog(3 /* Info */, 'Add "&p=1": ' + url2);
       }
     }
-    const wordMatch = url.match(/\/tags\/([^/]*)\//);
+    const wordMatch = url2.match(/\/tags\/([^/]*)\//);
     let searchWord = "";
     if (wordMatch) {
-      DoLog(LogLevel.Info, "Search key word: " + searchWord);
+      DoLog(3 /* Info */, "Search key word: " + searchWord);
       searchWord = wordMatch[1];
     } else {
-      DoLog(LogLevel.Error, "Can not found search key word!");
+      DoLog(1 /* Error */, "Can not found search key word!");
       return;
     }
-    const page = url.match(/p=(\d*)/)[1];
+    const page = url2.match(/p=(\d*)/)[1];
     currentPage = parseInt(page);
-    DoLog(LogLevel.Info, "Current page: " + currentPage);
-    const type = url.match(/tags\/.*\/(.*)[?$]/)[1];
+    DoLog(3 /* Info */, "Current page: " + currentPage);
+    const type = url2.match(/tags\/.*\/(.*)[?$]/)[1];
     currentUrl += type + "/";
     currentUrl += searchWord + "?word=" + searchWord + "&p=" + currentPage;
-    DoLog(LogLevel.Info, "Current url: " + currentUrl);
+    DoLog(3 /* Info */, "Current url: " + currentUrl);
   } else {
-    DoLog(LogLevel.Error, "???");
+    DoLog(1 /* Error */, "???");
   }
-  const imageContainer = Pages[PageType.Search].GetImageListContainer();
+  const imageContainer = Pages[0 /* Search */].GetImageListContainer();
   $(imageContainer).hide().before(
     '<div id="loading" style="width:100%;text-align:center;"><img src="' + g_loadingImage + '" /><p id="progress" style="text-align: center;font-size: large;font-weight: bold;padding-top: 10px;">0%</p></div>'
   );
   if (true) {
-    const pageSelectorDiv = Pages[PageType.Search].GetPageSelector();
+    const pageSelectorDiv = Pages[0 /* Search */].GetPageSelector();
     if (pageSelectorDiv == null) {
-      DoLog(LogLevel.Error, "Can not found page selector!");
+      DoLog(1 /* Error */, "Can not found page selector!");
       return;
     }
     if ($(pageSelectorDiv).find("a").length > 2) {
@@ -2614,8 +2390,8 @@ function PixivSK(callback) {
         /p=\d+/,
         "p=" + (currentPage + g_settings.pageCount)
       );
-      DoLog(LogLevel.Info, "Previous page url: " + prevPageUrl);
-      DoLog(LogLevel.Info, "Next page url: " + nextPageUrl);
+      DoLog(3 /* Info */, "Previous page url: " + prevPageUrl);
+      DoLog(3 /* Info */, "Next page url: " + nextPageUrl);
       const prevButton = $(pageSelectorDiv).find("a:first");
       prevButton.before(prevButton.clone());
       prevButton.remove();
@@ -2645,30 +2421,30 @@ function PixivSK(callback) {
               no_artworks_found = true;
             }
           } else {
-            DoLog(LogLevel.Error, "ajax error!");
+            DoLog(1 /* Error */, "ajax error!");
             return;
           }
         } else {
-          DoLog(LogLevel.Error, 'Key "error" not found!');
+          DoLog(1 /* Error */, 'Key "error" not found!');
           return;
         }
       } catch (e) {
-        DoLog(LogLevel.Error, "A invalid json string!");
-        DoLog(LogLevel.Info, req.responseText);
+        DoLog(1 /* Error */, "A invalid json string!");
+        DoLog(3 /* Info */, req.responseText);
       }
       currentPage++;
       currentGettingPageCount++;
       if (no_artworks_found) {
         iLog.w(
-          LogLevel.Warning,
+          2 /* Warning */,
           "No artworks found, ignore " + (g_settings.pageCount - currentGettingPageCount) + " pages."
         );
         currentPage += g_settings.pageCount - currentGettingPageCount;
         currentGettingPageCount = g_settings.pageCount;
       }
       if (currentGettingPageCount == g_settings.pageCount) {
-        DoLog(LogLevel.Info, "Load complete, start to load bookmark count.");
-        DoLog(LogLevel.Elements, works);
+        DoLog(3 /* Info */, "Load complete, start to load bookmark count.");
+        DoLog(4 /* Elements */, works);
         const tempWorks = [];
         const workIdsSet = /* @__PURE__ */ new Set();
         for (let i = 0; i < works.length; i++) {
@@ -2681,8 +2457,8 @@ function PixivSK(callback) {
         }
         works = tempWorks;
         worksCount = works.length;
-        DoLog(LogLevel.Info, "Clear ad container complete.");
-        DoLog(LogLevel.Elements, works);
+        DoLog(3 /* Info */, "Clear ad container complete.");
+        DoLog(4 /* Elements */, works);
         GetBookmarkCount(0);
       } else {
         getWorks(onloadCallback);
@@ -2699,31 +2475,31 @@ function PixivSK(callback) {
       try {
         json = JSON.parse(event.responseText);
       } catch (e) {
-        DoLog(LogLevel.Error, "Parse json failed!");
+        DoLog(1 /* Error */, "Parse json failed!");
         DoLog(LogLevel.Element, e);
         return;
       }
       if (json) {
-        let illustId = "";
+        let illustId2 = "";
         const illustIdMatched = event.finalUrl.match(/illust_id=(\d+)/);
         if (illustIdMatched) {
-          illustId = illustIdMatched[1];
+          illustId2 = illustIdMatched[1];
         } else {
           DoLog(
-            LogLevel.Error,
+            1 /* Error */,
             "Can not get illust id from url: " + event.finalUrl
           );
           return;
         }
         let indexOfThisRequest = -1;
         for (let j = 0; j < g_maxXhr; j++) {
-          if (xhrs[j].illustId == illustId) {
+          if (xhrs[j].illustId == illustId2) {
             indexOfThisRequest = j;
             break;
           }
         }
         if (indexOfThisRequest == -1) {
-          DoLog(LogLevel.Error, "This url not match any request!");
+          DoLog(1 /* Error */, "This url not match any request!");
           return;
         }
         xhrs[indexOfThisRequest].complete = true;
@@ -2731,11 +2507,11 @@ function PixivSK(callback) {
           const bookmarkCount = json.body.illust_details.bookmark_user_total;
           works[currentRequestGroupMinimumIndex + indexOfThisRequest].bookmarkCount = parseInt(bookmarkCount);
           DoLog(
-            LogLevel.Info,
-            "IllustId: " + illustId + ", bookmarkCount: " + bookmarkCount
+            3 /* Info */,
+            "IllustId: " + illustId2 + ", bookmarkCount: " + bookmarkCount
           );
         } else {
-          DoLog(LogLevel.Error, "Some error occured: " + json.message);
+          DoLog(1 /* Error */, "Some error occured: " + json.message);
         }
         let completeCount = 0;
         let completeReally = 0;
@@ -2748,7 +2524,7 @@ function PixivSK(callback) {
           }
         }
         $("#loading").find("#progress").text(
-          Texts[g_language].sort_getBookmarkCount.replace("%1", currentRequestGroupMinimumIndex + completeReally).replace("%2", works.length)
+          i18n_default[g_language].sort_getBookmarkCount.replace("%1", currentRequestGroupMinimumIndex + completeReally).replace("%2", works.length)
         );
         if (completeCount == g_maxXhr) {
           currentRequestGroupMinimumIndex += g_maxXhr;
@@ -2757,24 +2533,24 @@ function PixivSK(callback) {
       }
     };
     const onerrorFunc = function(event) {
-      let illustId = "";
+      let illustId2 = "";
       const illustIdMatched = event.finalUrl.match(/illust_id=(\d+)/);
       if (illustIdMatched) {
-        illustId = illustIdMatched[1];
+        illustId2 = illustIdMatched[1];
       } else {
         DoLog(
-          LogLevel.Error,
+          1 /* Error */,
           "Can not get illust id from url: " + event.finalUrl
         );
         return;
       }
       DoLog(
-        LogLevel.Error,
-        "Send request failed, set this illust(" + illustId + ")'s bookmark count to 0!"
+        1 /* Error */,
+        "Send request failed, set this illust(" + illustId2 + ")'s bookmark count to 0!"
       );
       let indexOfThisRequest = -1;
       for (let j = 0; j < g_maxXhr; j++) {
-        if (xhrs[j].illustId == illustId) {
+        if (xhrs[j].illustId == illustId2) {
           indexOfThisRequest = j;
           break;
         }
@@ -2796,7 +2572,7 @@ function PixivSK(callback) {
         }
       }
       $("#loading").find("#progress").text(
-        Texts[g_language].sort_getBookmarkCount.replace("%1", currentRequestGroupMinimumIndex + completeReally).replace("%2", works.length)
+        i18n_default[g_language].sort_getBookmarkCount.replace("%1", currentRequestGroupMinimumIndex + completeReally).replace("%2", works.length)
       );
       if (completeCount == g_maxXhr) {
         currentRequestGroupMinimumIndex += g_maxXhr;
@@ -2828,13 +2604,13 @@ function PixivSK(callback) {
         xhrs[i].illustId = "";
         continue;
       }
-      const illustId = works[index + i].id;
-      const url = "https://www.pixiv.net/touch/ajax/illust/details?illust_id=" + illustId;
-      xhrs[i].illustId = illustId;
+      const illustId2 = works[index + i].id;
+      const url2 = "https://www.pixiv.net/touch/ajax/illust/details?illust_id=" + illustId2;
+      xhrs[i].illustId = illustId2;
       xhrs[i].complete = false;
       GM__xmlHttpRequest({
         method: "GET",
-        url,
+        url: url2,
         anonymous: true,
         onabort: xhrs[i].onerror,
         onerror: xhrs[i].onerror,
@@ -2845,8 +2621,8 @@ function PixivSK(callback) {
   };
   const clearAndUpdateWorks = function() {
     filterAndSort().then(function() {
-      const container = Pages[PageType.Search].GetImageListContainer();
-      const firstImageElement = Pages[PageType.Search].GetFirstImageElement();
+      const container = Pages[0 /* Search */].GetImageListContainer();
+      const firstImageElement = Pages[0 /* Search */].GetFirstImageElement();
       $(firstImageElement).find("[data-mouseover]").removeAttr("data-mouseover");
       if (imageElementTemplate == null) {
         imageElementTemplate = firstImageElement.cloneNode(true);
@@ -2861,7 +2637,7 @@ function PixivSK(callback) {
         const imageLinkDiv = imageLink.parent();
         const titleLinkParent = control.next();
         if (img == null || imageDiv == null || imageLink == null || imageLinkDiv == null || titleLinkParent == null) {
-          DoLog(LogLevel.Error, "Can not found some elements!");
+          DoLog(1 /* Error */, "Can not found some elements!");
         }
         let titleLink = $("<a></a>");
         if (titleLinkParent.children().length == 0) {
@@ -2928,7 +2704,10 @@ function PixivSK(callback) {
         li.find(".ppBookmarkSvg").attr("illustId", works[i].id);
         if (works[i].bookmarkData) {
           li.find(".ppBookmarkSvg").find("path").css("fill", "rgb(255, 64, 96)");
-          li.find(".ppBookmarkSvg").attr("bookmarkId", works[i].bookmarkData.id);
+          li.find(".ppBookmarkSvg").attr(
+            "bookmarkId",
+            works[i].bookmarkData.id
+          );
         }
         if (works[i].xRestrict !== 0) {
           const R18HTML = '<div style="margin-top: 2px; margin-left: 2px;"><div style="color: rgb(255, 255, 255);font-weight: bold;font-size: 10px;line-height: 1;padding: 3px 6px;border-radius: 3px;background: rgb(255, 64, 96);">R-18</div></div>';
@@ -2948,7 +2727,7 @@ function PixivSK(callback) {
       }
       $(".ppBookmarkSvg").parent().on("click", function(ev) {
         if (g_csrfToken == "") {
-          DoLog(LogLevel.Error, "No g_csrfToken, failed to add bookmark!");
+          DoLog(1 /* Error */, "No g_csrfToken, failed to add bookmark!");
           alert("\u83B7\u53D6 Token \u5931\u8D25\uFF0C\u65E0\u6CD5\u6DFB\u52A0\uFF0C\u8BF7\u5230\u8BE6\u60C5\u9875\u64CD\u4F5C\u3002");
           return;
         }
@@ -2957,28 +2736,28 @@ function PixivSK(callback) {
           restrict = 1;
         }
         const _this = $(this).children("svg:first");
-        const illustId = _this.attr("illustId");
+        const illustId2 = _this.attr("illustId");
         const bookmarkId = _this.attr("bookmarkId");
         if (bookmarkId == null || bookmarkId == "") {
-          DoLog(LogLevel.Info, "Add bookmark, illustId: " + illustId);
+          DoLog(3 /* Info */, "Add bookmark, illustId: " + illustId2);
           $.ajax("/ajax/illusts/bookmarks/add", {
             method: "POST",
             contentType: "application/json;charset=utf-8",
             headers: { "x-csrf-token": g_csrfToken },
-            data: '{"illust_id":"' + illustId + '","restrict":' + restrict + ',"comment":"","tags":[]}',
+            data: '{"illust_id":"' + illustId2 + '","restrict":' + restrict + ',"comment":"","tags":[]}',
             success: function(data) {
-              DoLog(LogLevel.Info, "addBookmark result: ");
-              DoLog(LogLevel.Elements, data);
+              DoLog(3 /* Info */, "addBookmark result: ");
+              DoLog(4 /* Elements */, data);
               if (data.error) {
                 DoLog(
-                  LogLevel.Error,
+                  1 /* Error */,
                   "Server returned an error: " + data.message
                 );
                 return;
               }
               const bookmarkId2 = data.body.last_bookmark_id;
               DoLog(
-                LogLevel.Info,
+                3 /* Info */,
                 "Add bookmark success, bookmarkId is " + bookmarkId2
               );
               _this.attr("bookmarkId", bookmarkId2);
@@ -2986,22 +2765,22 @@ function PixivSK(callback) {
             }
           });
         } else {
-          DoLog(LogLevel.Info, "Delete bookmark, bookmarkId: " + bookmarkId);
+          DoLog(3 /* Info */, "Delete bookmark, bookmarkId: " + bookmarkId);
           $.ajax("/rpc/index.php", {
             method: "POST",
             headers: { "x-csrf-token": g_csrfToken },
             data: { mode: "delete_illust_bookmark", bookmark_id: bookmarkId },
             success: function(data) {
-              DoLog(LogLevel.Info, "delete bookmark result: ");
-              DoLog(LogLevel.Elements, data);
+              DoLog(3 /* Info */, "delete bookmark result: ");
+              DoLog(4 /* Elements */, data);
               if (data.error) {
                 DoLog(
-                  LogLevel.Error,
+                  1 /* Error */,
                   "Server returned an error: " + data.message
                 );
                 return;
               }
-              DoLog(LogLevel.Info, "Delete bookmark success.");
+              DoLog(3 /* Info */, "Delete bookmark success.");
               _this.attr("bookmarkId", "");
               _this.find("path:first").css("fill", "rgb(31, 31, 31)");
               _this.find("path:last").css("fill", "rgb(255, 255, 255)");
@@ -3069,12 +2848,12 @@ function PixivSK(callback) {
               headers: { "x-csrf-token": g_csrfToken },
               data: "mode=del&type=bookuser&id=" + userId,
               success: function(data) {
-                DoLog(LogLevel.Info, "delete bookmark result: ");
-                DoLog(LogLevel.Elements, data);
+                DoLog(3 /* Info */, "delete bookmark result: ");
+                DoLog(4 /* Elements */, data);
                 if (data.type == "bookuser") {
                   $(".ppa-follow").get(0).outerHTML = '<button type="button"class="ppa-follow"style=" padding: 9px 25px; line-height: 1; border: none; border-radius: 16px; font-weight: 700; background-color: #0096fa; color: #fff; cursor: pointer;"><span style="margin-right: 4px;"><svg viewBox="0 0 8 8"width="10"height="10"class=""style=" stroke: rgb(255, 255, 255); stroke-linecap: round; stroke-width: 2;"><line x1="1"y1="4"x2="7"y2="4"></line><line x1="4"y1="1"x2="4"y2="7"></line></svg></span>\u5173\u6CE8</button>';
                 } else {
-                  DoLog(LogLevel.Error, "Delete follow failed!");
+                  DoLog(1 /* Error */, "Delete follow failed!");
                 }
               }
             });
@@ -3084,12 +2863,12 @@ function PixivSK(callback) {
               headers: { "x-csrf-token": g_csrfToken },
               data: "mode=add&type=user&user_id=" + userId + "&tag=&restrict=0&format=json",
               success: function(data) {
-                DoLog(LogLevel.Info, "addBookmark result: ");
-                DoLog(LogLevel.Elements, data);
+                DoLog(3 /* Info */, "addBookmark result: ");
+                DoLog(4 /* Elements */, data);
                 if (data.length === 0) {
                   $(".ppa-follow").get(0).outerHTML = '<button type="button" class="ppa-follow followed" data-click-action="click" data-click-label="follow" style="padding: 9px 25px;line-height: 1;border: none;border-radius: 16px;font-size: 14px;font-weight: 700;cursor: pointer;">\u5173\u6CE8\u4E2D</button>';
                 } else {
-                  DoLog(LogLevel.Error, "Follow failed!");
+                  DoLog(1 /* Error */, "Follow failed!");
                 }
               }
             });
@@ -3103,11 +2882,11 @@ function PixivSK(callback) {
         }, 200);
       });
       if (works.length === 0) {
-        $(container).show().get(0).outerHTML = '<div class=""style="display: flex;align-items: center;justify-content: center; height: 408px;flex-flow: column;"><div class=""style="margin-bottom: 12px;color: rgba(0, 0, 0, 0.16);"><svg viewBox="0 0 16 16"size="72"style="fill: currentcolor;height: 72px;vertical-align: middle;"><path d="M8.25739 9.1716C7.46696 9.69512 6.51908 10 5.5 10C2.73858 10 0.5 7.76142 0.5 5C0.5 2.23858 2.73858 0 5.5 0C8.26142 0 10.5 2.23858 10.5 5C10.5 6.01908 10.1951 6.96696 9.67161 7.75739L11.7071 9.79288C12.0976 10.1834 12.0976 10.8166 11.7071 11.2071C11.3166 11.5976 10.6834 11.5976 10.2929 11.2071L8.25739 9.1716ZM8.5 5C8.5 6.65685 7.15685 8 5.5 8C3.84315 8 2.5 6.65685 2.5 5C2.5 3.34315 3.84315 2 5.5 2C7.15685 2 8.5 3.34315 8.5 5Z"transform="translate(2.25 2.25)"fill-rule="evenodd"clip-rule="evenodd"></path></svg></div><span class="sc-LzMCO fLDUzU">' + Texts[g_language].sort_noWork.replace("%1", worksCount) + "</span></div>";
+        $(container).show().get(0).outerHTML = '<div class=""style="display: flex;align-items: center;justify-content: center; height: 408px;flex-flow: column;"><div class=""style="margin-bottom: 12px;color: rgba(0, 0, 0, 0.16);"><svg viewBox="0 0 16 16"size="72"style="fill: currentcolor;height: 72px;vertical-align: middle;"><path d="M8.25739 9.1716C7.46696 9.69512 6.51908 10 5.5 10C2.73858 10 0.5 7.76142 0.5 5C0.5 2.23858 2.73858 0 5.5 0C8.26142 0 10.5 2.23858 10.5 5C10.5 6.01908 10.1951 6.96696 9.67161 7.75739L11.7071 9.79288C12.0976 10.1834 12.0976 10.8166 11.7071 11.2071C11.3166 11.5976 10.6834 11.5976 10.2929 11.2071L8.25739 9.1716ZM8.5 5C8.5 6.65685 7.15685 8 5.5 8C3.84315 8 2.5 6.65685 2.5 5C2.5 3.34315 3.84315 2 5.5 2C7.15685 2 8.5 3.34315 8.5 5Z"transform="translate(2.25 2.25)"fill-rule="evenodd"clip-rule="evenodd"></path></svg></div><span class="sc-LzMCO fLDUzU">' + i18n_default[g_language].sort_noWork.replace("%1", worksCount) + "</span></div>";
       }
       $("#loading").remove();
       $(container).show();
-      Pages[PageType.Search].ProcessPageElements();
+      Pages[0 /* Search */].ProcessPageElements();
       $(document).keydown(function(e) {
         if (g_settings.pageByKey != 1) {
           return;
@@ -3132,11 +2911,11 @@ function PixivSK(callback) {
     });
   };
 }
-function PixivNS(callback) {
+function PixivNS() {
   function findNovelSection() {
     const ul = $("section:first").find("ul:first");
     if (ul.length == 0) {
-      DoLog(LogLevel.Error, "Can not found novel list.");
+      DoLog(1 /* Error */, "Can not found novel list.");
       return null;
     }
     return ul;
@@ -3149,7 +2928,7 @@ function PixivNS(callback) {
       return null;
     }
     if (ul.length == 0) {
-      DoLog(LogLevel.Error, "Empty list, can not create template.");
+      DoLog(1 /* Error */, "Empty list, can not create template.");
       return null;
     }
     const template = ul.children().eq(0).clone(true);
@@ -3161,7 +2940,9 @@ function PixivNS(callback) {
     if (titleDiv.children().length > 1) {
       titleDiv.children().eq(0).addClass("pns-series");
     } else {
-      const series = $('<a class="pns-series" href="/novel/series/000000"></a>');
+      const series = $(
+        '<a class="pns-series" href="/novel/series/000000"></a>'
+      );
       series.css({
         display: "inline-block",
         "white-space": "nowrap",
@@ -3270,13 +3051,13 @@ function PixivNS(callback) {
     if (total == void 0) {
       total = to - from;
     }
-    let url = location.origin + g_getNovelUrl.replace(/#key#/g, key).replace(/#page#/g, from);
+    let url2 = location.origin + g_getNovelUrl.replace(/#key#/g, key).replace(/#page#/g, from);
     const search = getSearchParamsWithoutPage();
     if (search.length > 0) {
-      url += "&" + search;
+      url2 += "&" + search;
     }
     updateProgress(
-      Texts[g_language].nsort_getWorks.replace("1%", total - to + from + 1).replace("2%", total)
+      i18n_default[g_language].nsort_getWorks.replace("1%", total - to + from + 1).replace("2%", total)
     );
     let novelList = [];
     function onLoadFinish(data, resolve) {
@@ -3296,19 +3077,19 @@ function PixivNS(callback) {
     }
     return new Promise(function(resolve, reject) {
       $.ajax({
-        url,
+        url: url2,
         success: function(data) {
           onLoadFinish(data, resolve);
         },
         error: function() {
-          DoLog(LogLevel.Error, "get novel page " + from + " failed!");
+          DoLog(1 /* Error */, "get novel page " + from + " failed!");
           onLoadFinish(null, resolve);
         }
       });
     });
   }
   function sortNovel(list) {
-    updateProgress(Texts[g_language].nsort_sorting);
+    updateProgress(i18n_default[g_language].nsort_sorting);
     list.sort(function(a, b) {
       let bookmarkA = a.bookmarkCount;
       let bookmarkB = b.bookmarkCount;
@@ -3465,7 +3246,7 @@ function PixivNS(callback) {
     });
   }
   function changePageSelector() {
-    const pager = Pages[PageType.NovelSearch].GetPageSelector();
+    const pager = Pages[11 /* NovelSearch */].GetPageSelector();
     if (pager.length == 0) {
       iLog.e("can not found page selector!");
       return;
@@ -3530,7 +3311,7 @@ function PixivNS(callback) {
   function main() {
     const keyWord = getKeyWord();
     if (keyWord.length == 0) {
-      DoLog(LogLevel.Error, "Parse key word error.");
+      DoLog(1 /* Error */, "Parse key word error.");
       return;
     }
     const currentPage = getCurrentPage();
@@ -3585,8 +3366,8 @@ function ShowUpgradeMessage() {
     top: "0px"
   });
   $("body").append(bg);
-  const body = Texts[g_language].upgrade_body;
-  bg.get(0).innerHTML = '<img id="pps-close"src="https://pp-1252089172.cos.ap-chengdu.myqcloud.com/Close.png"style="position: absolute; right: 35px; top: 20px; width: 32px; height: 32px; cursor: pointer;"><div style="position: absolute;width: 40%;left: 30%;top: 25%;font-size: 25px; text-align: center; color: white;">' + Texts[g_language].install_title + g_version + '</div><br><div style="position:absolute;left:50%;top:30%;font-size:20px;color:white;transform:translate(-50%,0);height:50%;overflow:auto;">' + body + "</div>";
+  const body = i18n_default[g_language].upgrade_body;
+  bg.get(0).innerHTML = '<img id="pps-close"src="https://pp-1252089172.cos.ap-chengdu.myqcloud.com/Close.png"style="position: absolute; right: 35px; top: 20px; width: 32px; height: 32px; cursor: pointer;"><div style="position: absolute;width: 40%;left: 30%;top: 25%;font-size: 25px; text-align: center; color: white;">' + i18n_default[g_language].install_title + g_version + '</div><br><div style="position:absolute;left:50%;top:30%;font-size:20px;color:white;transform:translate(-50%,0);height:50%;overflow:auto;">' + body + "</div>";
   $("#pps-close").click(function() {
     $("#pp-bg").remove();
   });
@@ -3641,7 +3422,7 @@ function ShowSetting() {
   });
   $("body").append(bg);
   const settings = GetSettings();
-  const settingHTML = '<div style="color: white; font-size: 1em;"><img id="pps-close" src="https://pp-1252089172.cos.ap-chengdu.myqcloud.com/Close.png" style="position: absolute; right: 35px; top: 20px; width: 32px; height: 32px; cursor: pointer;"><div style="position: absolute; height: 60%; left: 50%; top: 10%; overflow-y: auto; transform: translate(-50%, 0%);"><ul id="pps-ul" style="list-style: none; padding: 0; margin: 0;"></ul></div><div style="margin-top: 10px;position: absolute;bottom: 10%;width: 100%;text-align: center;"><button id="pps-save" style="font-size: 25px; border-radius: 12px; height: 48px; min-width: 138px; max-width: 150px; background-color: green; color: white; margin: 0 32px 0 32px; cursor: pointer; border: none;">' + Texts[g_language].setting_save + '</button><button id="pps-reset" style="font-size: 25px; border-radius: 12px; height: 48px; min-width: 138px; max-width: 150px; background-color: darkred; color: white; margin: 0 32px 0 32px; cursor: pointer; border: none;">' + Texts[g_language].setting_reset + "</button></div></div>";
+  const settingHTML = '<div style="color: white; font-size: 1em;"><img id="pps-close" src="https://pp-1252089172.cos.ap-chengdu.myqcloud.com/Close.png" style="position: absolute; right: 35px; top: 20px; width: 32px; height: 32px; cursor: pointer;"><div style="position: absolute; height: 60%; left: 50%; top: 10%; overflow-y: auto; transform: translate(-50%, 0%);"><ul id="pps-ul" style="list-style: none; padding: 0; margin: 0;"></ul></div><div style="margin-top: 10px;position: absolute;bottom: 10%;width: 100%;text-align: center;"><button id="pps-save" style="font-size: 25px; border-radius: 12px; height: 48px; min-width: 138px; max-width: 150px; background-color: green; color: white; margin: 0 32px 0 32px; cursor: pointer; border: none;">' + i18n_default[g_language].setting_save + '</button><button id="pps-reset" style="font-size: 25px; border-radius: 12px; height: 48px; min-width: 138px; max-width: 150px; background-color: darkred; color: white; margin: 0 32px 0 32px; cursor: pointer; border: none;">' + i18n_default[g_language].setting_reset + "</button></div></div>";
   bg.get(0).innerHTML = settingHTML;
   const ul = $("#pps-ul");
   function getImageAction(id) {
@@ -3659,64 +3440,64 @@ function ShowSetting() {
     );
   }
   ul.empty();
-  addItem(getSelectAction("pps-lang"), Texts[g_language].setting_language);
+  addItem(getSelectAction("pps-lang"), i18n_default[g_language].setting_language);
   addItem(
     getImageAction("pps-fullSizeThumb"),
-    Texts[g_language].sort_fullSizeThumb
+    i18n_default[g_language].sort_fullSizeThumb
   );
   addItem("", "&nbsp");
-  addItem(getImageAction("pps-preview"), Texts[g_language].setting_preview);
+  addItem(getImageAction("pps-preview"), i18n_default[g_language].setting_preview);
   addItem(
     getImageAction("pps-animePreview"),
-    Texts[g_language].setting_animePreview
+    i18n_default[g_language].setting_animePreview
   );
-  addItem(getImageAction("pps-anime"), Texts[g_language].setting_anime);
-  addItem(getImageAction("pps-original"), Texts[g_language].setting_origin);
+  addItem(getImageAction("pps-anime"), i18n_default[g_language].setting_anime);
+  addItem(getImageAction("pps-original"), i18n_default[g_language].setting_origin);
   addItem(
     getInputAction("pps-previewDelay"),
-    Texts[g_language].setting_previewDelay
+    i18n_default[g_language].setting_previewDelay
   );
   addItem(
     getImageAction("pps-previewByKey"),
-    Texts[g_language].setting_previewByKey
+    i18n_default[g_language].setting_previewByKey
   );
   $("#pps-previewByKey").attr(
     "title",
-    Texts[g_language].setting_previewByKeyHelp
+    i18n_default[g_language].setting_previewByKeyHelp
   );
   addItem("", "&nbsp");
-  addItem(getImageAction("pps-sort"), Texts[g_language].setting_sort);
-  addItem(getInputAction("pps-maxPage"), Texts[g_language].setting_maxPage);
-  addItem(getInputAction("pps-hideLess"), Texts[g_language].setting_hideWork);
-  addItem(getImageAction("pps-hideAi"), Texts[g_language].setting_hideAiWork);
+  addItem(getImageAction("pps-sort"), i18n_default[g_language].setting_sort);
+  addItem(getInputAction("pps-maxPage"), i18n_default[g_language].setting_maxPage);
+  addItem(getInputAction("pps-hideLess"), i18n_default[g_language].setting_hideWork);
+  addItem(getImageAction("pps-hideAi"), i18n_default[g_language].setting_hideAiWork);
   addItem(
     getImageAction("pps-hideBookmarked"),
-    Texts[g_language].setting_hideFav
+    i18n_default[g_language].setting_hideFav
   );
   addItem(
     getImageAction("pps-hideFollowed"),
-    Texts[g_language].setting_hideFollowed + '&nbsp<button id="pps-clearFollowingCache" style="cursor:pointer;background-color:gold;border-radius:12px;border:none;font-size:20px;padding:3px 10px;" title="' + Texts[g_language].setting_clearFollowingCacheHelp + '">' + Texts[g_language].setting_clearFollowingCache + "</button>"
+    i18n_default[g_language].setting_hideFollowed + '&nbsp<button id="pps-clearFollowingCache" style="cursor:pointer;background-color:gold;border-radius:12px;border:none;font-size:20px;padding:3px 10px;" title="' + i18n_default[g_language].setting_clearFollowingCacheHelp + '">' + i18n_default[g_language].setting_clearFollowingCache + "</button>"
   );
-  addItem(getImageAction("pps-hideByTag"), Texts[g_language].setting_hideByTag);
+  addItem(getImageAction("pps-hideByTag"), i18n_default[g_language].setting_hideByTag);
   addItem(
-    '<input id="pps-hideByTagList" style="font-size: 18px;padding: 0;border-width: 0px;text-align: center;width: 95%;" placeholder="' + Texts[g_language].setting_hideByTagPlaceholder + '">',
+    '<input id="pps-hideByTagList" style="font-size: 18px;padding: 0;border-width: 0px;text-align: center;width: 95%;" placeholder="' + i18n_default[g_language].setting_hideByTagPlaceholder + '">',
     ""
   );
-  addItem(getImageAction("pps-newTab"), Texts[g_language].setting_blank);
-  addItem(getImageAction("pps-pageKey"), Texts[g_language].setting_turnPage);
+  addItem(getImageAction("pps-newTab"), i18n_default[g_language].setting_blank);
+  addItem(getImageAction("pps-pageKey"), i18n_default[g_language].setting_turnPage);
   addItem("", "&nbsp");
-  addItem(getImageAction("pps-novelSort"), Texts[g_language].setting_novelSort);
+  addItem(getImageAction("pps-novelSort"), i18n_default[g_language].setting_novelSort);
   addItem(
     getInputAction("pps-novelMaxPage"),
-    Texts[g_language].setting_novelMaxPage
+    i18n_default[g_language].setting_novelMaxPage
   );
   addItem(
     getInputAction("pps-novelHideWork"),
-    Texts[g_language].setting_novelHideWork
+    i18n_default[g_language].setting_novelHideWork
   );
   addItem(
     getImageAction("pps-novelHideBookmarked"),
-    Texts[g_language].setting_novelHideFav
+    i18n_default[g_language].setting_novelHideFav
   );
   const imgOn = "https://pp-1252089172.cos.ap-chengdu.myqcloud.com/On.png";
   const imgOff = "https://pp-1252089172.cos.ap-chengdu.myqcloud.com/Off.png";
@@ -3741,7 +3522,7 @@ function ShowSetting() {
   $("#pps-novelMaxPage").val(settings.novelPageCount);
   $("#pps-novelHideWork").val(settings.novelFavFilter);
   $("#pps-novelHideBookmarked").attr("src", settings.novelHideFavorite ? imgOn : imgOff).addClass(settings.novelHideFavorite ? "on" : "off").css("cursor: pointer");
-  $("#pps-lang").append('<option value="-1">Auto</option>').append('<option value="' + Lang.zh_CN + '">\u7B80\u4F53\u4E2D\u6587</option>').append('<option value="' + Lang.en_US + '">English</option>').append('<option value="' + Lang.ru_RU + '">\u0420\u0443\u0441\u0441\u043A\u0438\u0439 \u044F\u0437\u044B\u043A</option>').append('<option value="' + Lang.ja_JP + '">\u65E5\u672C\u8A9E</option>').val(g_settings.lang == void 0 ? Lang.auto : g_settings.lang);
+  $("#pps-lang").append('<option value="-1">Auto</option>').append('<option value="' + 0 /* zh_CN */ + '">\u7B80\u4F53\u4E2D\u6587</option>').append('<option value="' + 1 /* en_US */ + '">English</option>').append('<option value="' + 2 /* ru_RU */ + '">\u0420\u0443\u0441\u0441\u043A\u0438\u0439 \u044F\u0437\u044B\u043A</option>').append('<option value="' + 3 /* ja_JP */ + '">\u65E5\u672C\u8A9E</option>').val(g_settings.lang == void 0 ? -1 /* auto */ : g_settings.lang);
   $("#pps-ul").find("img").click(function() {
     const _this = $(this);
     if (_this.hasClass("on")) {
@@ -3753,7 +3534,7 @@ function ShowSetting() {
   $("#pps-clearFollowingCache").click(function() {
     const user_id = dataLayer[0].user_id;
     SetLocalStorage("followingOfUid-" + user_id, null, -1);
-    alert(Texts[g_language].setting_followingCacheCleared);
+    alert(i18n_default[g_language].setting_followingCacheCleared);
   });
   $("#pps-save").click(function() {
     if ($("#pps-maxPage").val() === "") {
@@ -3791,7 +3572,7 @@ function ShowSetting() {
     location.href = location.href;
   });
   $("#pps-reset").click(function() {
-    const comfirmText = Texts[g_language].setting_resetHint;
+    const comfirmText = i18n_default[g_language].setting_resetHint;
     if (confirm(comfirmText)) {
       SetLocalStorage("PixivPreview", null);
       location.href = location.href;
@@ -3814,7 +3595,7 @@ function SetTargetBlank(returnMap) {
     });
     $.each(target, function(i, e) {
       $(e).attr({ target: "_blank", rel: "external" });
-      if (g_pageType == PageType.Home || g_pageType == PageType.Member || g_pageType == PageType.Artwork || g_pageType == PageType.BookMarkNew) {
+      if (g_pageType == 4 /* Home */ || g_pageType == 3 /* Member */ || g_pageType == 10 /* Artwork */ || g_pageType == 1 /* BookMarkNew */) {
         e.addEventListener("click", function(ev) {
           ev.stopPropagation();
         });
@@ -3825,41 +3606,41 @@ function SetTargetBlank(returnMap) {
 var loadInterval;
 var itv;
 function AutoDetectLanguage() {
-  g_language = Lang.auto;
+  g_language = -1 /* auto */;
   if (g_settings && g_settings.lang) {
     g_language = g_settings.lang;
   }
-  if (g_language == Lang.auto) {
+  if (g_language == -1 /* auto */) {
     const lang = $("html").attr("lang");
     if (lang && lang.indexOf("zh") != -1) {
-      g_language = Lang.zh_CN;
+      g_language = 0 /* zh_CN */;
     } else if (lang && lang.indexOf("ja") != -1) {
-      g_language = Lang.ja_JP;
+      g_language = 3 /* ja_JP */;
     } else {
-      g_language = Lang.en_US;
+      g_language = 1 /* en_US */;
     }
   }
 }
 function Load() {
-  for (let i = 0; i < PageType.PageTypeCount; i++) {
+  for (let i = 0; i < 13 /* PageTypeCount */; i++) {
     if (Pages[i].CheckUrl(location.href)) {
       g_pageType = i;
       break;
     }
   }
   if (g_pageType >= 0) {
-    DoLog(LogLevel.Info, "Current page is " + Pages[g_pageType].PageTypeString);
+    DoLog(3 /* Info */, "Current page is " + Pages[g_pageType].PageTypeString);
   } else {
-    DoLog(LogLevel.Info, "Unsupported page.");
+    DoLog(3 /* Info */, "Unsupported page.");
     clearInterval(loadInterval);
     return;
   }
   const toolBar = Pages[g_pageType].GetToolBar();
   if (toolBar) {
-    DoLog(LogLevel.Elements, toolBar);
+    DoLog(4 /* Elements */, toolBar);
     clearInterval(loadInterval);
   } else {
-    DoLog(LogLevel.Warning, "Get toolbar failed.");
+    DoLog(2 /* Warning */, "Get toolbar failed.");
     return;
   }
   window.onresize = function() {
@@ -3875,13 +3656,13 @@ function Load() {
   AutoDetectLanguage();
   g_settings = GetSettings();
   AutoDetectLanguage();
-  if ($("#pp-sort").length === 0 && !(g_settings == null ? void 0 : g_settings.enableSort)) {
+  if ($("#pp-sort").length === 0 && !g_settings?.enableSort) {
     const newListItem = toolBar.firstChild.cloneNode(true);
     newListItem.innerHTML = "";
     const newButton = document.createElement("button");
     newButton.id = "pp-sort";
     newButton.style.cssText = "background-color: rgb(0, 0, 0); margin-top: 5px; opacity: 0.8; cursor: pointer; border: none; padding: 0px; border-radius: 24px; width: 48px; height: 48px;";
-    newButton.innerHTML = '<span style="color: white;vertical-align: text-top;">'.concat(Texts[g_language].text_sort, "</span>");
+    newButton.innerHTML = `<span style="color: white;vertical-align: text-top;">${i18n_default[g_language].text_sort}</span>`;
     newListItem.appendChild(newButton);
     toolBar.appendChild(newListItem);
     $(newButton).click(function() {
@@ -3905,15 +3686,15 @@ function Load() {
       ShowSetting();
     });
   }
-  if (g_pageType == PageType.Search || g_pageType == PageType.NovelSearch) {
+  if (g_pageType == 0 /* Search */ || g_pageType == 11 /* NovelSearch */) {
     $.get(location.href, function(data) {
       const matched = data.match(/token":"([a-z0-9]{32})/);
       if (matched.length > 0) {
         g_csrfToken = matched[1];
-        DoLog(LogLevel.Info, "Got g_csrfToken: " + g_csrfToken);
+        DoLog(3 /* Info */, "Got g_csrfToken: " + g_csrfToken);
       } else {
         DoLog(
-          LogLevel.Error,
+          1 /* Error */,
           "Can not get g_csrfToken, so you can not add works to bookmark when sorting has enabled."
         );
       }
@@ -3924,44 +3705,37 @@ function Load() {
     if (!returnMap.loadingComplete) {
       return;
     }
-    DoLog(LogLevel.Info, "Process page comlete, sorting and prevewing begin.");
-    DoLog(LogLevel.Elements, returnMap);
+    DoLog(3 /* Info */, "Process page comlete, sorting and prevewing begin.");
+    DoLog(4 /* Elements */, returnMap);
     clearInterval(itv);
     SetTargetBlank(returnMap);
     runPixivPreview();
   }, 500);
   function runPixivPreview(eventFromButton = false) {
     try {
-      if (g_pageType == PageType.Artwork) {
+      if (g_settings.enablePreview) {
+        loadIllustPreview(g_settings);
+      }
+      if (g_pageType == 10 /* Artwork */) {
         Pages[g_pageType].Work();
-        if (g_settings.enablePreview) {
-          PixivPreview();
-        }
-      } else if (g_pageType == PageType.Search) {
+      } else if (g_pageType == 0 /* Search */) {
         if (g_settings.enableSort || eventFromButton) {
           g_sortComplete = false;
           PixivSK(function() {
             g_sortComplete = true;
-            if (g_settings.enablePreview) {
-              PixivPreview();
-            }
           });
-        } else if (g_settings.enablePreview) {
-          PixivPreview();
         }
-      } else if (g_pageType == PageType.NovelSearch) {
+      } else if (g_pageType == 11 /* NovelSearch */) {
         if (g_settings.enableNovelSort || eventFromButton) {
           PixivNS();
         }
-      } else if (g_settings.enablePreview) {
-        PixivPreview();
       }
     } catch (e) {
-      DoLog(LogLevel.Error, "Unknown error: " + e);
+      DoLog(1 /* Error */, "Unknown error: " + e);
     }
   }
 }
-function startLoad() {
+var startLoad = () => {
   loadInterval = setInterval(Load, 1e3);
   setInterval(function() {
     if (location.href != initialUrl) {
@@ -3981,15 +3755,15 @@ function startLoad() {
       loadInterval = setInterval(Load, 300);
     }
   }, 1e3);
-}
+};
 var inChecking = false;
 var jqItv = setInterval(function() {
   if (inChecking) {
     return;
   }
   inChecking = true;
-  checkJQuery().then(function(isLoad) {
-    if (isLoad) {
+  checkJQuery().then(function(isLoad2) {
+    if (isLoad2) {
       clearInterval(jqItv);
       startLoad();
     }

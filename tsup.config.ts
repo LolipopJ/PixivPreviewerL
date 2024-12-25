@@ -1,11 +1,15 @@
-import { defineConfig } from 'tsup'
-import packageJson from './package.json'
+import { defineConfig } from "tsup";
+
+import packageJson from "./package.json";
 
 export default defineConfig({
-  entry: ['src/pixiv-previewer.ts'],
-  target: ['chrome58', 'edge16', 'firefox57', 'safari11'],
+  entry: ["src/index.ts"],
+  target: ["chrome107"],
   splitting: false,
   clean: true,
+  env: {
+    VERSION: packageJson.version,
+  },
   banner: {
     js: `// ==UserScript==
 // @name                Pixiv Previewer (LolipopJ Edition)
@@ -26,4 +30,4 @@ export default defineConfig({
 // @require             https://raw.githubusercontent.com/Tampermonkey/utils/refs/heads/main/requires/gh_2215_make_GM_xhr_more_parallel_again.js
 // ==/UserScript==`,
   },
-})
+});
