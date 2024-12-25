@@ -67,6 +67,20 @@ var LogLevel = /* @__PURE__ */ ((LogLevel2) => {
   return LogLevel2;
 })(LogLevel || {});
 
+// src/utils/debounce.ts
+function debounce(func, delay = 100) {
+  let timeoutId = null;
+  return function(...args) {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+    timeoutId = setTimeout(() => {
+      func(...args);
+    }, delay);
+  };
+}
+var debounce_default = debounce;
+
 // src/utils/logger.ts
 var ILog = class {
   prefix = "Pixiv Preview: ";
@@ -188,6 +202,8 @@ var loadIllustPreview = (options) => {
     #currentIllustSize;
     /** 保存的鼠标位置 */
     #prevMousePos;
+    /** 当前预览的动图播放器 */
+    #currentUgoriaPlayer;
     /** 关闭预览组件，重置初始值 */
     reset() {
       this.illustElement = $();
@@ -227,7 +243,9 @@ var loadIllustPreview = (options) => {
         PREVIEW_WRAPPER_MIN_SIZE,
         PREVIEW_WRAPPER_MIN_SIZE
       ];
-      this.unbindImagePreviewEvents();
+      this.#currentUgoriaPlayer?.stop();
+      this.unbindPreviewImageEvents();
+      this.unbindUgoriaPreviewEvents();
     }
     constructor() {
       this.reset();
@@ -246,24 +264,24 @@ var loadIllustPreview = (options) => {
       this.originalUrls = originalUrls;
       this.currentPage = 1;
       this.pageCount = regularUrls.length;
-      regularUrls.map((url2) => {
+      regularUrls.map((url) => {
         const preloadImage = new Image();
-        preloadImage.src = url2;
+        preloadImage.src = url;
       });
-      this.bindImagePreviewEvents();
-      this.updateImagePreview();
+      this.bindPreviewImageEvents();
+      this.updatePreviewImage();
     }
-    bindImagePreviewEvents() {
-      this.previewImageElement.on("load", this.onIllustLoad);
+    bindPreviewImageEvents() {
+      this.previewImageElement.on("load", this.onImageLoad);
       this.previewImageElement.on("mousewheel", this.onPreviewImageMouseWheel);
       $(document).on("mousemove", this.onMouseMove);
     }
-    unbindImagePreviewEvents() {
+    unbindPreviewImageEvents() {
       this.previewImageElement.off();
       $(document).off("mousemove", this.onMouseMove);
     }
     /** 显示 this.currentPage 指向的图片 */
-    updateImagePreview() {
+    updatePreviewImage() {
       const currentImageUrl = this.regularUrls[this.currentPage - 1];
       this.previewImageElement.attr("src", currentImageUrl);
       if (this.pageCount > 1) {
@@ -271,44 +289,7 @@ var loadIllustPreview = (options) => {
         this.pageCountElement.show();
       }
     }
-    nextPage() {
-      if (this.currentPage < this.pageCount) {
-        this.currentPage += 1;
-      } else {
-        this.currentPage = 1;
-      }
-      this.updateImagePreview();
-    }
-    prevPage() {
-      if (this.currentPage > 1) {
-        this.currentPage -= 1;
-      } else {
-        this.currentPage = this.pageCount;
-      }
-      this.updateImagePreview();
-    }
-    onPreviewImageMouseWheel = (mouseWheelEvent) => {
-      mouseWheelEvent.preventDefault();
-      if (mouseWheelEvent.originalEvent.wheelDelta < 0) {
-        this.nextPage();
-      } else {
-        this.prevPage();
-      }
-    };
-    //#endregion
-    //#region 预览动图功能
-    setUgoiraSrc() {
-    }
-    //#endregion
-    /** 初始化显示预览容器 */
-    initPreviewWrapper() {
-      this.previewWrapperElement.show();
-      this.previewLoadingElement.show();
-      this.adjustPreviewWrapper({
-        baseOnMousePos: true
-      });
-    }
-    onIllustLoad = () => {
+    onImageLoad = () => {
       this.initialized = true;
       this.previewLoadingElement.hide();
       this.previewImageElement.show();
@@ -324,6 +305,89 @@ var loadIllustPreview = (options) => {
         baseOnMousePos: false
       });
     };
+    nextPage() {
+      if (this.currentPage < this.pageCount) {
+        this.currentPage += 1;
+      } else {
+        this.currentPage = 1;
+      }
+      this.updatePreviewImage();
+    }
+    prevPage() {
+      if (this.currentPage > 1) {
+        this.currentPage -= 1;
+      } else {
+        this.currentPage = this.pageCount;
+      }
+      this.updatePreviewImage();
+    }
+    onPreviewImageMouseWheel = (mouseWheelEvent) => {
+      mouseWheelEvent.preventDefault();
+      if (mouseWheelEvent.originalEvent.wheelDelta < 0) {
+        this.nextPage();
+      } else {
+        this.prevPage();
+      }
+    };
+    //#endregion
+    //#region 预览动图功能
+    setUgoira({
+      illustElement,
+      src,
+      originalSrc,
+      mime_type,
+      frames
+    }) {
+      this.reset();
+      this.initPreviewWrapper();
+      this.illustElement = illustElement;
+      this.#currentUgoriaPlayer = createPlayer({
+        source: src,
+        metadata: {
+          mime_type,
+          frames
+        }
+      });
+      this.bindUgoriaPreviewEvents();
+    }
+    bindUgoriaPreviewEvents() {
+      $(this.#currentUgoriaPlayer).on("frameLoaded", this.onUgoriaFrameLoaded);
+      $(document).on("mousemove", this.onMouseMove);
+    }
+    unbindUgoriaPreviewEvents() {
+      $(this.#currentUgoriaPlayer).off();
+      $(document).off("mousemove", this.onMouseMove);
+    }
+    onUgoriaFrameLoaded = (ev, frame) => {
+      if (frame !== 0) {
+        return;
+      }
+      this.initialized = true;
+      this.previewLoadingElement.hide();
+      const canvas = $(this.#currentUgoriaPlayer.canvas);
+      this.previewImageElement.after(canvas);
+      this.previewImageElement.remove();
+      this.previewImageElement = canvas;
+      const ugoriaOriginWidth = ev.currentTarget._frameImages[0].width;
+      const ugoriaOriginHeight = ev.currentTarget._frameImages[0].height;
+      this.#currentIllustSize = [ugoriaOriginWidth, ugoriaOriginHeight];
+      this.previewImageElement.attr({
+        width: ugoriaOriginWidth,
+        height: ugoriaOriginHeight
+      });
+      this.adjustPreviewWrapper({
+        baseOnMousePos: false
+      });
+    };
+    //#endregion
+    /** 初始化显示预览容器 */
+    initPreviewWrapper() {
+      this.previewWrapperElement.show();
+      this.previewLoadingElement.show();
+      this.adjustPreviewWrapper({
+        baseOnMousePos: true
+      });
+    }
     onMouseMove = (mouseMoveEvent) => {
       if (mouseMoveEvent.ctrlKey) {
         return;
@@ -411,8 +475,14 @@ var loadIllustPreview = (options) => {
       });
     }
   }
+  const mouseHoverDebounceWait = previewDelay / 5;
+  const mouseHoverPreviewWait = previewDelay - mouseHoverDebounceWait;
   const previewIllust = previewIllustWithCache();
-  $(document).mouseover(onMouseOverIllust);
+  const debouncedOnMouseOverIllust = debounce_default(
+    onMouseOverIllust,
+    mouseHoverDebounceWait
+  );
+  $(document).mouseover(debouncedOnMouseOverIllust);
   function onMouseOverIllust(mouseOverEvent) {
     const target = $(mouseOverEvent.target);
     if (!target.is("IMG")) {
@@ -423,7 +493,7 @@ var loadIllustPreview = (options) => {
     }
     const previewIllustTimeout = setTimeout(() => {
       previewIllust(target);
-    }, previewDelay);
+    }, mouseHoverPreviewWait);
     target.on("mouseout", () => {
       clearTimeout(previewIllustTimeout);
       target.off("mouseout");
@@ -439,21 +509,21 @@ var loadIllustPreview = (options) => {
       if (!illustMetadata) {
         return;
       }
-      const { illustId: illustId2, illustType: illustType2 } = illustMetadata;
-      currentHoveredIllustId = illustId2;
-      if (illustType2 === 2 /* UGOIRA */ && !enableAnimePreview) {
+      const { illustId, illustType } = illustMetadata;
+      currentHoveredIllustId = illustId;
+      if (illustType === 2 /* UGOIRA */ && !enableAnimePreview) {
         iLog.i("Anime preview disabled.");
         return;
       }
-      if (illustType2 === 0 /* ILLUST */) {
-        if (getIllustPagesCache[illustId2]) {
+      if (illustType === 0 /* ILLUST */) {
+        if (getIllustPagesCache[illustId]) {
           previewedIllust.setImage({
             illustElement: target,
-            ...getIllustPagesCache[illustId2]
+            ...getIllustPagesCache[illustId]
           });
           return;
         }
-        $.ajax(getIllustPagesRequestUrl(illustId2), {
+        $.ajax(getIllustPagesRequestUrl(illustId), {
           method: "GET",
           success: (data) => {
             if (data.error) {
@@ -463,13 +533,13 @@ var loadIllustPreview = (options) => {
               return;
             }
             const urls = data.body.map((item) => item.urls);
-            const regularUrls = urls.map((url2) => url2.regular);
-            const originalUrls = urls.map((url2) => url2.original);
-            getIllustPagesCache[illustId2] = {
+            const regularUrls = urls.map((url) => url.regular);
+            const originalUrls = urls.map((url) => url.original);
+            getIllustPagesCache[illustId] = {
               regularUrls,
               originalUrls
             };
-            if (currentHoveredIllustId !== illustId2) return;
+            if (currentHoveredIllustId !== illustId) return;
             previewedIllust.setImage({
               illustElement: target,
               regularUrls,
@@ -480,11 +550,15 @@ var loadIllustPreview = (options) => {
             iLog.e(`Get an error while requesting illust url: ${err}`);
           }
         });
-      } else if (illustType2 === 2 /* UGOIRA */) {
-        if (getUgoiraMetadataCache[illustId2]) {
+      } else if (illustType === 2 /* UGOIRA */) {
+        if (getUgoiraMetadataCache[illustId]) {
+          previewedIllust.setUgoira({
+            illustElement: target,
+            ...getUgoiraMetadataCache[illustId]
+          });
           return;
         }
-        $.ajax(getUgoiraMetadataRequestUrl(illustId2), {
+        $.ajax(getUgoiraMetadataRequestUrl(illustId), {
           method: "GET",
           success: (data) => {
             if (data.error) {
@@ -493,9 +567,16 @@ var loadIllustPreview = (options) => {
               );
               return;
             }
-            getUgoiraMetadataCache[illustId2] = data.body;
-            if (currentHoveredIllustId !== illustId2) return;
+            getUgoiraMetadataCache[illustId] = data.body;
+            if (currentHoveredIllustId !== illustId) return;
             const { src, originalSrc, mime_type, frames } = data.body;
+            previewedIllust.setUgoira({
+              illustElement: target,
+              src,
+              originalSrc,
+              mime_type,
+              frames
+            });
           },
           error: (err) => {
             iLog.e(`Get an error while requesting ugoira metadata: ${err}`);
@@ -522,17 +603,17 @@ var loadIllustPreview = (options) => {
       iLog.w("\u5F53\u524D\u4F5C\u54C1\u4E0D\u652F\u6301\u9884\u89C8\uFF0C\u8DF3\u8FC7");
       return null;
     }
-    const illustId2 = illustHrefMatch[1];
+    const illustId = illustHrefMatch[1];
     const ugoiraSvg = imgLink.children("div:first").find("svg:first");
-    const illustType2 = ugoiraSvg.length ? 2 /* UGOIRA */ : 0 /* ILLUST */;
+    const illustType = ugoiraSvg.length ? 2 /* UGOIRA */ : 0 /* ILLUST */;
     return {
       /** 作品 ID */
-      illustId: illustId2,
+      illustId,
       /** 作品类型 */
-      illustType: illustType2
+      illustType
     };
   }
-  function createPlayer2(options2) {
+  function createPlayer(options2) {
     const canvas = document.createElement("canvas");
     const p = new ZipImagePlayer({
       canvas,
@@ -818,7 +899,7 @@ ZipImagePlayer.prototype = {
     this._loadFrame += 1;
     const off = this._fileDataStart(this._files[meta.file].off);
     const end = off + this._files[meta.file].len;
-    let url2;
+    let url;
     const mime_type = this.op.metadata.mime_type || "image/png";
     if (this._URL) {
       let slice;
@@ -840,21 +921,21 @@ ZipImagePlayer.prototype = {
         bb.append(slice);
         blob = bb.getBlob();
       }
-      url2 = this._URL.createObjectURL(blob);
-      this._loadImage(frame, url2, true);
+      url = this._URL.createObjectURL(blob);
+      this._loadImage(frame, url, true);
     } else {
-      url2 = "data:" + mime_type + ";base64," + base64ArrayBuffer(this._buf, off, end - off);
-      this._loadImage(frame, url2, false);
+      url = "data:" + mime_type + ";base64," + base64ArrayBuffer(this._buf, off, end - off);
+      this._loadImage(frame, url, false);
     }
   },
-  _loadImage: function(frame, url2, isBlob) {
+  _loadImage: function(frame, url, isBlob) {
     const _this = this;
     const image = new Image();
     const meta = this.op.metadata.frames[frame];
     image.addEventListener("load", function() {
       _this._debugLog("Loaded " + meta.file + " to frame " + frame);
       if (isBlob) {
-        _this._URL.revokeObjectURL(url2);
+        _this._URL.revokeObjectURL(url);
       }
       if (_this._dead) {
         return;
@@ -879,7 +960,7 @@ ZipImagePlayer.prototype = {
         }
       }
     });
-    image.src = url2;
+    image.src = url;
   },
   _setLoadingState: function(state) {
     if (this._loadingState != state) {
@@ -1236,21 +1317,21 @@ var checkJQuery = function() {
       return false;
     }
   }
-  function insertJQuery(url2) {
+  function insertJQuery(url) {
     const script = document.createElement("script");
-    script.src = url2;
+    script.src = url;
     document.head.appendChild(script);
     return script;
   }
-  function converProtocolIfNeeded(url2) {
+  function converProtocolIfNeeded(url) {
     const isHttps = location.href.indexOf("https://") != -1;
-    const urlIsHttps = url2.indexOf("https://") != -1;
+    const urlIsHttps = url.indexOf("https://") != -1;
     if (isHttps && !urlIsHttps) {
-      return url2.replace("http://", "https://");
+      return url.replace("http://", "https://");
     } else if (!isHttps && urlIsHttps) {
-      return url2.replace("https://", "http://");
+      return url.replace("https://", "http://");
     }
-    return url2;
+    return url;
   }
   function waitAndCheckJQuery(cdnIndex, resolve) {
     if (cdnIndex >= jqueryCdns.length) {
@@ -1258,9 +1339,9 @@ var checkJQuery = function() {
       resolve(false);
       return;
     }
-    const url2 = converProtocolIfNeeded(jqueryCdns[cdnIndex]);
-    iLog.i("\u5C1D\u8BD5\u7B2C " + (cdnIndex + 1) + " \u4E2A jQuery CDN\uFF1A" + url2 + "\u3002");
-    const script = insertJQuery(url2);
+    const url = converProtocolIfNeeded(jqueryCdns[cdnIndex]);
+    iLog.i("\u5C1D\u8BD5\u7B2C " + (cdnIndex + 1) + " \u4E2A jQuery CDN\uFF1A" + url + "\u3002");
+    const script = insertJQuery(url);
     setTimeout(function() {
       if (isJQueryValid()) {
         iLog.i("\u5DF2\u52A0\u8F7D jQuery\u3002");
@@ -1391,11 +1472,11 @@ function findLiByImgTag() {
 }
 Pages[0 /* Search */] = {
   PageTypeString: "SearchPage",
-  CheckUrl: function(url2) {
+  CheckUrl: function(url) {
     return /^https?:\/\/www.pixiv.net\/tags\/.*\/(artworks|illustrations|manga)/.test(
-      url2
+      url
     ) || /^https?:\/\/www.pixiv.net\/en\/tags\/.*\/(artworks|illustrations|manga)/.test(
-      url2
+      url
     );
   },
   ProcessPageElements: function() {
@@ -1479,8 +1560,8 @@ Pages[0 /* Search */] = {
 };
 Pages[1 /* BookMarkNew */] = {
   PageTypeString: "BookMarkNewPage",
-  CheckUrl: function(url2) {
-    return /^https:\/\/www.pixiv.net\/bookmark_new_illust.php.*/.test(url2) || /^https:\/\/www.pixiv.net\/bookmark_new_illust_r18.php.*/.test(url2);
+  CheckUrl: function(url) {
+    return /^https:\/\/www.pixiv.net\/bookmark_new_illust.php.*/.test(url) || /^https:\/\/www.pixiv.net\/bookmark_new_illust_r18.php.*/.test(url);
   },
   ProcessPageElements: function() {
     const returnMap = {
@@ -1521,8 +1602,8 @@ Pages[1 /* BookMarkNew */] = {
 };
 Pages[2 /* Discovery */] = {
   PageTypeString: "DiscoveryPage",
-  CheckUrl: function(url2) {
-    return /^https?:\/\/www.pixiv.net\/discovery.*/.test(url2);
+  CheckUrl: function(url) {
+    return /^https?:\/\/www.pixiv.net\/discovery.*/.test(url);
   },
   ProcessPageElements: function() {
     const returnMap = {
@@ -1562,8 +1643,8 @@ Pages[2 /* Discovery */] = {
 };
 Pages[3 /* Member */] = {
   PageTypeString: "MemberPage/MemberIllustPage/MemberBookMark",
-  CheckUrl: function(url2) {
-    return /^https?:\/\/www.pixiv.net\/(en\/)?users\/\d+/.test(url2);
+  CheckUrl: function(url) {
+    return /^https?:\/\/www.pixiv.net\/(en\/)?users\/\d+/.test(url);
   },
   ProcessPageElements: function() {
     const returnMap = {
@@ -1606,8 +1687,8 @@ Pages[3 /* Member */] = {
 };
 Pages[4 /* Home */] = {
   PageTypeString: "HomePage",
-  CheckUrl: function(url2) {
-    return /https?:\/\/www.pixiv.net\/?$/.test(url2) || /https?:\/\/www.pixiv.net\/en\/?$/.test(url2) || /https?:\/\/www.pixiv.net\/cate_r18\.php$/.test(url2) || /https?:\/\/www.pixiv.net\/en\/cate_r18\.php$/.test(url2);
+  CheckUrl: function(url) {
+    return /https?:\/\/www.pixiv.net\/?$/.test(url) || /https?:\/\/www.pixiv.net\/en\/?$/.test(url) || /https?:\/\/www.pixiv.net\/cate_r18\.php$/.test(url) || /https?:\/\/www.pixiv.net\/en\/cate_r18\.php$/.test(url);
   },
   ProcessPageElements: function() {
     const returnMap = {
@@ -1645,8 +1726,8 @@ Pages[4 /* Home */] = {
 };
 Pages[5 /* Ranking */] = {
   PageTypeString: "RankingPage",
-  CheckUrl: function(url2) {
-    return /^https?:\/\/www.pixiv.net\/ranking.php.*/.test(url2);
+  CheckUrl: function(url) {
+    return /^https?:\/\/www.pixiv.net\/ranking.php.*/.test(url);
   },
   ProcessPageElements: function() {
     const returnMap = {
@@ -1710,8 +1791,8 @@ Pages[5 /* Ranking */] = {
 };
 Pages[6 /* NewIllust */] = {
   PageTypeString: "NewIllustPage",
-  CheckUrl: function(url2) {
-    return /^https?:\/\/www.pixiv.net\/new_illust.php.*/.test(url2);
+  CheckUrl: function(url) {
+    return /^https?:\/\/www.pixiv.net\/new_illust.php.*/.test(url);
   },
   ProcessPageElements: function() {
     const returnMap = {
@@ -1749,8 +1830,8 @@ Pages[6 /* NewIllust */] = {
 };
 Pages[7 /* R18 */] = {
   PageTypeString: "R18Page",
-  CheckUrl: function(url2) {
-    return /^https?:\/\/www.pixiv.net\/cate_r18.php.*/.test(url2);
+  CheckUrl: function(url) {
+    return /^https?:\/\/www.pixiv.net\/cate_r18.php.*/.test(url);
   },
   ProcessPageElements: function() {
   },
@@ -1760,8 +1841,8 @@ Pages[7 /* R18 */] = {
 };
 Pages[8 /* BookMark */] = {
   PageTypeString: "BookMarkPage",
-  CheckUrl: function(url2) {
-    return /^https:\/\/www.pixiv.net\/bookmark.php\/?$/.test(url2);
+  CheckUrl: function(url) {
+    return /^https:\/\/www.pixiv.net\/bookmark.php\/?$/.test(url);
   },
   ProcessPageElements: function() {
     const returnMap = {
@@ -1831,8 +1912,8 @@ Pages[8 /* BookMark */] = {
 };
 Pages[9 /* Stacc */] = {
   PageTypeString: "StaccPage",
-  CheckUrl: function(url2) {
-    return /^https:\/\/www.pixiv.net\/stacc.*/.test(url2);
+  CheckUrl: function(url) {
+    return /^https:\/\/www.pixiv.net\/stacc.*/.test(url);
   },
   ProcessPageElements: function() {
     const returnMap = {
@@ -1896,8 +1977,8 @@ Pages[9 /* Stacc */] = {
 };
 Pages[10 /* Artwork */] = {
   PageTypeString: "ArtworkPage",
-  CheckUrl: function(url2) {
-    return /^https:\/\/www.pixiv.net\/artworks\/.*/.test(url2) || /^https:\/\/www.pixiv.net\/en\/artworks\/.*/.test(url2);
+  CheckUrl: function(url) {
+    return /^https:\/\/www.pixiv.net\/artworks\/.*/.test(url) || /^https:\/\/www.pixiv.net\/en\/artworks\/.*/.test(url);
   },
   ProcessPageElements: function() {
     const canvas = $("main").find("figure").find("canvas");
@@ -1972,16 +2053,16 @@ Pages[10 /* Artwork */] = {
       }).mouseleave(function() {
         $(this).css("opacity", "0.4");
       }).click(function() {
-        let illustId2 = "";
+        let illustId = "";
         const matched = location.href.match(/artworks\/(\d+)/);
         if (matched) {
-          illustId2 = matched[1];
-          DoLog(3 /* Info */, "IllustId=" + illustId2);
+          illustId = matched[1];
+          DoLog(3 /* Info */, "IllustId=" + illustId);
         } else {
           DoLog(1 /* Error */, "Can not found illust id!");
           return;
         }
-        $.ajax(g_getUgoiraUrl.replace("#id#", illustId2), {
+        $.ajax(g_getUgoiraUrl.replace("#id#", illustId), {
           method: "GET",
           success: function(json) {
             DoLog(4 /* Elements */, json);
@@ -2016,8 +2097,8 @@ Pages[10 /* Artwork */] = {
 };
 Pages[11 /* NovelSearch */] = {
   PageTypeString: "NovelSearchPage",
-  CheckUrl: function(url2) {
-    return /^https:\/\/www.pixiv.net\/tags\/.*\/novels/.test(url2) || /^https:\/\/www.pixiv.net\/en\/tags\/.*\/novels/.test(url2);
+  CheckUrl: function(url) {
+    return /^https:\/\/www.pixiv.net\/tags\/.*\/novels/.test(url) || /^https:\/\/www.pixiv.net\/en\/tags\/.*\/novels/.test(url);
   },
   ProcessPageElements: function() {
     const returnMap = {
@@ -2050,8 +2131,8 @@ Pages[11 /* NovelSearch */] = {
 };
 Pages[12 /* SearchTop */] = {
   PageTypeString: "SearchTopPage",
-  CheckUrl: function(url2) {
-    return /^https?:\/\/www.pixiv.net(\/en)?\/tags\/[^/*]/.test(url2);
+  CheckUrl: function(url) {
+    return /^https?:\/\/www.pixiv.net(\/en)?\/tags\/[^/*]/.test(url);
   },
   ProcessPageElements: function() {
     const returnMap = {
@@ -2129,8 +2210,6 @@ Pages[12 /* SearchTop */] = {
     returnMap: null
   }
 };
-var wheelEvent = "onwheel" in document.createElement("div") ? "wheel" : "mousewheel";
-var autoLoadInterval;
 var imageElementTemplate = null;
 var GM__xmlHttpRequest;
 if ("undefined" != typeof GM_xmlhttpRequest) {
@@ -2155,25 +2234,25 @@ function PixivSK(callback) {
     $("#progress").text(
       i18n_default[g_language].sort_getWorks.replace("%1", currentGettingPageCount + 1).replace("%2", g_settings.pageCount)
     );
-    let url2 = currentUrl.replace(/p=\d+/, "p=" + currentPage);
+    let url = currentUrl.replace(/p=\d+/, "p=" + currentPage);
     if (location.href.indexOf("?") != -1) {
       let param = location.href.split("?")[1];
       param = param.replace(/^p=\d+/, "");
       param = param.replace(/&p=\d+/, "");
-      url2 += "&" + param;
+      url += "&" + param;
     }
-    if (url2.indexOf("order=") == -1) {
-      url2 += "&order=date_d";
+    if (url.indexOf("order=") == -1) {
+      url += "&order=date_d";
     }
-    if (url2.indexOf("mode=") == -1) {
-      url2 += "&mode=all";
+    if (url.indexOf("mode=") == -1) {
+      url += "&mode=all";
     }
-    if (url2.indexOf("s_mode=") == -1) {
-      url2 += "&s_mode=s_tag_full";
+    if (url.indexOf("s_mode=") == -1) {
+      url += "&s_mode=s_tag_full";
     }
-    DoLog(3 /* Info */, "getWorks url: " + url2);
+    DoLog(3 /* Info */, "getWorks url: " + url);
     const req = new XMLHttpRequest();
-    req.open("GET", url2, true);
+    req.open("GET", url, true);
     req.onload = function(event) {
       onloadCallback(req);
     };
@@ -2328,18 +2407,18 @@ function PixivSK(callback) {
     });
   };
   if (currentPage === 0) {
-    let url2 = location.href;
-    if (url2.indexOf("&p=") == -1 && url2.indexOf("?p=") == -1) {
+    let url = location.href;
+    if (url.indexOf("&p=") == -1 && url.indexOf("?p=") == -1) {
       DoLog(2 /* Warning */, "Can not found page in url.");
-      if (url2.indexOf("?") == -1) {
-        url2 += "?p=1";
-        DoLog(3 /* Info */, 'Add "?p=1": ' + url2);
+      if (url.indexOf("?") == -1) {
+        url += "?p=1";
+        DoLog(3 /* Info */, 'Add "?p=1": ' + url);
       } else {
-        url2 += "&p=1";
-        DoLog(3 /* Info */, 'Add "&p=1": ' + url2);
+        url += "&p=1";
+        DoLog(3 /* Info */, 'Add "&p=1": ' + url);
       }
     }
-    const wordMatch = url2.match(/\/tags\/([^/]*)\//);
+    const wordMatch = url.match(/\/tags\/([^/]*)\//);
     let searchWord = "";
     if (wordMatch) {
       DoLog(3 /* Info */, "Search key word: " + searchWord);
@@ -2348,10 +2427,10 @@ function PixivSK(callback) {
       DoLog(1 /* Error */, "Can not found search key word!");
       return;
     }
-    const page = url2.match(/p=(\d*)/)[1];
+    const page = url.match(/p=(\d*)/)[1];
     currentPage = parseInt(page);
     DoLog(3 /* Info */, "Current page: " + currentPage);
-    const type = url2.match(/tags\/.*\/(.*)[?$]/)[1];
+    const type = url.match(/tags\/.*\/(.*)[?$]/)[1];
     currentUrl += type + "/";
     currentUrl += searchWord + "?word=" + searchWord + "&p=" + currentPage;
     DoLog(3 /* Info */, "Current url: " + currentUrl);
@@ -2491,10 +2570,10 @@ function PixivSK(callback) {
         return;
       }
       if (json) {
-        let illustId2 = "";
+        let illustId = "";
         const illustIdMatched = event.finalUrl.match(/illust_id=(\d+)/);
         if (illustIdMatched) {
-          illustId2 = illustIdMatched[1];
+          illustId = illustIdMatched[1];
         } else {
           DoLog(
             1 /* Error */,
@@ -2504,7 +2583,7 @@ function PixivSK(callback) {
         }
         let indexOfThisRequest = -1;
         for (let j = 0; j < g_maxXhr; j++) {
-          if (xhrs[j].illustId == illustId2) {
+          if (xhrs[j].illustId == illustId) {
             indexOfThisRequest = j;
             break;
           }
@@ -2519,7 +2598,7 @@ function PixivSK(callback) {
           works[currentRequestGroupMinimumIndex + indexOfThisRequest].bookmarkCount = parseInt(bookmarkCount);
           DoLog(
             3 /* Info */,
-            "IllustId: " + illustId2 + ", bookmarkCount: " + bookmarkCount
+            "IllustId: " + illustId + ", bookmarkCount: " + bookmarkCount
           );
         } else {
           DoLog(1 /* Error */, "Some error occured: " + json.message);
@@ -2544,10 +2623,10 @@ function PixivSK(callback) {
       }
     };
     const onerrorFunc = function(event) {
-      let illustId2 = "";
+      let illustId = "";
       const illustIdMatched = event.finalUrl.match(/illust_id=(\d+)/);
       if (illustIdMatched) {
-        illustId2 = illustIdMatched[1];
+        illustId = illustIdMatched[1];
       } else {
         DoLog(
           1 /* Error */,
@@ -2557,11 +2636,11 @@ function PixivSK(callback) {
       }
       DoLog(
         1 /* Error */,
-        "Send request failed, set this illust(" + illustId2 + ")'s bookmark count to 0!"
+        "Send request failed, set this illust(" + illustId + ")'s bookmark count to 0!"
       );
       let indexOfThisRequest = -1;
       for (let j = 0; j < g_maxXhr; j++) {
-        if (xhrs[j].illustId == illustId2) {
+        if (xhrs[j].illustId == illustId) {
           indexOfThisRequest = j;
           break;
         }
@@ -2615,13 +2694,13 @@ function PixivSK(callback) {
         xhrs[i].illustId = "";
         continue;
       }
-      const illustId2 = works[index + i].id;
-      const url2 = "https://www.pixiv.net/touch/ajax/illust/details?illust_id=" + illustId2;
-      xhrs[i].illustId = illustId2;
+      const illustId = works[index + i].id;
+      const url = "https://www.pixiv.net/touch/ajax/illust/details?illust_id=" + illustId;
+      xhrs[i].illustId = illustId;
       xhrs[i].complete = false;
       GM__xmlHttpRequest({
         method: "GET",
-        url: url2,
+        url,
         anonymous: true,
         onabort: xhrs[i].onerror,
         onerror: xhrs[i].onerror,
@@ -2747,15 +2826,15 @@ function PixivSK(callback) {
           restrict = 1;
         }
         const _this = $(this).children("svg:first");
-        const illustId2 = _this.attr("illustId");
+        const illustId = _this.attr("illustId");
         const bookmarkId = _this.attr("bookmarkId");
         if (bookmarkId == null || bookmarkId == "") {
-          DoLog(3 /* Info */, "Add bookmark, illustId: " + illustId2);
+          DoLog(3 /* Info */, "Add bookmark, illustId: " + illustId);
           $.ajax("/ajax/illusts/bookmarks/add", {
             method: "POST",
             contentType: "application/json;charset=utf-8",
             headers: { "x-csrf-token": g_csrfToken },
-            data: '{"illust_id":"' + illustId2 + '","restrict":' + restrict + ',"comment":"","tags":[]}',
+            data: '{"illust_id":"' + illustId + '","restrict":' + restrict + ',"comment":"","tags":[]}',
             success: function(data) {
               DoLog(3 /* Info */, "addBookmark result: ");
               DoLog(4 /* Elements */, data);
@@ -3062,10 +3141,10 @@ function PixivNS() {
     if (total == void 0) {
       total = to - from;
     }
-    let url2 = location.origin + g_getNovelUrl.replace(/#key#/g, key).replace(/#page#/g, from);
+    let url = location.origin + g_getNovelUrl.replace(/#key#/g, key).replace(/#page#/g, from);
     const search = getSearchParamsWithoutPage();
     if (search.length > 0) {
-      url2 += "&" + search;
+      url += "&" + search;
     }
     updateProgress(
       i18n_default[g_language].nsort_getWorks.replace("1%", total - to + from + 1).replace("2%", total)
@@ -3088,7 +3167,7 @@ function PixivNS() {
     }
     return new Promise(function(resolve, reject) {
       $.ajax({
-        url: url2,
+        url,
         success: function(data) {
           onLoadFinish(data, resolve);
         },

@@ -19,7 +19,7 @@ import {
   getUgoiraMetadataRequestUrl,
 } from "../utils/url";
 
-type LoadImagePreviewOptions = Pick<
+type LoadPreviewImageOptions = Pick<
   GlobalSettings,
   "previewDelay" | "enableAnimePreview"
 >;
@@ -32,7 +32,7 @@ interface IllustMetadata {
 }
 
 let isLoad = false;
-export const loadIllustPreview = (options: LoadImagePreviewOptions) => {
+export const loadIllustPreview = (options: LoadPreviewImageOptions) => {
   if (isLoad) return;
 
   const { previewDelay, enableAnimePreview } = options;
@@ -67,6 +67,8 @@ export const loadIllustPreview = (options: LoadImagePreviewOptions) => {
     #currentIllustSize: [number, number];
     /** 保存的鼠标位置 */
     #prevMousePos: [number, number];
+    /** 当前预览的动图播放器 */
+    #currentUgoriaPlayer: ZipImagePlayer & { canvas: HTMLCanvasElement };
 
     /** 关闭预览组件，重置初始值 */
     reset() {
@@ -129,9 +131,11 @@ export const loadIllustPreview = (options: LoadImagePreviewOptions) => {
         PREVIEW_WRAPPER_MIN_SIZE,
         PREVIEW_WRAPPER_MIN_SIZE,
       ];
+      this.#currentUgoriaPlayer?.stop();
 
       // 取消所有绑定的监听事件
-      this.unbindImagePreviewEvents();
+      this.unbindPreviewImageEvents();
+      this.unbindUgoriaPreviewEvents();
     }
 
     constructor() {
@@ -165,27 +169,27 @@ export const loadIllustPreview = (options: LoadImagePreviewOptions) => {
       });
 
       // 绑定图片预览监听事件
-      this.bindImagePreviewEvents();
+      this.bindPreviewImageEvents();
       // 初始化图片显示
-      this.updateImagePreview();
+      this.updatePreviewImage();
     }
 
-    bindImagePreviewEvents() {
+    bindPreviewImageEvents() {
       // 监听图片加载完毕事件
-      this.previewImageElement.on("load", this.onIllustLoad);
+      this.previewImageElement.on("load", this.onImageLoad);
       // 监听鼠标滚动切换图片事件
       this.previewImageElement.on("mousewheel", this.onPreviewImageMouseWheel);
       // 监听鼠标移动事件
       $(document).on("mousemove", this.onMouseMove);
     }
 
-    unbindImagePreviewEvents() {
+    unbindPreviewImageEvents() {
       this.previewImageElement.off();
       $(document).off("mousemove", this.onMouseMove);
     }
 
     /** 显示 this.currentPage 指向的图片 */
-    updateImagePreview() {
+    updatePreviewImage() {
       const currentImageUrl = this.regularUrls[this.currentPage - 1];
       this.previewImageElement.attr("src", currentImageUrl);
 
@@ -196,51 +200,7 @@ export const loadIllustPreview = (options: LoadImagePreviewOptions) => {
       }
     }
 
-    nextPage() {
-      if (this.currentPage < this.pageCount) {
-        this.currentPage += 1;
-      } else {
-        this.currentPage = 1;
-      }
-      this.updateImagePreview();
-    }
-
-    prevPage() {
-      if (this.currentPage > 1) {
-        this.currentPage -= 1;
-      } else {
-        this.currentPage = this.pageCount;
-      }
-      this.updateImagePreview();
-    }
-
-    onPreviewImageMouseWheel = (mouseWheelEvent: JQueryEventObject) => {
-      mouseWheelEvent.preventDefault();
-
-      if (mouseWheelEvent.originalEvent.wheelDelta < 0) {
-        // 滑轮向下滚动，切换到下一张图片预览
-        this.nextPage();
-      } else {
-        // 滑轮向上滚动，切换到上一张图片预览
-        this.prevPage();
-      }
-    };
-    //#endregion
-
-    //#region 预览动图功能
-    setUgoiraSrc() {}
-    //#endregion
-
-    /** 初始化显示预览容器 */
-    initPreviewWrapper() {
-      this.previewWrapperElement.show();
-      this.previewLoadingElement.show();
-      this.adjustPreviewWrapper({
-        baseOnMousePos: true,
-      });
-    }
-
-    onIllustLoad = () => {
+    onImageLoad = () => {
       this.initialized = true;
       this.previewLoadingElement.hide();
       this.previewImageElement.show();
@@ -260,6 +220,108 @@ export const loadIllustPreview = (options: LoadImagePreviewOptions) => {
         baseOnMousePos: false,
       });
     };
+
+    nextPage() {
+      if (this.currentPage < this.pageCount) {
+        this.currentPage += 1;
+      } else {
+        this.currentPage = 1;
+      }
+      this.updatePreviewImage();
+    }
+
+    prevPage() {
+      if (this.currentPage > 1) {
+        this.currentPage -= 1;
+      } else {
+        this.currentPage = this.pageCount;
+      }
+      this.updatePreviewImage();
+    }
+
+    onPreviewImageMouseWheel = (mouseWheelEvent: JQueryEventObject) => {
+      mouseWheelEvent.preventDefault();
+
+      if (mouseWheelEvent.originalEvent.wheelDelta < 0) {
+        // 滑轮向下滚动，切换到下一张图片预览
+        this.nextPage();
+      } else {
+        // 滑轮向上滚动，切换到上一张图片预览
+        this.prevPage();
+      }
+    };
+    //#endregion
+
+    //#region 预览动图功能
+    setUgoira({
+      illustElement,
+      src,
+      originalSrc,
+      mime_type,
+      frames,
+    }: GetUgoiraMetaResponse["body"] & { illustElement: JQuery }) {
+      this.reset();
+
+      this.initPreviewWrapper();
+
+      this.illustElement = illustElement;
+      this.#currentUgoriaPlayer = createPlayer({
+        source: src,
+        metadata: {
+          mime_type,
+          frames,
+        },
+      });
+
+      this.bindUgoriaPreviewEvents();
+    }
+
+    bindUgoriaPreviewEvents() {
+      $(this.#currentUgoriaPlayer).on("frameLoaded", this.onUgoriaFrameLoaded);
+      $(document).on("mousemove", this.onMouseMove);
+    }
+
+    unbindUgoriaPreviewEvents() {
+      $(this.#currentUgoriaPlayer).off();
+      $(document).off("mousemove", this.onMouseMove);
+    }
+
+    onUgoriaFrameLoaded = (ev, frame) => {
+      if (frame !== 0) {
+        return;
+      }
+
+      this.initialized = true;
+      this.previewLoadingElement.hide();
+
+      const canvas = $(this.#currentUgoriaPlayer.canvas);
+      this.previewImageElement.after(canvas);
+      this.previewImageElement.remove();
+      this.previewImageElement = canvas;
+
+      const ugoriaOriginWidth = ev.currentTarget._frameImages[0].width;
+      const ugoriaOriginHeight = ev.currentTarget._frameImages[0].height;
+      this.#currentIllustSize = [ugoriaOriginWidth, ugoriaOriginHeight];
+      this.previewImageElement.attr({
+        width: ugoriaOriginWidth,
+        height: ugoriaOriginHeight,
+      });
+
+      // 滚动切换图片时，使用之前的鼠标位置
+      this.adjustPreviewWrapper({
+        baseOnMousePos: false,
+      });
+    };
+    //#endregion
+
+    /** 初始化显示预览容器 */
+    initPreviewWrapper() {
+      this.previewWrapperElement.show();
+      this.previewLoadingElement.show();
+      this.adjustPreviewWrapper({
+        baseOnMousePos: true,
+      });
+    }
 
     onMouseMove = (mouseMoveEvent: JQueryMouseEventObject) => {
       if (mouseMoveEvent.ctrlKey) {
@@ -390,11 +452,19 @@ export const loadIllustPreview = (options: LoadImagePreviewOptions) => {
     }
   }
 
+  const mouseHoverDebounceWait = previewDelay / 5;
+  const mouseHoverPreviewWait = previewDelay - mouseHoverDebounceWait;
+
   const previewIllust = previewIllustWithCache();
-  $(document).mouseover(onMouseOverIllust);
+  const debouncedOnMouseOverIllust = debounce(
+    onMouseOverIllust,
+    mouseHoverDebounceWait
+  );
+  $(document).mouseover(debouncedOnMouseOverIllust);
   function onMouseOverIllust(mouseOverEvent: JQueryMouseEventObject) {
     const target = $(mouseOverEvent.target);
     // 当前悬浮元素不是作品，跳过
+    // TODO: 兼容动图显示，悬浮在播放按钮上加载动图预览
     if (!target.is("IMG")) {
       return;
     }
@@ -409,7 +479,7 @@ export const loadIllustPreview = (options: LoadImagePreviewOptions) => {
 
     const previewIllustTimeout = setTimeout(() => {
       previewIllust(target);
-    }, previewDelay);
+    }, mouseHoverPreviewWait);
 
     target.on("mouseout", () => {
       clearTimeout(previewIllustTimeout);
@@ -499,6 +569,10 @@ export const loadIllustPreview = (options: LoadImagePreviewOptions) => {
       } else if (illustType === IllustType.UGOIRA) {
         // 命中缓存，直接使用缓存中的元数据
         if (getUgoiraMetadataCache[illustId]) {
+          previewedIllust.setUgoira({
+            illustElement: target,
+            ...getUgoiraMetadataCache[illustId],
+          });
           return;
         }
 
@@ -518,6 +592,13 @@ export const loadIllustPreview = (options: LoadImagePreviewOptions) => {
             if (currentHoveredIllustId !== illustId) return;
 
             const { src, originalSrc, mime_type, frames } = data.body;
+            previewedIllust.setUgoira({
+              illustElement: target,
+              src,
+              originalSrc,
+              mime_type,
+              frames,
+            });
           },
           error: (err) => {
             iLog.e(`Get an error while requesting ugoira metadata: ${err}`);
