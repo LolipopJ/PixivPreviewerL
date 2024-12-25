@@ -30,7 +30,7 @@ var g_defaultSettings = {
   enableSort: 1,
   enableAnimeDownload: 1,
   original: 0,
-  previewDelay: 300,
+  previewDelay: 500,
   previewByKey: 0,
   previewKey: 17,
   previewFullScreen: 0,
@@ -66,20 +66,6 @@ var LogLevel = /* @__PURE__ */ ((LogLevel2) => {
   LogLevel2[LogLevel2["Elements"] = 4] = "Elements";
   return LogLevel2;
 })(LogLevel || {});
-
-// src/utils/debounce.ts
-function debounce(func, delay = 100) {
-  let timeoutId = null;
-  return function(...args) {
-    if (timeoutId) {
-      clearTimeout(timeoutId);
-    }
-    timeoutId = setTimeout(() => {
-      func(...args);
-    }, delay);
-  };
-}
-var debounce_default = debounce;
 
 // src/utils/logger.ts
 var ILog = class {
@@ -188,8 +174,6 @@ var loadIllustPreview = (options) => {
     currentPage;
     /** 当前预览图片的总页数 */
     pageCount;
-    /** 保存的鼠标位置 */
-    #prevMousePos;
     /** 预览图片或动图容器 */
     previewWrapperElement;
     /** 预览图片或动图加载状态 */
@@ -200,6 +184,10 @@ var loadIllustPreview = (options) => {
     pageCountElement;
     /** 下载原图按钮 */
     downloadOriginalElement;
+    /** 当前预览图片的实际尺寸 */
+    #currentIllustSize;
+    /** 保存的鼠标位置 */
+    #prevMousePos;
     /** 关闭预览组件，重置初始值 */
     reset() {
       this.illustElement = $();
@@ -208,7 +196,6 @@ var loadIllustPreview = (options) => {
       this.originalUrls = [];
       this.currentPage = 1;
       this.pageCount = 1;
-      this.#prevMousePos = [0, 0];
       this.previewWrapperElement?.remove();
       this.previewWrapperElement = $(document.createElement("div")).attr("id", "pp-wrapper").css({
         position: "fixed",
@@ -235,6 +222,11 @@ var loadIllustPreview = (options) => {
         right: "0px"
       }).hide().appendTo(this.previewWrapperElement);
       this.downloadOriginalElement = $();
+      this.#prevMousePos = [0, 0];
+      this.#currentIllustSize = [
+        PREVIEW_WRAPPER_MIN_SIZE,
+        PREVIEW_WRAPPER_MIN_SIZE
+      ];
       this.unbindImagePreviewEvents();
     }
     constructor() {
@@ -324,6 +316,10 @@ var loadIllustPreview = (options) => {
         width: "",
         height: ""
       });
+      this.#currentIllustSize = [
+        this.previewImageElement.width(),
+        this.previewImageElement.height()
+      ];
       this.adjustPreviewWrapper({
         baseOnMousePos: false
       });
@@ -352,10 +348,7 @@ var loadIllustPreview = (options) => {
     } = {}) {
       const [mousePosX, mousePosY] = baseOnMousePos ? mouse_monitor_default.mouseAbsPos : this.#prevMousePos;
       this.#prevMousePos = [mousePosX, mousePosY];
-      const [illustWidth, illustHeight] = [
-        this.previewImageElement.width() || this.previewLoadingElement.width(),
-        this.previewImageElement.height() || this.previewLoadingElement.height()
-      ];
+      const [illustWidth, illustHeight] = this.#currentIllustSize;
       const screenWidth = document.documentElement.clientWidth;
       const screenHeight = document.documentElement.clientHeight;
       const isShowLeft = mousePosX > screenWidth / 2;
@@ -364,20 +357,16 @@ var loadIllustPreview = (options) => {
       const screenRestWidth = isShowLeft ? mousePosX - PREVIEW_WRAPPER_DISTANCE_TO_MOUSE : screenWidth - mousePosX - PREVIEW_WRAPPER_DISTANCE_TO_MOUSE;
       const screenRestRatio = screenRestWidth / screenHeight;
       const isFitToFullHeight = screenRestRatio > illustRatio;
-      let fitToScreenScale = "1.000";
+      let fitToScreenScale = 1;
       if (this.initialized) {
         if (isFitToFullHeight) {
-          fitToScreenScale = (screenHeight / illustHeight).toFixed(3);
+          fitToScreenScale = Number((screenHeight / illustHeight).toFixed(3));
         } else {
-          const screenRestHeight = isShowTop ? mousePosY : screenHeight - mousePosY;
-          fitToScreenScale = Math.min(
-            screenRestWidth / illustWidth,
-            screenRestHeight / illustHeight
-          ).toFixed(3);
+          fitToScreenScale = Number((screenRestWidth / illustWidth).toFixed(3));
         }
       }
-      const previewImageFitWidth = illustWidth * Number(fitToScreenScale);
-      const previewImageFitHeight = illustHeight * Number(fitToScreenScale);
+      const previewImageFitWidth = Math.floor(illustWidth * fitToScreenScale);
+      const previewImageFitHeight = Math.floor(illustHeight * fitToScreenScale);
       const previewWrapperElementPos = {
         left: "",
         right: "",
@@ -389,8 +378,25 @@ var loadIllustPreview = (options) => {
       } else {
         previewWrapperElementPos.left = `${mousePosX + PREVIEW_WRAPPER_DISTANCE_TO_MOUSE}px`;
       }
-      if (this.initialized && isFitToFullHeight) {
-        previewWrapperElementPos.top = "0px";
+      if (this.initialized) {
+        if (isFitToFullHeight) {
+          previewWrapperElementPos.top = "0px";
+        } else {
+          const screenRestHeight = isShowTop ? mousePosY : screenHeight - mousePosY;
+          if (previewImageFitHeight > screenRestHeight) {
+            if (isShowTop) {
+              previewWrapperElementPos.top = "0px";
+            } else {
+              previewWrapperElementPos.bottom = "0px";
+            }
+          } else {
+            if (isShowTop) {
+              previewWrapperElementPos.bottom = `${screenHeight - mousePosY}px`;
+            } else {
+              previewWrapperElementPos.top = `${mousePosY}px`;
+            }
+          }
+        }
       } else {
         if (isShowTop) {
           previewWrapperElementPos.bottom = `${screenHeight - mousePosY}px`;
@@ -406,7 +412,6 @@ var loadIllustPreview = (options) => {
     }
   }
   const previewIllust = previewIllustWithCache();
-  const debouncePreviewIllust = debounce_default(previewIllust, previewDelay);
   $(document).mouseover(onMouseOverIllust);
   function onMouseOverIllust(mouseOverEvent) {
     const target = $(mouseOverEvent.target);
@@ -416,7 +421,13 @@ var loadIllustPreview = (options) => {
     if (mouseOverEvent.ctrlKey) {
       return;
     }
-    debouncePreviewIllust(target);
+    const previewIllustTimeout = setTimeout(() => {
+      previewIllust(target);
+    }, previewDelay);
+    target.on("mouseout", () => {
+      clearTimeout(previewIllustTimeout);
+      target.off("mouseout");
+    });
   }
   function previewIllustWithCache() {
     const previewedIllust = new PreviewedIllust();

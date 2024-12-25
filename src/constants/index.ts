@@ -23,7 +23,7 @@ export const g_defaultSettings: GlobalSettings = {
   enableSort: 1,
   enableAnimeDownload: 1,
   original: 0,
-  previewDelay: 300,
+  previewDelay: 500,
   previewByKey: 0,
   previewKey: 17,
   previewFullScreen: 0,

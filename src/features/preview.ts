@@ -52,9 +52,6 @@ export const loadIllustPreview = (options: LoadImagePreviewOptions) => {
     /** 当前预览图片的总页数 */
     pageCount: number;
 
-    /** 保存的鼠标位置 */
-    #prevMousePos: [number, number];
-
     /** 预览图片或动图容器 */
     previewWrapperElement: JQuery;
     /** 预览图片或动图加载状态 */
@@ -66,6 +63,11 @@ export const loadIllustPreview = (options: LoadImagePreviewOptions) => {
     /** 下载原图按钮 */
     downloadOriginalElement: JQuery;
 
+    /** 当前预览图片的实际尺寸 */
+    #currentIllustSize: [number, number];
+    /** 保存的鼠标位置 */
+    #prevMousePos: [number, number];
+
     /** 关闭预览组件，重置初始值 */
     reset() {
       this.illustElement = $();
@@ -75,8 +77,6 @@ export const loadIllustPreview = (options: LoadImagePreviewOptions) => {
       this.originalUrls = [];
       this.currentPage = 1;
       this.pageCount = 1;
-
-      this.#prevMousePos = [0, 0];
 
       // 重新创建预览容器节点
       this.previewWrapperElement?.remove();
@@ -123,6 +123,12 @@ export const loadIllustPreview = (options: LoadImagePreviewOptions) => {
         .appendTo(this.previewWrapperElement);
       // TODO
       this.downloadOriginalElement = $();
+
+      this.#prevMousePos = [0, 0];
+      this.#currentIllustSize = [
+        PREVIEW_WRAPPER_MIN_SIZE,
+        PREVIEW_WRAPPER_MIN_SIZE,
+      ];
 
       // 取消所有绑定的监听事件
       this.unbindImagePreviewEvents();
@@ -239,11 +245,15 @@ export const loadIllustPreview = (options: LoadImagePreviewOptions) => {
       this.previewLoadingElement.hide();
       this.previewImageElement.show();
 
-      // 移除图片调整后的宽高，后续重新基于原始宽高计算调整后的宽高
+      // 移除图片调整后的宽高，获取图片的实际宽高
       this.previewImageElement.css({
         width: "",
         height: "",
       });
+      this.#currentIllustSize = [
+        this.previewImageElement.width(),
+        this.previewImageElement.height(),
+      ];
 
       // 滚动切换图片时，使用之前的鼠标位置
       this.adjustPreviewWrapper({
@@ -288,11 +298,7 @@ export const loadIllustPreview = (options: LoadImagePreviewOptions) => {
         : this.#prevMousePos;
       this.#prevMousePos = [mousePosX, mousePosY];
 
-      const [illustWidth, illustHeight] = [
-        this.previewImageElement.width() || this.previewLoadingElement.width(),
-        this.previewImageElement.height() ||
-          this.previewLoadingElement.height(),
-      ];
+      const [illustWidth, illustHeight] = this.#currentIllustSize;
 
       const screenWidth = document.documentElement.clientWidth;
       const screenHeight = document.documentElement.clientHeight;
@@ -305,35 +311,29 @@ export const loadIllustPreview = (options: LoadImagePreviewOptions) => {
       /** 预览作品宽高比 */
       const illustRatio = illustWidth / illustHeight;
 
-      /** 预览容器在水平方向可用的剩余宽度 */
+      /** 鼠标到左（右）边的距离 */
       const screenRestWidth = isShowLeft
         ? mousePosX - PREVIEW_WRAPPER_DISTANCE_TO_MOUSE
         : screenWidth - mousePosX - PREVIEW_WRAPPER_DISTANCE_TO_MOUSE;
-      /** 剩余可用空间宽高比 */
+      /** 显示预览容器的可用空间宽高比 */
       const screenRestRatio = screenRestWidth / screenHeight;
 
-      /** 作品缩放后是否占满高度，宽度自适应；若否，则作品缩放后高度宽度自适应，不超过可视区域 */
+      /** 作品缩放后是否占满可视区域高度，宽度自适应；若否，则作品缩放后占满剩余宽度，高度自适应 */
       const isFitToFullHeight = screenRestRatio > illustRatio;
 
-      let fitToScreenScale = "1.000";
+      let fitToScreenScale = 1;
       if (this.initialized) {
+        // 当前预览的是实际作品，进行缩放处理
         if (isFitToFullHeight) {
-          // 作品高度占满可视区域，宽度自适应
-          fitToScreenScale = (screenHeight / illustHeight).toFixed(3);
+          // 作品高度缩放占满可视区域，宽度自适应
+          fitToScreenScale = Number((screenHeight / illustHeight).toFixed(3));
         } else {
-          // 作品高度和宽度自适应，不超过可视区域
-          /** 预览容器在垂直方向可用的剩余高度 */
-          const screenRestHeight = isShowTop
-            ? mousePosY
-            : screenHeight - mousePosY;
-          fitToScreenScale = Math.min(
-            screenRestWidth / illustWidth,
-            screenRestHeight / illustHeight
-          ).toFixed(3);
+          // 作品宽度缩放占满鼠标左（右）边区域，高度自适应
+          fitToScreenScale = Number((screenRestWidth / illustWidth).toFixed(3));
         }
       }
-      const previewImageFitWidth = illustWidth * Number(fitToScreenScale);
-      const previewImageFitHeight = illustHeight * Number(fitToScreenScale);
+      const previewImageFitWidth = Math.floor(illustWidth * fitToScreenScale);
+      const previewImageFitHeight = Math.floor(illustHeight * fitToScreenScale);
 
       const previewWrapperElementPos = {
         left: "",
@@ -348,8 +348,32 @@ export const loadIllustPreview = (options: LoadImagePreviewOptions) => {
         previewWrapperElementPos.left = `${mousePosX + PREVIEW_WRAPPER_DISTANCE_TO_MOUSE}px`;
       }
       // 设置预览容器的垂直位置
-      if (this.initialized && isFitToFullHeight) {
-        previewWrapperElementPos.top = "0px";
+      if (this.initialized) {
+        if (isFitToFullHeight) {
+          // 图片高度占满可视区域
+          previewWrapperElementPos.top = "0px";
+        } else {
+          // 图片宽度占满鼠标到左（右）边的距离
+          /** 鼠标到顶（底）边的距离 */
+          const screenRestHeight = isShowTop
+            ? mousePosY
+            : screenHeight - mousePosY;
+          if (previewImageFitHeight > screenRestHeight) {
+            // 垂直方向上，图片高度大于鼠标到顶（底）边的距离，设置预览容器贴顶（底）边
+            if (isShowTop) {
+              previewWrapperElementPos.top = "0px";
+            } else {
+              previewWrapperElementPos.bottom = "0px";
+            }
+          } else {
+            // 垂直方向上，图片高度小于鼠标到顶（底）边的距离，设置预览容器跟随鼠标
+            if (isShowTop) {
+              previewWrapperElementPos.bottom = `${screenHeight - mousePosY}px`;
+            } else {
+              previewWrapperElementPos.top = `${mousePosY}px`;
+            }
+          }
+        }
       } else {
         if (isShowTop) {
           previewWrapperElementPos.bottom = `${screenHeight - mousePosY}px`;
@@ -367,7 +391,6 @@ export const loadIllustPreview = (options: LoadImagePreviewOptions) => {
   }
 
   const previewIllust = previewIllustWithCache();
-  const debouncePreviewIllust = debounce(previewIllust, previewDelay);
   $(document).mouseover(onMouseOverIllust);
   function onMouseOverIllust(mouseOverEvent: JQueryMouseEventObject) {
     const target = $(mouseOverEvent.target);
@@ -384,7 +407,14 @@ export const loadIllustPreview = (options: LoadImagePreviewOptions) => {
     // TODO: 特殊情况不显示预览
     // TODO: 作品页作者作品列表，当前访问的作品不显示预览
 
-    debouncePreviewIllust(target);
+    const previewIllustTimeout = setTimeout(() => {
+      previewIllust(target);
+    }, previewDelay);
+
+    target.on("mouseout", () => {
+      clearTimeout(previewIllustTimeout);
+      target.off("mouseout");
+    });
   }
 
   function previewIllustWithCache() {
