@@ -228,7 +228,9 @@ export const loadIllustPreview = (options: LoadPreviewImageOptions) => {
       this.originalUrls = originalUrls;
       this.currentPage = 1;
       this.pageCount = regularUrls.length;
+
       // 预加载图片资源
+      // TODO: 分批预加载图片资源
       regularUrls.map((url) => {
         const preloadImage = new Image();
         preloadImage.src = url;
@@ -345,7 +347,7 @@ export const loadIllustPreview = (options: LoadPreviewImageOptions) => {
     setUgoira({
       illustElement,
       src,
-      originalSrc,
+      // originalSrc,
       mime_type,
       frames,
     }: GetUgoiraMetaResponse["body"] & { illustElement: JQuery }) {
@@ -354,6 +356,10 @@ export const loadIllustPreview = (options: LoadPreviewImageOptions) => {
       this.initPreviewWrapper();
 
       this.illustElement = illustElement;
+
+      // 鼠标悬浮在动图中间播放图标上，不关闭预览窗口
+      illustElement.siblings("svg").css({ "pointer-events": "none" });
+
       this.#currentUgoriaPlayer = createPlayer({
         source: src,
         metadata: {
@@ -549,9 +555,9 @@ export const loadIllustPreview = (options: LoadPreviewImageOptions) => {
   $(document).mouseover(debouncedOnMouseOverIllust);
   function onMouseOverIllust(mouseOverEvent: JQueryMouseEventObject) {
     const target = $(mouseOverEvent.target);
-    // 当前悬浮元素不是作品，跳过
-    // TODO: 兼容动图显示，悬浮在播放按钮上加载动图预览
-    if (!target.is("IMG")) {
+
+    // 当前悬浮元素不是作品或作品链接，跳过
+    if (!(target.is("IMG") || target.is("A"))) {
       return;
     }
 
@@ -560,7 +566,7 @@ export const loadIllustPreview = (options: LoadPreviewImageOptions) => {
       return;
     }
 
-    // TODO: 特殊情况不显示预览
+    // 特殊情况不显示预览
     // TODO: 作品页作者作品列表，当前访问的作品不显示预览
 
     const previewIllustTimeout = setTimeout(() => {
@@ -699,11 +705,11 @@ export const loadIllustPreview = (options: LoadPreviewImageOptions) => {
 
   /**
    * 获取作品的元数据信息
-   * @param img <img /> 的 JQuery 对象
+   * @param target 查找的 JQuery 对象
    * @returns 作品的元数据
    */
-  function getIllustMetadata(img: JQuery): IllustMetadata | null {
-    let imgLink = img.parent();
+  function getIllustMetadata(target: JQuery): IllustMetadata | null {
+    let imgLink = target;
     while (!imgLink.is("A")) {
       imgLink = imgLink.parent();
 
@@ -716,13 +722,16 @@ export const loadIllustPreview = (options: LoadPreviewImageOptions) => {
     const illustHref = imgLink.attr("href");
     const illustHrefMatch = illustHref.match(/\/artworks\/(\d+)/);
     if (!illustHrefMatch) {
-      iLog.w("当前作品不支持预览，跳过");
+      iLog.w("当前链接非作品链接，或当前作品不支持预览，跳过");
       return null;
     }
     const illustId = illustHrefMatch[1];
 
     const ugoiraSvg = imgLink.children("div:first").find("svg:first");
-    const illustType = ugoiraSvg.length ? IllustType.UGOIRA : IllustType.ILLUST;
+    const illustType =
+      ugoiraSvg.length || imgLink.hasClass("ugoku-illust")
+        ? IllustType.UGOIRA
+        : IllustType.ILLUST;
 
     return {
       /** 作品 ID */

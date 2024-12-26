@@ -914,13 +914,14 @@ var loadIllustPreview = (options) => {
     setUgoira({
       illustElement,
       src,
-      originalSrc,
+      // originalSrc,
       mime_type,
       frames
     }) {
       this.reset();
       this.initPreviewWrapper();
       this.illustElement = illustElement;
+      illustElement.siblings("svg").css({ "pointer-events": "none" });
       this.#currentUgoriaPlayer = createPlayer({
         source: src,
         metadata: {
@@ -1065,7 +1066,7 @@ var loadIllustPreview = (options) => {
   $(document).mouseover(debouncedOnMouseOverIllust);
   function onMouseOverIllust(mouseOverEvent) {
     const target = $(mouseOverEvent.target);
-    if (!target.is("IMG")) {
+    if (!(target.is("IMG") || target.is("A"))) {
       return;
     }
     if (mouseOverEvent.ctrlKey) {
@@ -1168,8 +1169,8 @@ var loadIllustPreview = (options) => {
       }
     };
   }
-  function getIllustMetadata(img) {
-    let imgLink = img.parent();
+  function getIllustMetadata(target) {
+    let imgLink = target;
     while (!imgLink.is("A")) {
       imgLink = imgLink.parent();
       if (!imgLink.length) {
@@ -1180,12 +1181,12 @@ var loadIllustPreview = (options) => {
     const illustHref = imgLink.attr("href");
     const illustHrefMatch = illustHref.match(/\/artworks\/(\d+)/);
     if (!illustHrefMatch) {
-      iLog.w("\u5F53\u524D\u4F5C\u54C1\u4E0D\u652F\u6301\u9884\u89C8\uFF0C\u8DF3\u8FC7");
+      iLog.w("\u5F53\u524D\u94FE\u63A5\u975E\u4F5C\u54C1\u94FE\u63A5\uFF0C\u6216\u5F53\u524D\u4F5C\u54C1\u4E0D\u652F\u6301\u9884\u89C8\uFF0C\u8DF3\u8FC7");
       return null;
     }
     const illustId = illustHrefMatch[1];
     const ugoiraSvg = imgLink.children("div:first").find("svg:first");
-    const illustType = ugoiraSvg.length ? 2 /* UGOIRA */ : 0 /* ILLUST */;
+    const illustType = ugoiraSvg.length || imgLink.hasClass("ugoku-illust") ? 2 /* UGOIRA */ : 0 /* ILLUST */;
     return {
       /** 作品 ID */
       illustId,
