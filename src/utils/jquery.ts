@@ -20,6 +20,7 @@ export const checkJQuery = function () {
       $();
       return true;
     } catch (exception) {
+      iLog.i(`JQuery is not available: ${exception}`);
       return false;
     }
   }

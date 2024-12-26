@@ -3234,7 +3234,11 @@ function Load() {
   function runPixivPreview(eventFromButton = false) {
     try {
       if (g_settings.enablePreview) {
-        loadIllustPreview(g_settings);
+        try {
+          loadIllustPreview(g_settings);
+        } catch (error) {
+          iLog.e(`An error occurred while loading illust preview: ${error}`);
+        }
       }
 
       if (g_pageType == PageType.Artwork) {
