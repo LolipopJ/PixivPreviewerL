@@ -67,6 +67,14 @@ var LogLevel = /* @__PURE__ */ ((LogLevel2) => {
   return LogLevel2;
 })(LogLevel || {});
 
+// src/services/index.ts
+var getIllustPagesRequestUrl = (id) => {
+  return `/ajax/illust/${id}/pages`;
+};
+var getUgoiraMetadataRequestUrl = (id) => {
+  return `/ajax/illust/${id}/ugoira_meta`;
+};
+
 // src/utils/debounce.ts
 function debounce(func, delay = 100) {
   let timeoutId = null;
@@ -145,6 +153,42 @@ function DoLog(level, msgOrElement) {
     }
   }
 }
+
+// src/utils/download.ts
+var downloadFile = (url, filename, options = {}) => {
+  fetch(url, options).then((response) => response.blob()).then((blob) => {
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(blobUrl);
+  }).catch((error) => {
+    iLog.e(`Download ${filename} from ${url} failed: ${error}`);
+    window.open(url, "__blank");
+  });
+};
+var downloadIllust = ({
+  filename,
+  pageCount
+}) => {
+  const match = filename.match(/(\d+)_p(\d+).(.+)/);
+  if (!match) {
+    iLog.e(
+      `Filename ${filename} is not a valid Pixiv illust name. Example: \`125558092_p0.jpg\``
+    );
+    return;
+  }
+  const illustId = match[1];
+  const page = Number(match[2]);
+  const extension = match[3];
+  downloadFile(
+    `https://pixiv.cat/${illustId}${pageCount > 1 ? `-${page + 1}` : ""}.${extension}`,
+    filename
+  );
+};
 
 // src/utils/mouse-monitor.ts
 var MouseMonitor = class {
@@ -639,14 +683,6 @@ function base64ArrayBuffer(arrayBuffer, off, byteLength) {
 }
 var ugoira_player_default = ZipImagePlayer;
 
-// src/utils/url.ts
-var getIllustPagesRequestUrl = (id) => {
-  return `/ajax/illust/${id}/pages`;
-};
-var getUgoiraMetadataRequestUrl = (id) => {
-  return `/ajax/illust/${id}/ugoira_meta`;
-};
-
 // src/features/preview.ts
 var isInitialized = false;
 var loadIllustPreview = (options) => {
@@ -667,15 +703,17 @@ var loadIllustPreview = (options) => {
     pageCount;
     /** 预览图片或动图容器 */
     previewWrapperElement;
-    /** 预览图片或动图加载状态 */
-    previewLoadingElement;
-    /** 当前预览的图片或动图 */
-    previewImageElement;
+    /** 预览容器顶部栏 */
+    previewWrapperHeader;
     /** 当前预览的是第几张图片标记 */
     pageCountElement;
     pageCountText;
     /** 下载原图按钮 */
     downloadOriginalElement;
+    /** 预览图片或动图加载状态 */
+    previewLoadingElement;
+    /** 当前预览的图片或动图 */
+    previewImageElement;
     /** 当前预览图片的实际尺寸 */
     #currentIllustSize;
     /** 保存的鼠标位置 */
@@ -700,25 +738,23 @@ var loadIllustPreview = (options) => {
         "backdrop-filter": "blur(4px)",
         "text-align": "center"
       }).hide().appendTo($("body"));
-      this.previewLoadingElement = $(
-        new Image(PREVIEW_WRAPPER_MIN_SIZE, PREVIEW_WRAPPER_MIN_SIZE)
-      ).attr({
-        id: "pp-loading",
-        src: g_loadingImage
+      this.previewWrapperHeader = $(document.createElement("div")).attr({
+        id: "pp-wrapper__header"
       }).css({
-        "border-radius": "50%"
-      }).hide().appendTo(this.previewWrapperElement);
-      this.previewImageElement = $(new Image()).attr({ id: "pp-image" }).css({
-        "border-radius": `${PREVIEW_WRAPPER_BORDER_RADIUS}px`
-      }).hide().appendTo(this.previewWrapperElement);
-      this.pageCountText = $(document.createElement("span")).css({ "margin-left": "4px" }).text("1/1");
-      this.pageCountElement = $(document.createElement("div")).attr({ id: "pp-page-count" }).css({
         position: "absolute",
-        top: "5px",
-        right: "5px",
+        top: "0px",
+        left: "0px",
+        right: "0px",
+        padding: "5px",
+        display: "flex",
+        gap: "5px",
+        "align-items": "center",
+        "justify-content": "flex-end"
+      }).appendTo(this.previewWrapperElement);
+      this.pageCountText = $(document.createElement("span")).attr({ id: "pp-page-count__text" }).css({ "margin-left": "4px" }).text("1/1");
+      this.pageCountElement = $(document.createElement("div")).attr({ id: "pp-page-count" }).css({
         display: "flex",
         "align-items": "center",
-        "margin-left": "auto",
         height: "20px",
         "border-radius": "10px",
         color: "white",
@@ -743,13 +779,29 @@ var loadIllustPreview = (options) => {
           "font-size": "0px",
           "vertical-align": "middle"
         })
-      ).append(this.pageCountText).hide().appendTo(this.previewWrapperElement);
-      this.downloadOriginalElement = $(document.createElement("div")).attr({ id: "pp-download-original" }).css({
-        position: "absolute",
-        top: "0px",
-        right: "60px",
+      ).append(this.pageCountText).hide().prependTo(this.previewWrapperHeader);
+      this.downloadOriginalElement = $(document.createElement("a")).attr({ id: "pp-download-original" }).css({
+        height: "20px",
+        "border-radius": "10px",
+        color: "white",
+        background: "rgba(0, 0, 0, 0.32)",
+        "font-size": "10px",
+        "line-height": "20px",
+        "font-weight": "bold",
+        padding: "3px 6px",
         cursor: "pointer"
-      }).text("DOWNLOAD").hide().appendTo(this.previewWrapperElement);
+      }).text("DOWNLOAD").hide().prependTo(this.previewWrapperHeader);
+      this.previewLoadingElement = $(
+        new Image(PREVIEW_WRAPPER_MIN_SIZE, PREVIEW_WRAPPER_MIN_SIZE)
+      ).attr({
+        id: "pp-loading",
+        src: g_loadingImage
+      }).css({
+        "border-radius": "50%"
+      }).appendTo(this.previewWrapperElement);
+      this.previewImageElement = $(new Image()).attr({ id: "pp-image" }).css({
+        "border-radius": `${PREVIEW_WRAPPER_BORDER_RADIUS}px`
+      }).hide().appendTo(this.previewWrapperElement);
       this.#prevMousePos = [0, 0];
       this.#currentIllustSize = [
         PREVIEW_WRAPPER_MIN_SIZE,
@@ -786,25 +838,32 @@ var loadIllustPreview = (options) => {
     bindPreviewImageEvents() {
       this.previewImageElement.on("load", this.onImageLoad);
       this.previewImageElement.on("wheel", this.onPreviewImageMouseWheel);
+      this.downloadOriginalElement.on("click", this.onDownloadImage);
       $(document).on("mousemove", this.onMouseMove);
     }
     unbindPreviewImageEvents() {
       this.previewImageElement.off();
+      this.downloadOriginalElement.off();
       $(document).off("mousemove", this.onMouseMove);
     }
     /** 显示 this.currentPage 指向的图片 */
     updatePreviewImage() {
-      const currentImageUrl = this.regularUrls[this.currentPage - 1];
+      const currentPageIndex = this.currentPage - 1;
+      const isMultiplePage = this.pageCount > 1;
+      const currentImageUrl = this.regularUrls[currentPageIndex];
       this.previewImageElement.attr("src", currentImageUrl);
-      if (this.pageCount > 1) {
+      if (isMultiplePage) {
         this.pageCountText.text(`${this.currentPage}/${this.pageCount}`);
-        this.pageCountElement.show();
       }
     }
     onImageLoad = () => {
       this.initialized = true;
       this.previewLoadingElement.hide();
       this.previewImageElement.show();
+      this.downloadOriginalElement.show();
+      if (this.pageCount > 1) {
+        this.pageCountElement.show();
+      }
       this.previewImageElement.css({
         width: "",
         height: ""
@@ -840,6 +899,15 @@ var loadIllustPreview = (options) => {
       } else {
         this.prevPage();
       }
+    };
+    onDownloadImage = (onClickEvent) => {
+      onClickEvent.preventDefault();
+      const currentImageOriginalUrl = this.originalUrls[this.currentPage - 1];
+      const currentImageFilename = currentImageOriginalUrl.split("/").pop() || "illust.jpg";
+      downloadIllust({
+        filename: currentImageFilename,
+        pageCount: this.pageCount
+      });
     };
     //#endregion
     //#region 预览动图功能
@@ -905,7 +973,7 @@ var loadIllustPreview = (options) => {
         return;
       }
       const currentElement = $(mouseMoveEvent.target);
-      if (currentElement.is(this.previewWrapperElement) || currentElement.is(this.previewImageElement)) {
+      if (this.previewWrapperElement.find(currentElement).length) {
       } else if (currentElement.is(this.illustElement)) {
         this.adjustPreviewWrapper({
           baseOnMousePos: true

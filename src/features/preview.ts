@@ -7,18 +7,19 @@ import {
 } from "../constants";
 import { IllustType } from "../enums";
 import {
+  getIllustPagesRequestUrl,
+  getUgoiraMetadataRequestUrl,
+} from "../services";
+import {
   GetIllustPagesResponse,
   GetUgoiraMetaResponse,
   GlobalSettings,
 } from "../types";
 import debounce from "../utils/debounce";
+import { downloadIllust } from "../utils/download";
 import { iLog } from "../utils/logger";
 import mouseMonitor from "../utils/mouse-monitor";
 import ZipImagePlayer from "../utils/ugoira-player";
-import {
-  getIllustPagesRequestUrl,
-  getUgoiraMetadataRequestUrl,
-} from "../utils/url";
 
 type LoadPreviewImageOptions = Pick<
   GlobalSettings,
@@ -55,22 +56,26 @@ export const loadIllustPreview = (options: LoadPreviewImageOptions) => {
 
     /** 预览图片或动图容器 */
     previewWrapperElement: JQuery;
-    /** 预览图片或动图加载状态 */
-    previewLoadingElement: JQuery;
-    /** 当前预览的图片或动图 */
-    previewImageElement: JQuery;
+    /** 预览容器顶部栏 */
+    previewWrapperHeader: JQuery;
     /** 当前预览的是第几张图片标记 */
     pageCountElement: JQuery;
     pageCountText: JQuery;
     /** 下载原图按钮 */
     downloadOriginalElement: JQuery;
+    /** 预览图片或动图加载状态 */
+    previewLoadingElement: JQuery;
+    /** 当前预览的图片或动图 */
+    previewImageElement: JQuery;
 
     /** 当前预览图片的实际尺寸 */
     #currentIllustSize: [number, number];
     /** 保存的鼠标位置 */
     #prevMousePos: [number, number];
     /** 当前预览的动图播放器 */
-    #currentUgoriaPlayer: ZipImagePlayer & { canvas: HTMLCanvasElement };
+    #currentUgoriaPlayer: ZipImagePlayer & {
+      canvas: HTMLCanvasElement;
+    };
 
     /** 关闭预览组件，重置初始值 */
     reset() {
@@ -97,37 +102,31 @@ export const loadIllustPreview = (options: LoadPreviewImageOptions) => {
         })
         .hide()
         .appendTo($("body"));
-      this.previewLoadingElement = $(
-        new Image(PREVIEW_WRAPPER_MIN_SIZE, PREVIEW_WRAPPER_MIN_SIZE)
-      )
+      this.previewWrapperHeader = $(document.createElement("div"))
         .attr({
-          id: "pp-loading",
-          src: g_loadingImage,
+          id: "pp-wrapper__header",
         })
         .css({
-          "border-radius": "50%",
+          position: "absolute",
+          top: "0px",
+          left: "0px",
+          right: "0px",
+          padding: "5px",
+          display: "flex",
+          gap: "5px",
+          "align-items": "center",
+          "justify-content": "flex-end",
         })
-        .hide()
-        .appendTo(this.previewWrapperElement);
-      this.previewImageElement = $(new Image())
-        .attr({ id: "pp-image" })
-        .css({
-          "border-radius": `${PREVIEW_WRAPPER_BORDER_RADIUS}px`,
-        })
-        .hide()
         .appendTo(this.previewWrapperElement);
       this.pageCountText = $(document.createElement("span"))
+        .attr({ id: "pp-page-count__text" })
         .css({ "margin-left": "4px" })
         .text("1/1");
       this.pageCountElement = $(document.createElement("div"))
         .attr({ id: "pp-page-count" })
         .css({
-          position: "absolute",
-          top: "5px",
-          right: "5px",
           display: "flex",
           "align-items": "center",
-          "margin-left": "auto",
           height: "20px",
           "border-radius": "10px",
           color: "white",
@@ -156,20 +155,43 @@ export const loadIllustPreview = (options: LoadPreviewImageOptions) => {
         )
         .append(this.pageCountText)
         .hide()
-        .appendTo(this.previewWrapperElement);
-      // TODO
-      this.downloadOriginalElement = $(document.createElement("div"))
+        .prependTo(this.previewWrapperHeader);
+      this.downloadOriginalElement = $(document.createElement("a"))
         .attr({ id: "pp-download-original" })
         .css({
-          position: "absolute",
-          top: "0px",
-          right: "60px",
+          height: "20px",
+          "border-radius": "10px",
+          color: "white",
+          background: "rgba(0, 0, 0, 0.32)",
+          "font-size": "10px",
+          "line-height": "20px",
+          "font-weight": "bold",
+          padding: "3px 6px",
           cursor: "pointer",
         })
         .text("DOWNLOAD")
         .hide()
+        .prependTo(this.previewWrapperHeader);
+      this.previewLoadingElement = $(
+        new Image(PREVIEW_WRAPPER_MIN_SIZE, PREVIEW_WRAPPER_MIN_SIZE)
+      )
+        .attr({
+          id: "pp-loading",
+          src: g_loadingImage,
+        })
+        .css({
+          "border-radius": "50%",
+        })
+        .appendTo(this.previewWrapperElement);
+      this.previewImageElement = $(new Image())
+        .attr({ id: "pp-image" })
+        .css({
+          "border-radius": `${PREVIEW_WRAPPER_BORDER_RADIUS}px`,
+        })
+        .hide()
         .appendTo(this.previewWrapperElement);
 
+      // 初始化私有变量值
       this.#prevMousePos = [0, 0];
       this.#currentIllustSize = [
         PREVIEW_WRAPPER_MIN_SIZE,
@@ -223,24 +245,29 @@ export const loadIllustPreview = (options: LoadPreviewImageOptions) => {
       this.previewImageElement.on("load", this.onImageLoad);
       // 监听鼠标滚动切换图片事件
       this.previewImageElement.on("wheel", this.onPreviewImageMouseWheel);
+      // 监听点击下载按钮事件
+      this.downloadOriginalElement.on("click", this.onDownloadImage);
       // 监听鼠标移动事件
       $(document).on("mousemove", this.onMouseMove);
     }
 
     unbindPreviewImageEvents() {
       this.previewImageElement.off();
+      this.downloadOriginalElement.off();
       $(document).off("mousemove", this.onMouseMove);
     }
 
     /** 显示 this.currentPage 指向的图片 */
     updatePreviewImage() {
-      const currentImageUrl = this.regularUrls[this.currentPage - 1];
+      const currentPageIndex = this.currentPage - 1;
+      const isMultiplePage = this.pageCount > 1;
+
+      const currentImageUrl = this.regularUrls[currentPageIndex];
       this.previewImageElement.attr("src", currentImageUrl);
 
-      // 更新右上角正在查看的图片页码信息
-      if (this.pageCount > 1) {
+      // 更新正在查看的图片页码信息
+      if (isMultiplePage) {
         this.pageCountText.text(`${this.currentPage}/${this.pageCount}`);
-        this.pageCountElement.show();
       }
     }
 
@@ -248,6 +275,11 @@ export const loadIllustPreview = (options: LoadPreviewImageOptions) => {
       this.initialized = true;
       this.previewLoadingElement.hide();
       this.previewImageElement.show();
+
+      this.downloadOriginalElement.show();
+      if (this.pageCount > 1) {
+        this.pageCountElement.show();
+      }
 
       // 移除图片调整后的宽高，获取图片的实际宽高
       this.previewImageElement.css({
@@ -293,6 +325,19 @@ export const loadIllustPreview = (options: LoadPreviewImageOptions) => {
         // 滑轮向上滚动，切换到上一张图片预览
         this.prevPage();
       }
+    };
+
+    onDownloadImage = (onClickEvent: JQueryEventObject) => {
+      onClickEvent.preventDefault();
+
+      const currentImageOriginalUrl = this.originalUrls[this.currentPage - 1];
+      const currentImageFilename =
+        currentImageOriginalUrl.split("/").pop() || "illust.jpg";
+
+      downloadIllust({
+        filename: currentImageFilename,
+        pageCount: this.pageCount,
+      });
     };
     //#endregion
 
@@ -373,10 +418,7 @@ export const loadIllustPreview = (options: LoadPreviewImageOptions) => {
       }
 
       const currentElement = $(mouseMoveEvent.target);
-      if (
-        currentElement.is(this.previewWrapperElement) ||
-        currentElement.is(this.previewImageElement)
-      ) {
+      if (this.previewWrapperElement.find(currentElement).length) {
         // 鼠标在预览组件上移动，跳过处理
       } else if (currentElement.is(this.illustElement)) {
         // 鼠标在作品对象上移动，调整预览组件位置与大小

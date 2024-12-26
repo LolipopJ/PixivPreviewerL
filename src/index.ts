@@ -18,8 +18,6 @@ let g_language = Lang.zh_CN;
 let g_csrfToken = "";
 // 当前页面类型
 let g_pageType = -1;
-// 鼠标位置
-const g_mousePos = { x: 0, y: 0 };
 // 页面打开时的 url
 let initialUrl = location.href;
 // 设置
