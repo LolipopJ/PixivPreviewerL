@@ -688,6 +688,8 @@ var isInitialized = false;
 var loadIllustPreview = (options) => {
   if (isInitialized) return;
   const { previewDelay, enableAnimePreview } = options;
+  const mouseHoverDebounceWait = previewDelay / 5;
+  const mouseHoverPreviewWait = previewDelay - mouseHoverDebounceWait;
   class PreviewedIllust {
     /** 当前正在预览的作品元素 */
     illustElement;
@@ -1056,8 +1058,7 @@ var loadIllustPreview = (options) => {
       });
     }
   }
-  const mouseHoverDebounceWait = previewDelay / 5;
-  const mouseHoverPreviewWait = previewDelay - mouseHoverDebounceWait;
+  inactiveUnexpectedDoms();
   const previewIllust = previewIllustWithCache();
   const debouncedOnMouseOverIllust = debounce_default(
     onMouseOverIllust,
@@ -1065,11 +1066,11 @@ var loadIllustPreview = (options) => {
   );
   $(document).mouseover(debouncedOnMouseOverIllust);
   function onMouseOverIllust(mouseOverEvent) {
-    const target = $(mouseOverEvent.target);
-    if (!(target.is("IMG") || target.is("A"))) {
+    if (mouseOverEvent.ctrlKey) {
       return;
     }
-    if (mouseOverEvent.ctrlKey) {
+    const target = $(mouseOverEvent.target);
+    if (!(target.is("IMG") || target.is("A"))) {
       return;
     }
     const previewIllustTimeout = setTimeout(() => {
@@ -1206,6 +1207,14 @@ var loadIllustPreview = (options) => {
     });
     p.canvas = canvas;
     return p;
+  }
+  function inactiveUnexpectedDoms() {
+    const styleRules = $("<style>").prop("type", "text/css");
+    styleRules.append(`
+._layout-thumbnail .sc-hnotl9-0.gDHFA-d {
+  pointer-events: none;
+}`);
+    styleRules.appendTo("head");
   }
   isInitialized = true;
 };

@@ -38,6 +38,8 @@ export const loadIllustPreview = (options: LoadPreviewImageOptions) => {
   if (isInitialized) return;
 
   const { previewDelay, enableAnimePreview } = options;
+  const mouseHoverDebounceWait = previewDelay / 5;
+  const mouseHoverPreviewWait = previewDelay - mouseHoverDebounceWait;
 
   class PreviewedIllust {
     /** 当前正在预览的作品元素 */
@@ -544,8 +546,7 @@ export const loadIllustPreview = (options: LoadPreviewImageOptions) => {
     }
   }
 
-  const mouseHoverDebounceWait = previewDelay / 5;
-  const mouseHoverPreviewWait = previewDelay - mouseHoverDebounceWait;
+  inactiveUnexpectedDoms();
 
   const previewIllust = previewIllustWithCache();
   const debouncedOnMouseOverIllust = debounce(
@@ -554,20 +555,18 @@ export const loadIllustPreview = (options: LoadPreviewImageOptions) => {
   );
   $(document).mouseover(debouncedOnMouseOverIllust);
   function onMouseOverIllust(mouseOverEvent: JQueryMouseEventObject) {
-    const target = $(mouseOverEvent.target);
-
-    // 当前悬浮元素不是作品或作品链接，跳过
-    if (!(target.is("IMG") || target.is("A"))) {
-      return;
-    }
-
     // 按住 Ctrl 键时跳过
     if (mouseOverEvent.ctrlKey) {
       return;
     }
 
-    // 特殊情况不显示预览
-    // TODO: 作品页作者作品列表，当前访问的作品不显示预览
+    const target = $(mouseOverEvent.target);
+    // 当前悬浮元素不是作品或作品链接，跳过
+    if (!(target.is("IMG") || target.is("A"))) {
+      return;
+    }
+
+    // TODO：特殊情况不显示预览
 
     const previewIllustTimeout = setTimeout(() => {
       previewIllust(target);
@@ -753,6 +752,19 @@ export const loadIllustPreview = (options: LoadPreviewImageOptions) => {
     });
     p.canvas = canvas;
     return p;
+  }
+
+  /** 取消预期外节点的鼠标事件 */
+  function inactiveUnexpectedDoms() {
+    const styleRules = $("<style>").prop("type", "text/css");
+    // https://www.pixiv.net/ranking.php 排行榜页面加载后续作品时，
+    // 会插入一个影响鼠标悬浮判定的节点 \`.sc-hnotl9-0.gDHFA-d\`，
+    // 在此处将其设置为不触发鼠标事件
+    styleRules.append(`
+._layout-thumbnail .sc-hnotl9-0.gDHFA-d {
+  pointer-events: none;
+}`);
+    styleRules.appendTo("head");
   }
 
   isInitialized = true;
