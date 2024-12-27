@@ -9,6 +9,7 @@ import {
 import { Lang, LogLevel, PageType } from "./enums";
 import { loadIllustPreview } from "./features/preview";
 import Texts from "./i18n";
+import { request } from "./services";
 import { checkJQuery } from "./utils/jquery";
 import { DoLog, iLog } from "./utils/logger";
 
@@ -1117,13 +1118,6 @@ function CheckUrlTest() {
 /* ---------------------------------------- 排序 ---------------------------------------- */
 let imageElementTemplate = null;
 
-let GM__xmlHttpRequest;
-if ("undefined" != typeof GM_xmlhttpRequest) {
-  GM__xmlHttpRequest = GM_xmlhttpRequest;
-} else {
-  GM__xmlHttpRequest = GM.xmlHttpRequest;
-}
-
 function PixivSK(callback) {
   // 不合理的设定
   if (g_settings.pageCount < 1 || g_settings.favFilter < 0) {
@@ -1724,10 +1718,10 @@ function PixivSK(callback) {
         "https://www.pixiv.net/touch/ajax/illust/details?illust_id=" + illustId;
       xhrs[i].illustId = illustId;
       xhrs[i].complete = false;
-      GM__xmlHttpRequest({
+      request({
         method: "GET",
         url: url,
-        anonymous: true,
+        synchronous: true,
         onabort: xhrs[i].onerror,
         onerror: xhrs[i].onerror,
         onload: xhrs[i].onload,
@@ -3050,15 +3044,14 @@ function ShowSetting() {
     };
 
     SetLocalStorage("PixivPreview", settings);
-
-    location.href = location.href;
+    location.reload();
   });
 
   $("#pps-reset").click(function () {
     const comfirmText = Texts[g_language].setting_resetHint;
     if (confirm(comfirmText)) {
       SetLocalStorage("PixivPreview", null);
-      location.href = location.href;
+      location.reload();
     }
   });
 
@@ -3265,7 +3258,7 @@ const startLoad = () => {
     if (location.href != initialUrl) {
       // 排序中点击搜索tag，可能导致进行中的排序出现混乱，加取消太麻烦，直接走刷新
       if (!g_sortComplete) {
-        location.href = location.href;
+        location.reload();
         return;
       }
       // fix 主页预览图出现后点击图片，进到详情页，预览图不消失的问题
@@ -3275,8 +3268,6 @@ const startLoad = () => {
       initialUrl = location.href;
       clearInterval(loadInterval);
       clearInterval(itv);
-      clearInterval(autoLoadInterval);
-      autoLoadInterval = null;
       g_pageType = -1;
       loadInterval = setInterval(Load, 300);
     }

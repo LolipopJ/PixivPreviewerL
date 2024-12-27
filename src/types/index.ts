@@ -29,29 +29,3 @@ export interface GlobalSettings {
   logLevel: LogLevel;
   version: string;
 }
-
-export interface StandardResponse<data> {
-  error: boolean;
-  message: string;
-  body: data;
-}
-
-export type GetIllustPagesResponse = StandardResponse<
-  {
-    urls: {
-      thumb_mini: string;
-      small: string;
-      regular: string;
-      original: string;
-    };
-    width: number;
-    height: number;
-  }[]
->;
-
-export type GetUgoiraMetaResponse = StandardResponse<{
-  src: string;
-  originalSrc: string;
-  mime_type: string;
-  frames: { file: string; delay: number }[];
-}>;

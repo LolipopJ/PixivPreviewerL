@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer (LolipopJ Edition)
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             0.1.0-2024/12/26
+// @version             0.1.0-2024/12/27
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer. Display preview images (support single image, multiple images, moving images); Download animation(.zip); Sorting the search page by favorite count(and display it). Updated for the latest search page.
 // @description:zh-CN   原项目：https://github.com/Ocrosoft/PixivPreviewer。显示预览图（支持单图，多图，动图）；动图压缩包下载；搜索页按热门度（收藏数）排序并显示收藏数。
 // @description:ja      元のプロジェクト: https://github.com/Ocrosoft/PixivPreviewer。プレビュー画像の表示（単一画像、複数画像、動画のサポート）; アニメーションのダウンロード（.zip）; お気に入りの数で検索ページをソートします（そして表示します）。 最新の検索ページ用に更新されました。
@@ -66,28 +66,6 @@ var LogLevel = /* @__PURE__ */ ((LogLevel2) => {
   LogLevel2[LogLevel2["Elements"] = 4] = "Elements";
   return LogLevel2;
 })(LogLevel || {});
-
-// src/services/index.ts
-var getIllustPagesRequestUrl = (id) => {
-  return `/ajax/illust/${id}/pages`;
-};
-var getUgoiraMetadataRequestUrl = (id) => {
-  return `/ajax/illust/${id}/ugoira_meta`;
-};
-
-// src/utils/debounce.ts
-function debounce(func, delay = 100) {
-  let timeoutId = null;
-  return function(...args) {
-    if (timeoutId) {
-      clearTimeout(timeoutId);
-    }
-    timeoutId = setTimeout(() => {
-      func(...args);
-    }, delay);
-  };
-}
-var debounce_default = debounce;
 
 // src/utils/logger.ts
 var ILog = class {
@@ -154,41 +132,84 @@ function DoLog(level, msgOrElement) {
   }
 }
 
-// src/utils/download.ts
-var downloadFile = (url, filename, options = {}) => {
-  fetch(url, options).then((response) => response.blob()).then((blob) => {
-    const blobUrl = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = blobUrl;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(blobUrl);
-  }).catch((error) => {
-    iLog.e(`Download ${filename} from ${url} failed: ${error}`);
-    window.open(url, "__blank");
+// src/services/xml-http-request.ts
+var xmlHttpRequest = (
+  // @ts-expect-error: auto injected by Tampermonkey
+  window.GM_xmlhttpRequest ?? window.GM.xmlHttpRequest
+);
+var request = (options) => {
+  const { headers, ...restOptions } = options;
+  xmlHttpRequest({
+    ...restOptions,
+    headers: {
+      referer: "https://www.pixiv.net/",
+      ...headers
+    }
   });
 };
-var downloadIllust = ({
-  filename,
-  pageCount
-}) => {
-  const match = filename.match(/(\d+)_p(\d+).(.+)/);
-  if (!match) {
-    iLog.e(
-      `Filename ${filename} is not a valid Pixiv illust name. Example: \`125558092_p0.jpg\``
-    );
-    return;
-  }
-  const illustId = match[1];
-  const page = Number(match[2]);
-  const extension = match[3];
-  downloadFile(
-    `https://pixiv.cat/${illustId}${pageCount > 1 ? `-${page + 1}` : ""}.${extension}`,
-    filename
-  );
+var xml_http_request_default = request;
+
+// src/services/download.ts
+var downloadFile = (url, filename, options = {}) => {
+  const { onload, onerror, ...restOptions } = options;
+  xml_http_request_default({
+    ...restOptions,
+    url,
+    method: "GET",
+    responseType: "blob",
+    onload: async (resp) => {
+      onload?.(resp);
+      const blob = new Blob([resp.response], { type: resp.responseType });
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
+    },
+    onerror: (resp) => {
+      onerror?.(resp);
+      iLog.e(`Download ${filename} from ${url} failed: ${resp.responseText}`);
+    }
+  });
 };
+
+// src/services/preview.ts
+var downloadIllust = ({
+  url,
+  filename,
+  options = {}
+}) => {
+  downloadFile(url, filename, {
+    ...options,
+    onerror: (resp) => {
+      options.onerror?.(resp);
+      window.open(url, "__blank");
+    }
+  });
+};
+var getIllustPagesRequestUrl = (id) => {
+  return `/ajax/illust/${id}/pages`;
+};
+var getUgoiraMetadataRequestUrl = (id) => {
+  return `/ajax/illust/${id}/ugoira_meta`;
+};
+
+// src/utils/debounce.ts
+function debounce(func, delay = 100) {
+  let timeoutId = null;
+  return function(...args) {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+    timeoutId = setTimeout(() => {
+      func(...args);
+    }, delay);
+  };
+}
+var debounce_default = debounce;
 
 // src/utils/mouse-monitor.ts
 var MouseMonitor = class {
@@ -274,7 +295,7 @@ ZipImagePlayer.prototype = {
     const xhr = new XMLHttpRequest();
     xhr.addEventListener(
       "load",
-      function(ev) {
+      function() {
         if (_this._dead) {
           return;
         }
@@ -354,7 +375,7 @@ ZipImagePlayer.prototype = {
         off = 0;
       }
       _this._pTail = len;
-      _this._load(off, len - off, function(off2, len2) {
+      _this._load(off, len - off, function(off2) {
         _this._pTail = off2;
         _this._findCentralDirectory();
       });
@@ -579,7 +600,7 @@ ZipImagePlayer.prototype = {
       }, meta.delay);
     }
   },
-  _nextFrame: function(frame) {
+  _nextFrame: function() {
     if (this._frame >= this._frameCount - 1) {
       if (this.op.loop) {
         this._frame = 0;
@@ -721,7 +742,7 @@ var loadIllustPreview = (options) => {
     /** 保存的鼠标位置 */
     #prevMousePos;
     /** 当前预览的动图播放器 */
-    #currentUgoriaPlayer;
+    #currentUgoiraPlayer;
     /** 关闭预览组件，重置初始值 */
     reset() {
       this.illustElement = $();
@@ -809,9 +830,9 @@ var loadIllustPreview = (options) => {
         PREVIEW_WRAPPER_MIN_SIZE,
         PREVIEW_WRAPPER_MIN_SIZE
       ];
-      this.#currentUgoriaPlayer?.stop();
+      this.#currentUgoiraPlayer?.stop();
       this.unbindPreviewImageEvents();
-      this.unbindUgoriaPreviewEvents();
+      this.unbindUgoiraPreviewEvents();
     }
     constructor() {
       this.reset();
@@ -907,8 +928,8 @@ var loadIllustPreview = (options) => {
       const currentImageOriginalUrl = this.originalUrls[this.currentPage - 1];
       const currentImageFilename = currentImageOriginalUrl.split("/").pop() || "illust.jpg";
       downloadIllust({
-        filename: currentImageFilename,
-        pageCount: this.pageCount
+        url: currentImageOriginalUrl,
+        filename: currentImageFilename
       });
     };
     //#endregion
@@ -924,39 +945,39 @@ var loadIllustPreview = (options) => {
       this.initPreviewWrapper();
       this.illustElement = illustElement;
       illustElement.siblings("svg").css({ "pointer-events": "none" });
-      this.#currentUgoriaPlayer = createPlayer({
+      this.#currentUgoiraPlayer = createPlayer({
         source: src,
         metadata: {
           mime_type,
           frames
         }
       });
-      this.bindUgoriaPreviewEvents();
+      this.bindUgoiraPreviewEvents();
     }
-    bindUgoriaPreviewEvents() {
-      $(this.#currentUgoriaPlayer).on("frameLoaded", this.onUgoriaFrameLoaded);
+    bindUgoiraPreviewEvents() {
+      $(this.#currentUgoiraPlayer).on("frameLoaded", this.onUgoiraFrameLoaded);
       $(document).on("mousemove", this.onMouseMove);
     }
-    unbindUgoriaPreviewEvents() {
-      $(this.#currentUgoriaPlayer).off();
+    unbindUgoiraPreviewEvents() {
+      $(this.#currentUgoiraPlayer).off();
       $(document).off("mousemove", this.onMouseMove);
     }
-    onUgoriaFrameLoaded = (ev, frame) => {
+    onUgoiraFrameLoaded = (ev, frame) => {
       if (frame !== 0) {
         return;
       }
       this.initialized = true;
       this.previewLoadingElement.hide();
-      const canvas = $(this.#currentUgoriaPlayer.canvas);
+      const canvas = $(this.#currentUgoiraPlayer.canvas);
       this.previewImageElement.after(canvas);
       this.previewImageElement.remove();
       this.previewImageElement = canvas;
-      const ugoriaOriginWidth = ev.currentTarget._frameImages[0].width;
-      const ugoriaOriginHeight = ev.currentTarget._frameImages[0].height;
-      this.#currentIllustSize = [ugoriaOriginWidth, ugoriaOriginHeight];
+      const ugoiraOriginWidth = ev.currentTarget._frameImages[0].width;
+      const ugoiraOriginHeight = ev.currentTarget._frameImages[0].height;
+      this.#currentIllustSize = [ugoiraOriginWidth, ugoiraOriginHeight];
       this.previewImageElement.attr({
-        width: ugoriaOriginWidth,
-        height: ugoriaOriginHeight
+        width: ugoiraOriginWidth,
+        height: ugoiraOriginHeight
       });
       this.adjustPreviewWrapper({
         baseOnMousePos: false
@@ -1180,7 +1201,7 @@ var loadIllustPreview = (options) => {
       }
     }
     const illustHref = imgLink.attr("href");
-    const illustHrefMatch = illustHref.match(/\/artworks\/(\d+)/);
+    const illustHrefMatch = illustHref?.match(/\/artworks\/(\d+)/);
     if (!illustHrefMatch) {
       iLog.w("\u5F53\u524D\u94FE\u63A5\u975E\u4F5C\u54C1\u94FE\u63A5\uFF0C\u6216\u5F53\u524D\u4F5C\u54C1\u4E0D\u652F\u6301\u9884\u89C8\uFF0C\u8DF3\u8FC7");
       return null;
@@ -2328,12 +2349,6 @@ Pages[12 /* SearchTop */] = {
   }
 };
 var imageElementTemplate = null;
-var GM__xmlHttpRequest;
-if ("undefined" != typeof GM_xmlhttpRequest) {
-  GM__xmlHttpRequest = GM_xmlhttpRequest;
-} else {
-  GM__xmlHttpRequest = GM.xmlHttpRequest;
-}
 function PixivSK(callback) {
   if (g_settings.pageCount < 1 || g_settings.favFilter < 0) {
     g_settings.pageCount = 1;
@@ -2815,10 +2830,10 @@ function PixivSK(callback) {
       const url = "https://www.pixiv.net/touch/ajax/illust/details?illust_id=" + illustId;
       xhrs[i].illustId = illustId;
       xhrs[i].complete = false;
-      GM__xmlHttpRequest({
+      request({
         method: "GET",
         url,
-        anonymous: true,
+        synchronous: true,
         onabort: xhrs[i].onerror,
         onerror: xhrs[i].onerror,
         onload: xhrs[i].onload,
@@ -3776,13 +3791,13 @@ function ShowSetting() {
       version: g_version
     };
     SetLocalStorage("PixivPreview", settings2);
-    location.href = location.href;
+    location.reload();
   });
   $("#pps-reset").click(function() {
     const comfirmText = i18n_default[g_language].setting_resetHint;
     if (confirm(comfirmText)) {
       SetLocalStorage("PixivPreview", null);
-      location.href = location.href;
+      location.reload();
     }
   });
   $("#pps-close").click(function() {
@@ -3951,7 +3966,7 @@ var startLoad = () => {
   setInterval(function() {
     if (location.href != initialUrl) {
       if (!g_sortComplete) {
-        location.href = location.href;
+        location.reload();
         return;
       }
       if ($(".pp-main").length > 0) {
@@ -3960,8 +3975,6 @@ var startLoad = () => {
       initialUrl = location.href;
       clearInterval(loadInterval);
       clearInterval(itv);
-      clearInterval(autoLoadInterval);
-      autoLoadInterval = null;
       g_pageType = -1;
       loadInterval = setInterval(Load, 300);
     }

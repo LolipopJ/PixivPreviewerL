@@ -88,7 +88,7 @@ ZipImagePlayer.prototype = {
     const xhr = new XMLHttpRequest();
     xhr.addEventListener(
       "load",
-      function (ev) {
+      function () {
         if (_this._dead) {
           return;
         }
@@ -177,7 +177,7 @@ ZipImagePlayer.prototype = {
           off = 0;
         }
         _this._pTail = len;
-        _this._load(off, len - off, function (off, len) {
+        _this._load(off, len - off, function (off) {
           _this._pTail = off;
           _this._findCentralDirectory();
         });
@@ -425,7 +425,7 @@ ZipImagePlayer.prototype = {
       }, meta.delay);
     }
   },
-  _nextFrame: function (frame) {
+  _nextFrame: function () {
     if (this._frame >= this._frameCount - 1) {
       if (this.op.loop) {
         this._frame = 0;
