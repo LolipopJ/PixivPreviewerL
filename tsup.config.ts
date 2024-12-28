@@ -12,13 +12,10 @@ export default defineConfig({
   },
   banner: {
     js: `// ==UserScript==
-// @name                Pixiv Previewer (LolipopJ Edition)
+// @name                PixivPreviewerL
 // @namespace           ${packageJson.homepage}
 // @version             ${packageJson.version}-${new Date().toLocaleDateString()}
 // @description         ${packageJson.description}
-// @description:zh-CN   原项目：https://github.com/Ocrosoft/PixivPreviewer。显示预览图（支持单图，多图，动图）；动图压缩包下载；搜索页按热门度（收藏数）排序并显示收藏数。
-// @description:ja      元のプロジェクト: https://github.com/Ocrosoft/PixivPreviewer。プレビュー画像の表示（単一画像、複数画像、動画のサポート）; アニメーションのダウンロード（.zip）; お気に入りの数で検索ページをソートします（そして表示します）。 最新の検索ページ用に更新されました。
-// @description:zh_TW   原項目：https://github.com/Ocrosoft/PixivPreviewer。顯示預覽圖像（支持單幅圖像，多幅圖像，運動圖像）； 下載動畫（.zip）; 按收藏夾數對搜索頁進行排序（並顯示）。 已為最新的搜索頁面適配。
 // @author              ${packageJson.author}
 // @match               *://www.pixiv.net/*
 // @grant               unsafeWindow

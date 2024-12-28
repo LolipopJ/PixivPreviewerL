@@ -1,11 +1,8 @@
 // ==UserScript==
-// @name                Pixiv Previewer (LolipopJ Edition)
+// @name                PixivPreviewerL
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
 // @version             0.1.0-2024/12/28
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
-// @description:zh-CN   原项目：https://github.com/Ocrosoft/PixivPreviewer。显示预览图（支持单图，多图，动图）；动图压缩包下载；搜索页按热门度（收藏数）排序并显示收藏数。
-// @description:ja      元のプロジェクト: https://github.com/Ocrosoft/PixivPreviewer。プレビュー画像の表示（単一画像、複数画像、動画のサポート）; アニメーションのダウンロード（.zip）; お気に入りの数で検索ページをソートします（そして表示します）。 最新の検索ページ用に更新されました。
-// @description:zh_TW   原項目：https://github.com/Ocrosoft/PixivPreviewer。顯示預覽圖像（支持單幅圖像，多幅圖像，運動圖像）； 下載動畫（.zip）; 按收藏夾數對搜索頁進行排序（並顯示）。 已為最新的搜索頁面適配。
 // @author              Ocrosoft, LolipopJ
 // @match               *://www.pixiv.net/*
 // @grant               unsafeWindow
@@ -1118,7 +1115,7 @@ var loadIllustPreview = (options) => {
         iLog.i("Anime preview disabled.");
         return;
       }
-      if (illustType === 0 /* ILLUST */) {
+      if ([0 /* ILLUST */, 1 /* MANGA */].includes(illustType)) {
         if (getIllustPagesCache[illustId]) {
           previewedIllust.setImage({
             illustElement: target,
@@ -1208,7 +1205,10 @@ var loadIllustPreview = (options) => {
     }
     const illustId = illustHrefMatch[1];
     const ugoiraSvg = imgLink.children("div:first").find("svg:first");
-    const illustType = ugoiraSvg.length || imgLink.hasClass("ugoku-illust") ? 2 /* UGOIRA */ : 0 /* ILLUST */;
+    const illustType = ugoiraSvg.length || imgLink.hasClass("ugoku-illust") ? 2 /* UGOIRA */ : (
+      // 合并漫画类型 IllustType.MANGA 为 IllustType.ILLUST 统一处理
+      0 /* ILLUST */
+    );
     return {
       /** 作品 ID */
       illustId,
