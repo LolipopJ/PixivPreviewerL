@@ -15,10 +15,28 @@ export enum LogLevel {
 }
 
 export enum IllustType {
-  /** 插画 / 漫画 */
+  /** 插画 */
   ILLUST = 0,
+  /** 漫画 */
+  MANGA = 1,
   /** 动图 */
   UGOIRA = 2,
+}
+
+export enum IllustCategory {
+  /** 所有作品 */
+  ILLUST_AND_MANGA = "illustManga",
+  /** 插画作品 */
+  ILLUST = "illust",
+  /** 漫画作品 */
+  MANGA = "manga",
+}
+
+export enum AiType {
+  /** 非 AI 生成 */
+  NONE_AI = 1,
+  /** AI 生成 */
+  AI = 2,
 }
 
 // 页面相关的一些预定义，包括处理页面元素等

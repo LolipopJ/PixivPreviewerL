@@ -4,7 +4,7 @@ import request, { RequestOptions } from "./xml-http-request";
 export const downloadFile = (
   url: string,
   filename: string,
-  options: Omit<RequestOptions, "url" | "method" | "responseType"> = {}
+  options: Omit<RequestOptions<Blob>, "url" | "method" | "responseType"> = {}
 ) => {
   const { onload, onerror, ...restOptions } = options;
   request({

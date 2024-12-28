@@ -1,6 +1,6 @@
 import { iLog } from "../utils/logger";
-import { AjaxStandardResponse } from "./ajax";
 import { downloadFile } from "./download";
+import { PixivStandardResponse } from "./xml-http-request";
 
 /** 下载作品 */
 export const downloadIllust = ({
@@ -65,7 +65,7 @@ export type GetIllustPagesResponseData = {
 }[];
 
 export type GetIllustPagesResponse =
-  AjaxStandardResponse<GetIllustPagesResponseData>;
+  PixivStandardResponse<GetIllustPagesResponseData>;
 
 /** 获取图片链接的链接 */
 export const getIllustPagesRequestUrl = (id: string) => {
@@ -80,7 +80,7 @@ export type GetUgoiraMetaResponseData = {
 };
 
 export type GetUgoiraMetaResponse =
-  AjaxStandardResponse<GetUgoiraMetaResponseData>;
+  PixivStandardResponse<GetUgoiraMetaResponseData>;
 
 /** 获取动图下载链接的链接 */
 export const getUgoiraMetadataRequestUrl = (id: string) => {

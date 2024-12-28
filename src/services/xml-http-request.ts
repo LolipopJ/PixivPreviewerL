@@ -33,13 +33,23 @@ export interface RequestResponse<T = XMLHttpRequest["response"]>
   total: number;
 }
 
-const xmlHttpRequest: (request: RequestOptions) => void =
+export interface PixivStandardResponse<data> {
+  error: boolean;
+  message?: string;
+  body: data;
+}
+
+const xmlHttpRequest: <T = XMLHttpRequest["response"]>(
+  request: RequestOptions<T>
+) => void =
   // @ts-expect-error: auto injected by Tampermonkey
   window.GM_xmlhttpRequest ?? window.GM.xmlHttpRequest;
 
-export const request = (options: RequestOptions) => {
+export const request = <T = XMLHttpRequest["response"]>(
+  options: RequestOptions<T>
+) => {
   const { headers, ...restOptions } = options;
-  xmlHttpRequest({
+  xmlHttpRequest<T>({
     ...restOptions,
     headers: {
       referer: "https://www.pixiv.net/",
