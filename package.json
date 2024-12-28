@@ -1,9 +1,9 @@
 {
-  "name": "pixiv-previewer",
+  "name": "pixiv-previewer-l",
   "version": "0.1.0",
-  "description": "Original project: https://github.com/Ocrosoft/PixivPreviewer. Display preview images (support single image, multiple images, moving images); Download animation(.zip); Sorting the search page by favorite count(and display it). Updated for the latest search page.",
+  "description": "Original project: https://github.com/Ocrosoft/PixivPreviewer.",
   "private": true,
-  "main": "dist/pixiv-previewer.js",
+  "main": "dist/index.js",
   "scripts": {
     "build": "tsup",
     "lint": "eslint src --fix",

@@ -4,11 +4,10 @@ const Texts = {} as Record<Lang, Record<string, string>>;
 
 Texts[Lang.zh_CN] = {
   // 安装或更新后弹出的提示
-  install_title: "欢迎使用 Pixiv Previewer ",
+  install_title: "欢迎使用 PixivPreviewerL v",
   install_body:
     '<div style="position: absolute;left: 50%;top: 30%;font-size: 20px; color: white;transform:translate(-50%,0);"><p style="text-indent: 2em;">欢迎反馈问题和提出建议！><a style="color: green;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer/feedback" target="_blank">反馈页面</a><</p><br><p style="text-indent: 2em;">如果您是第一次使用，推荐到<a style="color: green;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer" target="_blank"> 详情页 </a>查看脚本介绍。</p></div>',
-  upgrade_body:
-    "<h3>（重要）关于排序功能</h3>&nbsp&nbsp首先感谢各位的使用，由于最近比较忙，抱歉现在才做出回应。如果各位最近使用过排序功能，可能或多或少都遇到过搜索结果为 0 的问题，下面简单说一下原因和后续的应对方案。<br>&nbsp&nbsp脚本的原理是获取指定页面内所有作品的收藏量，再进行排序。Pixiv 最近对短时间内获取作品信息进行了次数限制，表现为所有请求返回错误，导致显示 0 个作品。以排序三页为例，由于没有批量接口，脚本会向 Pixiv 请求多达 180 个作品的收藏量数据，这对一般限制每分钟访问 30~60 次的请求限制来说非常多了，所以也希望大家能够理解 Pixiv 的做法，同时不要将页数设置得太大。<br>&nbsp&nbsp至于应对方案，目前有以下几种：<ul><li>1.遵循接口限制，可能排序一页要花费一分钟。</li><li>2.使用第三方服务，目前看来也没有服务能够提供批量，或者能顶得住这么多请求的。</li><li>3.用服务器提供收藏量的短时间缓存，并遵循接口限制，成本和风险很高。</li><li>禁用脚本的排序功能。</li></ul>&nbsp&nbsp最后再次感谢大家的使用，如果对上述问题有好的建议，欢迎在 GreasyFork/Github 上提出。最后的最后，这个版本目前可以正常使用排序功能，如果后面突然无法正常使用或者关闭了排序功能，也希望各位能够理解。",
+  upgrade_body: "",
   // 设置项
   setting_language: "语言",
   setting_preview: "预览",
@@ -42,7 +41,7 @@ Texts[Lang.zh_CN] = {
   setting_novelHideFav: "排序时隐藏已收藏的作品",
   // 搜索时过滤值太高
   sort_noWork: "没有可以显示的作品（隐藏了 %1 个作品）",
-  sort_getWorks: "正在获取第%1/%2页作品",
+  sort_getWorks: "正在获取第 %1/%2 页作品",
   sort_getBookmarkCount: "获取收藏数：%1/%2",
   sort_getPublicFollowing: "获取公开关注画师",
   sort_getPrivateFollowing: "获取私有关注画师",
@@ -50,7 +49,7 @@ Texts[Lang.zh_CN] = {
   sort_filteringHideFavorite: "已收藏和",
   sort_fullSizeThumb: "全尺寸缩略图（搜索页、用户页）",
   // 小说排序
-  nsort_getWorks: "正在获取第1%/2%页作品",
+  nsort_getWorks: "正在获取第 1%/2% 页作品",
   nsort_sorting: "正在按收藏量排序",
   nsort_hideFav: "排序时隐藏已收藏的作品",
   nsort_hideFollowed: "排序时隐藏已关注作者作品",
@@ -59,11 +58,10 @@ Texts[Lang.zh_CN] = {
 
 // translate by google
 Texts[Lang.en_US] = {
-  install_title: "Welcome to PixivPreviewer v",
+  install_title: "Welcome to PixivPreviewerL v",
   install_body:
     '<div style="position: absolute;left: 50%;top: 30%;font-size: 20px; color: white;transform:translate(-50%,0);"><p style="text-indent: 2em;">Feedback questions and suggestions are welcome! ><a style="color: green;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer/feedback" target="_blank">Feedback Page</a><</p><br><p style="text-indent: 2em;">If you are using it for the first time, it is recommended to go to the<a style="color: green;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer" target="_blank"> Details Page </a>to see the script introduction.</p></div>',
-  upgrade_body:
-    "<h3>(Important) About the sorting function</h3>&nbsp&nbspFirst of all, thank you for using it. I'm very busy recently, so I'm sorry to respond now. If you have used the sorting function recently, you may have encountered the problem that the search result is 0 more or less. Let me briefly explain the reasons and follow-up solutions. <br>&nbsp&nbsp The principle of the script is to obtain the collections of all works in the specified page, and then sort them. Pixiv recently limited the number of times to obtain work information in a short period of time, which showed that all requests returned errors, resulting in the display of 0 works. Taking sorting three pages as an example, since there is no batch interface, the script will request the collection data of up to 180 works from Pixiv, which is very much for the general limit of 30~60 visits per minute, so I hope You can understand Pixiv's approach, and don't make the page count too large. <br>&nbsp&nbsp As for the solutions, there are currently the following: <ul><li>1. Following the interface restrictions, it may take a minute to sort a page. </li><li>2. Using third-party services, it seems that there is no service that can provide batches, or can withstand so many requests. </li><li>3. It is costly and risky to use the server to provide a short-term cache of collections and follow interface restrictions. </li><li>Disable sorting of scripts. </li></ul>&nbsp&nbsp Finally, thank you again for your use. If you have good suggestions for the above problems, you are welcome to put forward them on GreasyFork/Github. Finally, the sorting function can be used normally in this version. If the sorting function suddenly cannot be used normally or the sorting function is turned off, I hope you can understand.",
+  upgrade_body: "",
   setting_language: "Language",
   setting_preview: "Preview",
   setting_animePreview: "Animation preview",
@@ -114,7 +112,7 @@ Texts[Lang.en_US] = {
 
 // RU: перевод от  vanja-san
 Texts[Lang.ru_RU] = {
-  install_title: "Добро пожаловать в PixivPreviewer v",
+  install_title: "Добро пожаловать в PixivPreviewerL v",
   install_body:
     '<div style="position: absolute;left: 50%;top: 30%;font-size: 20px; color: white;transform:translate(-50%,0);"><p style="text-indent: 2em;">Вопросы и предложения приветствуются! ><a style="color: green;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer/feedback" target="_blank">Страница обратной связи</a><</p><br><p style="text-indent: 2em;">Если вы используете это впервые, рекомендуется перейти к<a style="color: green;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer" target="_blank"> Странице подробностей </a>, чтобы посмотреть введение в скрипт.</p></div>',
   upgrade_body: Texts[Lang.en_US].upgrade_body,
@@ -172,11 +170,10 @@ Texts[Lang.ru_RU] = {
 };
 
 Texts[Lang.ja_JP] = {
-  install_title: "Welcome to PixivPreviewer v",
+  install_title: "Welcome to PixivPreviewerL v",
   install_body:
     '<div style="position: absolute;left: 50%;top: 30%;font-size: 20px; color: white;transform:translate(-50%,0);"><p style="text-indent: 2em;"ご意見や提案は大歓迎です! ><a style="color: green;" href="https://greasyfork.org/ja/scripts/30766-pixiv-previewer/feedback" target="_blank">フィードバックページ</a><</p><br><p style="text-indent: 2em;">初めて使う場合は、<a style="color: green;" href="https://greasyfork.org/ja/scripts/30766-pixiv-previewer" target="_blank"> 詳細ページ </a>でスクリプトの紹介を見ることをお勧めします。</p></div>',
-  upgrade_body:
-    "<h3>(注意！) 並べ替え機能について</h3>&nbsp&nbspご利用いただきありがとうございます。最近はとても忙しく、返信が遅れてしまい申し訳ありません。最近並べ替え機能を使っている場合、検索結果が0になることがあるかもしれません。その理由と対策を簡単に説明させていただきます。 <br>&nbsp&nbsp このスクリプトは、指定されたページ内のすべての作品のコレクションを取得し、それらを並べ替えるのものです。最近、Pixivは短時間に作品情報を取得する回数を制限し、すべてのリクエストがエラーを返すことがあり、検索結果が0件と表示されることがあります。例えば、3ページを並べ替える場合、スクリプトは最大180件の作品のコレクションデータをPixivからリクエストすることになりますが、一般的には30〜60回/分の制限があるため、Pixivの仕様を理解していただき、これを回避するため一気にソートするページの値をを大きくしないでください。  <br>&nbsp&nbsp 解決策として、現在以下のような方法を考えています：<ul><li>1. インターフェイスの制限に従って、1ページのソートに1分ほどかかることがあります。</li><li>2. サードパーティのサービスを利用するものの、バッチ処理ができるサービスがないようですし、それだけのリクエストに耐えられるものもなさそうです。</li><li>3. サーバーを使ってコレクションの短期キャッシュを提供し、インターフェイスの制限に従うことは、コストがかかる上にリスクも伴います。</li><li>スクリプトのソート機能を無効にする。</li></ul>&nbsp&nbsp 最後に、改めてご利用いただきありがとうございます。上記の問題について良い提案があれば、GreasyFork/Githubでお気軽に提案してください。最後に、このバージョンではソート機能が正常に使用できます。ただし、ソート機能が突然正常に使用できなくなったり、ソート機能がオフになった場合は、ご理解いただけると幸いです。",
+  upgrade_body: "",
   setting_language: "言語",
   setting_preview: "プレビュー機能",
   setting_animePreview: "うごイラプレビュー",

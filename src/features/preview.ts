@@ -20,7 +20,7 @@ import { iLog } from "../utils/logger";
 import mouseMonitor from "../utils/mouse-monitor";
 import ZipImagePlayer from "../utils/ugoira-player";
 
-type LoadPreviewImageOptions = Pick<
+type LoadIllustPreviewOptions = Pick<
   GlobalSettings,
   "previewDelay" | "enableAnimePreview"
 >;
@@ -33,7 +33,7 @@ interface IllustMetadata {
 }
 
 let isInitialized = false;
-export const loadIllustPreview = (options: LoadPreviewImageOptions) => {
+export const loadIllustPreview = (options: LoadIllustPreviewOptions) => {
   if (isInitialized) return;
 
   const { previewDelay, enableAnimePreview } = options;
