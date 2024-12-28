@@ -609,7 +609,7 @@ export const loadIllustPreview = (options: LoadIllustPreviewOptions) => {
         return;
       }
 
-      if (illustType === IllustType.ILLUST) {
+      if ([IllustType.ILLUST, IllustType.MANGA].includes(illustType)) {
         // 命中缓存，直接使用缓存中的访问链接
         if (getIllustPagesCache[illustId]) {
           previewedIllust.setImage({
@@ -727,7 +727,8 @@ export const loadIllustPreview = (options: LoadIllustPreviewOptions) => {
     const illustType =
       ugoiraSvg.length || imgLink.hasClass("ugoku-illust")
         ? IllustType.UGOIRA
-        : IllustType.ILLUST;
+        : // 合并漫画类型 IllustType.MANGA 为 IllustType.ILLUST 统一处理
+          IllustType.ILLUST;
 
     return {
       /** 作品 ID */
