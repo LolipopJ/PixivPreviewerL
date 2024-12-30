@@ -246,6 +246,8 @@ export const loadIllustPreview = (options: LoadIllustPreviewOptions) => {
     bindPreviewImageEvents() {
       // 监听图片加载完毕事件
       this.previewImageElement.on("load", this.onImageLoad);
+      // 监听鼠标点击切换图片事件，触摸板友好
+      this.previewImageElement.on("click", this.onPreviewImageMouseClick);
       // 监听鼠标滚动切换图片事件
       this.previewImageElement.on("wheel", this.onPreviewImageMouseWheel);
       // 监听点击下载按钮事件
@@ -317,6 +319,10 @@ export const loadIllustPreview = (options: LoadIllustPreviewOptions) => {
       }
       this.updatePreviewImage();
     }
+
+    onPreviewImageMouseClick = () => {
+      this.nextPage();
+    };
 
     onPreviewImageMouseWheel = (mouseWheelEvent: JQueryEventObject) => {
       mouseWheelEvent.preventDefault();

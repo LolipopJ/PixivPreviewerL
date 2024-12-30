@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                PixivPreviewerL
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             0.1.0-2024/12/28
+// @version             0.1.0-2024/12/30
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @match               *://www.pixiv.net/*
@@ -857,6 +857,7 @@ var loadIllustPreview = (options) => {
     }
     bindPreviewImageEvents() {
       this.previewImageElement.on("load", this.onImageLoad);
+      this.previewImageElement.on("click", this.onPreviewImageMouseClick);
       this.previewImageElement.on("wheel", this.onPreviewImageMouseWheel);
       this.downloadOriginalElement.on("click", this.onDownloadImage);
       $(document).on("mousemove", this.onMouseMove);
@@ -912,6 +913,9 @@ var loadIllustPreview = (options) => {
       }
       this.updatePreviewImage();
     }
+    onPreviewImageMouseClick = () => {
+      this.nextPage();
+    };
     onPreviewImageMouseWheel = (mouseWheelEvent) => {
       mouseWheelEvent.preventDefault();
       if (mouseWheelEvent.originalEvent.deltaY > 0) {
