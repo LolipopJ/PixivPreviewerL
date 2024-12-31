@@ -50,9 +50,10 @@ var g_defaultSettings = {
   version: g_version
 };
 var PREVIEW_WRAPPER_MIN_SIZE = 48;
+var PREVIEW_WRAPPER_BORDER_WIDTH = 2;
 var PREVIEW_WRAPPER_BORDER_RADIUS = 8;
 var PREVIEW_WRAPPER_DISTANCE_TO_MOUSE = 20;
-var PREVIEW_WRAPPER_BORDER_WIDTH = 2;
+var PREVIEW_PRELOAD_NUM = 5;
 
 // src/enums/index.ts
 var LogLevel = /* @__PURE__ */ ((LogLevel2) => {
@@ -848,12 +849,9 @@ var loadIllustPreview = (options) => {
       this.originalUrls = originalUrls;
       this.currentPage = 1;
       this.pageCount = regularUrls.length;
-      regularUrls.map((url) => {
-        const preloadImage = new Image();
-        preloadImage.src = url;
-      });
+      this.preloadImages(0, PREVIEW_PRELOAD_NUM);
       this.bindPreviewImageEvents();
-      this.updatePreviewImage();
+      this.updatePreviewImage(0);
     }
     bindPreviewImageEvents() {
       this.previewImageElement.on("load", this.onImageLoad);
@@ -867,15 +865,11 @@ var loadIllustPreview = (options) => {
       this.downloadOriginalElement.off();
       $(document).off("mousemove", this.onMouseMove);
     }
-    /** 显示 this.currentPage 指向的图片 */
-    updatePreviewImage() {
-      const currentPageIndex = this.currentPage - 1;
-      const isMultiplePage = this.pageCount > 1;
-      const currentImageUrl = this.regularUrls[currentPageIndex];
+    /** 显示 pageIndex 指向的图片 */
+    updatePreviewImage(pageIndex) {
+      const currentImageUrl = this.regularUrls[pageIndex];
       this.previewImageElement.attr("src", currentImageUrl);
-      if (isMultiplePage) {
-        this.pageCountText.text(`${this.currentPage}/${this.pageCount}`);
-      }
+      this.pageCountText.text(`${pageIndex + 1}/${this.pageCount}`);
     }
     onImageLoad = () => {
       this.initialized = true;
@@ -903,7 +897,11 @@ var loadIllustPreview = (options) => {
       } else {
         this.currentPage = 1;
       }
-      this.updatePreviewImage();
+      this.updatePreviewImage(this.currentPage - 1);
+      this.preloadImages(
+        this.currentPage - 1,
+        this.currentPage - 1 + PREVIEW_PRELOAD_NUM
+      );
     }
     prevPage() {
       if (this.currentPage > 1) {
@@ -911,7 +909,13 @@ var loadIllustPreview = (options) => {
       } else {
         this.currentPage = this.pageCount;
       }
-      this.updatePreviewImage();
+      this.updatePreviewImage(this.currentPage - 1);
+    }
+    preloadImages(from, to) {
+      this.regularUrls.slice(from, to).map((url) => {
+        const preloadImage = new Image();
+        preloadImage.src = url;
+      });
     }
     onPreviewImageMouseClick = () => {
       this.nextPage();

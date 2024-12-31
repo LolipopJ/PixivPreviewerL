@@ -45,10 +45,16 @@ export const g_defaultSettings: GlobalSettings = {
   logLevel: 1,
   version: g_version,
 };
-/** 图片预览容器的背景图片链接 */
+/** 作品预览容器的背景图片链接 */
 export const PREVIEW_WRAPPER_BACKGROUND_IMAGE_URL =
   "https://pp-1252089172.cos.ap-chengdu.myqcloud.com/transparent.png";
+/** 作品预览容器的最小尺寸 */
 export const PREVIEW_WRAPPER_MIN_SIZE = 48;
-export const PREVIEW_WRAPPER_BORDER_RADIUS = 8;
-export const PREVIEW_WRAPPER_DISTANCE_TO_MOUSE = 20;
+/** 作品预览容器的边框宽度 */
 export const PREVIEW_WRAPPER_BORDER_WIDTH = 2;
+/** 作品预览容器的边框弧度 */
+export const PREVIEW_WRAPPER_BORDER_RADIUS = 8;
+/** 作品预览容器到鼠标距离 */
+export const PREVIEW_WRAPPER_DISTANCE_TO_MOUSE = 20;
+/** 预览容器预加载图片数量。仅适用于插画类型作品 */
+export const PREVIEW_PRELOAD_NUM = 5;

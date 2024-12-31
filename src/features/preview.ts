@@ -1,5 +1,6 @@
 import {
   g_loadingImage,
+  PREVIEW_PRELOAD_NUM,
   PREVIEW_WRAPPER_BORDER_RADIUS,
   PREVIEW_WRAPPER_BORDER_WIDTH,
   PREVIEW_WRAPPER_DISTANCE_TO_MOUSE,
@@ -230,17 +231,13 @@ export const loadIllustPreview = (options: LoadIllustPreviewOptions) => {
       this.currentPage = 1;
       this.pageCount = regularUrls.length;
 
-      // 预加载图片资源
-      // TODO: 分批预加载图片资源
-      regularUrls.map((url) => {
-        const preloadImage = new Image();
-        preloadImage.src = url;
-      });
+      // 预加载前 PREVIEW_PRELOAD_NUM 张图片
+      this.preloadImages(0, PREVIEW_PRELOAD_NUM);
 
       // 绑定图片预览监听事件
       this.bindPreviewImageEvents();
       // 初始化图片显示
-      this.updatePreviewImage();
+      this.updatePreviewImage(0);
     }
 
     bindPreviewImageEvents() {
@@ -262,18 +259,12 @@ export const loadIllustPreview = (options: LoadIllustPreviewOptions) => {
       $(document).off("mousemove", this.onMouseMove);
     }
 
-    /** 显示 this.currentPage 指向的图片 */
-    updatePreviewImage() {
-      const currentPageIndex = this.currentPage - 1;
-      const isMultiplePage = this.pageCount > 1;
-
-      const currentImageUrl = this.regularUrls[currentPageIndex];
+    /** 显示 pageIndex 指向的图片 */
+    updatePreviewImage(pageIndex: number) {
+      const currentImageUrl = this.regularUrls[pageIndex];
       this.previewImageElement.attr("src", currentImageUrl);
 
-      // 更新正在查看的图片页码信息
-      if (isMultiplePage) {
-        this.pageCountText.text(`${this.currentPage}/${this.pageCount}`);
-      }
+      this.pageCountText.text(`${pageIndex + 1}/${this.pageCount}`);
     }
 
     onImageLoad = () => {
@@ -308,7 +299,12 @@ export const loadIllustPreview = (options: LoadIllustPreviewOptions) => {
       } else {
         this.currentPage = 1;
       }
-      this.updatePreviewImage();
+      this.updatePreviewImage(this.currentPage - 1);
+
+      this.preloadImages(
+        this.currentPage - 1,
+        this.currentPage - 1 + PREVIEW_PRELOAD_NUM
+      );
     }
 
     prevPage() {
@@ -317,7 +313,14 @@ export const loadIllustPreview = (options: LoadIllustPreviewOptions) => {
       } else {
         this.currentPage = this.pageCount;
       }
-      this.updatePreviewImage();
+      this.updatePreviewImage(this.currentPage - 1);
+    }
+
+    preloadImages(from: number, to: number) {
+      this.regularUrls.slice(from, to).map((url) => {
+        const preloadImage = new Image();
+        preloadImage.src = url;
+      });
     }
 
     onPreviewImageMouseClick = () => {
