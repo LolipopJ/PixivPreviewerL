@@ -431,9 +431,7 @@ export const loadIllustPreview = (options: LoadIllustPreviewOptions) => {
       }
 
       const currentElement = $(mouseMoveEvent.target);
-      if (this.previewWrapperElement.find(currentElement).length) {
-        // 鼠标在预览组件上移动，跳过处理
-      } else if (currentElement.is(this.illustElement)) {
+      if (currentElement.is(this.illustElement)) {
         // 鼠标在作品对象上移动，调整预览组件位置与大小
         this.adjustPreviewWrapper({
           baseOnMousePos: true,

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                PixivPreviewerL
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             0.1.0-2024/12/30
+// @version             0.1.0-2024/12/31
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @match               *://www.pixiv.net/*
@@ -998,8 +998,7 @@ var loadIllustPreview = (options) => {
         return;
       }
       const currentElement = $(mouseMoveEvent.target);
-      if (this.previewWrapperElement.find(currentElement).length) {
-      } else if (currentElement.is(this.illustElement)) {
+      if (currentElement.is(this.illustElement)) {
         this.adjustPreviewWrapper({
           baseOnMousePos: true
         });
