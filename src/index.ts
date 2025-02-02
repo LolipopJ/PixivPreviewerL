@@ -438,6 +438,8 @@ Pages[PageType.Home] = {
     return (
       /https?:\/\/www.pixiv.net\/?$/.test(url) ||
       /https?:\/\/www.pixiv.net\/en\/?$/.test(url) ||
+      /https?:\/\/www.pixiv.net\/illustration\/?$/.test(url) ||
+      /https?:\/\/www.pixiv.net\/manga\/?$/.test(url) ||
       /https?:\/\/www.pixiv.net\/cate_r18\.php$/.test(url) ||
       /https?:\/\/www.pixiv.net\/en\/cate_r18\.php$/.test(url)
     );
