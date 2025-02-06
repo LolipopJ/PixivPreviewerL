@@ -1901,7 +1901,7 @@ function PixivSK(callback) {
           }
           // 非公开收藏
           let restrict = 0;
-          if (ev.ctrlKey) {
+          if (ev.ctrlKey || ev.metaKey) {
             restrict = 1;
           }
 

@@ -429,7 +429,7 @@ export const loadIllustPreview = (options: LoadIllustPreviewOptions) => {
     }
 
     onMouseMove = (mouseMoveEvent: JQueryMouseEventObject) => {
-      if (mouseMoveEvent.ctrlKey) {
+      if (mouseMoveEvent.ctrlKey || mouseMoveEvent.metaKey) {
         return;
       }
 
@@ -562,7 +562,7 @@ export const loadIllustPreview = (options: LoadIllustPreviewOptions) => {
   $(document).mouseover(debouncedOnMouseOverIllust);
   function onMouseOverIllust(mouseOverEvent: JQueryMouseEventObject) {
     // 按住 Ctrl 键时跳过
-    if (mouseOverEvent.ctrlKey) {
+    if (mouseOverEvent.ctrlKey || mouseOverEvent.metaKey) {
       return;
     }
 

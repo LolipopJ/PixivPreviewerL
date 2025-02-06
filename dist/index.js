@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                PixivPreviewerL
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             0.1.0-2024/12/31
+// @version             0.1.0-2025/2/6
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @match               *://www.pixiv.net/*
@@ -998,7 +998,7 @@ var loadIllustPreview = (options) => {
       });
     }
     onMouseMove = (mouseMoveEvent) => {
-      if (mouseMoveEvent.ctrlKey) {
+      if (mouseMoveEvent.ctrlKey || mouseMoveEvent.metaKey) {
         return;
       }
       const currentElement = $(mouseMoveEvent.target);
@@ -1091,7 +1091,7 @@ var loadIllustPreview = (options) => {
   );
   $(document).mouseover(debouncedOnMouseOverIllust);
   function onMouseOverIllust(mouseOverEvent) {
-    if (mouseOverEvent.ctrlKey) {
+    if (mouseOverEvent.ctrlKey || mouseOverEvent.metaKey) {
       return;
     }
     const target = $(mouseOverEvent.target);
@@ -2961,7 +2961,7 @@ function PixivSK(callback) {
           return;
         }
         let restrict = 0;
-        if (ev.ctrlKey) {
+        if (ev.ctrlKey || ev.metaKey) {
           restrict = 1;
         }
         const _this = $(this).children("svg:first");
