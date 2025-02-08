@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                PixivPreviewerL
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             0.1.0-2025/2/6
+// @version             0.1.0-2025/2/8
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @match               *://www.pixiv.net/*
@@ -709,404 +709,35 @@ var loadIllustPreview = (options) => {
   const { previewDelay, enableAnimePreview } = options;
   const mouseHoverDebounceWait = previewDelay / 5;
   const mouseHoverPreviewWait = previewDelay - mouseHoverDebounceWait;
-  class PreviewedIllust {
-    /** 当前正在预览的作品元素 */
-    illustElement;
-    /** 预览作品是否初始化 */
-    initialized = false;
-    /** 图片的链接 */
-    regularUrls;
-    /** 图片的原图链接 */
-    originalUrls;
-    /** 当前预览图片的页数 */
-    currentPage;
-    /** 当前预览图片的总页数 */
-    pageCount;
-    /** 预览图片或动图容器 */
-    previewWrapperElement;
-    /** 预览容器顶部栏 */
-    previewWrapperHeader;
-    /** 当前预览的是第几张图片标记 */
-    pageCountElement;
-    pageCountText;
-    /** 下载原图按钮 */
-    downloadOriginalElement;
-    /** 预览图片或动图加载状态 */
-    previewLoadingElement;
-    /** 当前预览的图片或动图 */
-    previewImageElement;
-    /** 当前预览图片的实际尺寸 */
-    #currentIllustSize;
-    /** 保存的鼠标位置 */
-    #prevMousePos;
-    /** 当前预览的动图播放器 */
-    #currentUgoiraPlayer;
-    /** 关闭预览组件，重置初始值 */
-    reset() {
-      this.illustElement = $();
-      this.initialized = false;
-      this.regularUrls = [];
-      this.originalUrls = [];
-      this.currentPage = 1;
-      this.pageCount = 1;
-      this.previewWrapperElement?.remove();
-      this.previewWrapperElement = $(document.createElement("div")).attr({ id: "pp-wrapper" }).css({
-        position: "fixed",
-        "z-index": "999999",
-        border: `${PREVIEW_WRAPPER_BORDER_WIDTH}px solid rgb(0, 150, 250)`,
-        "border-radius": `${PREVIEW_WRAPPER_BORDER_RADIUS}px`,
-        background: "rgba(31, 31, 31, 0.8)",
-        "backdrop-filter": "blur(4px)",
-        "text-align": "center"
-      }).hide().appendTo($("body"));
-      this.previewWrapperHeader = $(document.createElement("div")).attr({
-        id: "pp-wrapper__header"
-      }).css({
-        position: "absolute",
-        top: "0px",
-        left: "0px",
-        right: "0px",
-        padding: "5px",
-        display: "flex",
-        gap: "5px",
-        "align-items": "center",
-        "justify-content": "flex-end"
-      }).appendTo(this.previewWrapperElement);
-      this.pageCountText = $(document.createElement("span")).attr({ id: "pp-page-count__text" }).css({ "margin-left": "4px" }).text("1/1");
-      this.pageCountElement = $(document.createElement("div")).attr({ id: "pp-page-count" }).css({
-        display: "flex",
-        "align-items": "center",
-        height: "20px",
-        "border-radius": "10px",
-        color: "white",
-        background: "rgba(0, 0, 0, 0.32)",
-        "font-size": "10px",
-        "line-height": "12px",
-        "font-weight": "bold",
-        flex: "0 0 auto",
-        padding: "3px 6px"
-      }).append(
-        $(
-          '<svg viewBox="0 0 9 10" size="9"><path d="M 8 3 C 8.55228 3 9 3.44772 9 4 L 9 9 C 9 9.55228 8.55228 10 8 10 L 3 10 C 2.44772 10 2 9.55228 2 9 L 6 9 C 7.10457 9 8 8.10457 8 7 L 8 3 Z M 1 1 L 6 1 C 6.55228 1 7 1.44772 7 2 L 7 7 C 7 7.55228 6.55228 8 6 8 L 1 8 C 0.447715 8 0 7.55228 0 7 L 0 2 C 0 1.44772 0.447715 1 1 1 Z"></path></svg>'
-        ).css({
-          "list-style": "none",
-          "pointer-events": "none",
-          color: "rgb(245, 245, 245)",
-          "font-weight": "bold",
-          stroke: "none",
-          fill: "currentcolor",
-          width: "9px",
-          "line-height": 0,
-          "font-size": "0px",
-          "vertical-align": "middle"
-        })
-      ).append(this.pageCountText).hide().prependTo(this.previewWrapperHeader);
-      this.downloadOriginalElement = $(document.createElement("a")).attr({ id: "pp-download-original" }).css({
-        height: "20px",
-        "border-radius": "10px",
-        color: "white",
-        background: "rgba(0, 0, 0, 0.32)",
-        "font-size": "10px",
-        "line-height": "20px",
-        "font-weight": "bold",
-        padding: "3px 6px",
-        cursor: "pointer"
-      }).text("DOWNLOAD").hide().prependTo(this.previewWrapperHeader);
-      this.previewLoadingElement = $(
-        new Image(PREVIEW_WRAPPER_MIN_SIZE, PREVIEW_WRAPPER_MIN_SIZE)
-      ).attr({
-        id: "pp-loading",
-        src: g_loadingImage
-      }).css({
-        "border-radius": "50%"
-      }).appendTo(this.previewWrapperElement);
-      this.previewImageElement = $(new Image()).attr({ id: "pp-image" }).css({
-        "border-radius": `${PREVIEW_WRAPPER_BORDER_RADIUS}px`
-      }).hide().appendTo(this.previewWrapperElement);
-      this.#prevMousePos = [0, 0];
-      this.#currentIllustSize = [
-        PREVIEW_WRAPPER_MIN_SIZE,
-        PREVIEW_WRAPPER_MIN_SIZE
-      ];
-      this.#currentUgoiraPlayer?.stop();
-      this.unbindPreviewImageEvents();
-      this.unbindUgoiraPreviewEvents();
-    }
-    constructor() {
-      this.reset();
-    }
-    //#region 预览图片功能
-    /** 初始化预览容器，显示第一张图片 */
-    setImage({
-      illustElement,
-      regularUrls,
-      originalUrls
-    }) {
-      this.reset();
-      this.initPreviewWrapper();
-      this.illustElement = illustElement;
-      this.regularUrls = regularUrls;
-      this.originalUrls = originalUrls;
-      this.currentPage = 1;
-      this.pageCount = regularUrls.length;
-      this.preloadImages(0, PREVIEW_PRELOAD_NUM);
-      this.bindPreviewImageEvents();
-      this.updatePreviewImage(0);
-    }
-    bindPreviewImageEvents() {
-      this.previewImageElement.on("load", this.onImageLoad);
-      this.previewImageElement.on("click", this.onPreviewImageMouseClick);
-      this.previewImageElement.on("wheel", this.onPreviewImageMouseWheel);
-      this.downloadOriginalElement.on("click", this.onDownloadImage);
-      $(document).on("mousemove", this.onMouseMove);
-    }
-    unbindPreviewImageEvents() {
-      this.previewImageElement.off();
-      this.downloadOriginalElement.off();
-      $(document).off("mousemove", this.onMouseMove);
-    }
-    /** 显示 pageIndex 指向的图片 */
-    updatePreviewImage(pageIndex) {
-      const currentImageUrl = this.regularUrls[pageIndex];
-      this.previewImageElement.attr("src", currentImageUrl);
-      this.pageCountText.text(`${pageIndex + 1}/${this.pageCount}`);
-    }
-    onImageLoad = () => {
-      this.initialized = true;
-      this.previewLoadingElement.hide();
-      this.previewImageElement.show();
-      this.downloadOriginalElement.show();
-      if (this.pageCount > 1) {
-        this.pageCountElement.show();
+  const getIllustMetadata = (target) => {
+    let imgLink = target;
+    while (!imgLink.is("A")) {
+      imgLink = imgLink.parent();
+      if (!imgLink.length) {
+        iLog.i("\u672A\u80FD\u627E\u5230\u5F53\u524D\u4F5C\u54C1\u7684\u94FE\u63A5\u5143\u7D20");
+        return null;
       }
-      this.previewImageElement.css({
-        width: "",
-        height: ""
-      });
-      this.#currentIllustSize = [
-        this.previewImageElement.width(),
-        this.previewImageElement.height()
-      ];
-      this.adjustPreviewWrapper({
-        baseOnMousePos: false
-      });
+    }
+    const illustHref = imgLink.attr("href");
+    const illustHrefMatch = illustHref?.match(/\/artworks\/(\d+)/);
+    if (!illustHrefMatch) {
+      iLog.w("\u5F53\u524D\u94FE\u63A5\u975E\u4F5C\u54C1\u94FE\u63A5\uFF0C\u6216\u5F53\u524D\u4F5C\u54C1\u4E0D\u652F\u6301\u9884\u89C8\uFF0C\u8DF3\u8FC7");
+      return null;
+    }
+    const illustId = illustHrefMatch[1];
+    const ugoiraSvg = imgLink.children("div:first").find("svg:first");
+    const illustType = ugoiraSvg.length || imgLink.hasClass("ugoku-illust") ? 2 /* UGOIRA */ : (
+      // 合并漫画类型 IllustType.MANGA 为 IllustType.ILLUST 统一处理
+      0 /* ILLUST */
+    );
+    return {
+      /** 作品 ID */
+      illustId,
+      /** 作品类型 */
+      illustType
     };
-    nextPage() {
-      if (this.currentPage < this.pageCount) {
-        this.currentPage += 1;
-      } else {
-        this.currentPage = 1;
-      }
-      this.updatePreviewImage(this.currentPage - 1);
-      this.preloadImages(
-        this.currentPage - 1,
-        this.currentPage - 1 + PREVIEW_PRELOAD_NUM
-      );
-    }
-    prevPage() {
-      if (this.currentPage > 1) {
-        this.currentPage -= 1;
-      } else {
-        this.currentPage = this.pageCount;
-      }
-      this.updatePreviewImage(this.currentPage - 1);
-    }
-    preloadImages(from, to) {
-      this.regularUrls.slice(from, to).map((url) => {
-        const preloadImage = new Image();
-        preloadImage.src = url;
-      });
-    }
-    onPreviewImageMouseClick = () => {
-      this.nextPage();
-    };
-    onPreviewImageMouseWheel = (mouseWheelEvent) => {
-      mouseWheelEvent.preventDefault();
-      if (mouseWheelEvent.originalEvent.deltaY > 0) {
-        this.nextPage();
-      } else {
-        this.prevPage();
-      }
-    };
-    onDownloadImage = (onClickEvent) => {
-      onClickEvent.preventDefault();
-      const currentImageOriginalUrl = this.originalUrls[this.currentPage - 1];
-      const currentImageFilename = currentImageOriginalUrl.split("/").pop() || "illust.jpg";
-      downloadIllust({
-        url: currentImageOriginalUrl,
-        filename: currentImageFilename
-      });
-    };
-    //#endregion
-    //#region 预览动图功能
-    setUgoira({
-      illustElement,
-      src,
-      // originalSrc,
-      mime_type,
-      frames
-    }) {
-      this.reset();
-      this.initPreviewWrapper();
-      this.illustElement = illustElement;
-      illustElement.siblings("svg").css({ "pointer-events": "none" });
-      this.#currentUgoiraPlayer = createPlayer({
-        source: src,
-        metadata: {
-          mime_type,
-          frames
-        }
-      });
-      this.bindUgoiraPreviewEvents();
-    }
-    bindUgoiraPreviewEvents() {
-      $(this.#currentUgoiraPlayer).on("frameLoaded", this.onUgoiraFrameLoaded);
-      $(document).on("mousemove", this.onMouseMove);
-    }
-    unbindUgoiraPreviewEvents() {
-      $(this.#currentUgoiraPlayer).off();
-      $(document).off("mousemove", this.onMouseMove);
-    }
-    onUgoiraFrameLoaded = (ev, frame) => {
-      if (frame !== 0) {
-        return;
-      }
-      this.initialized = true;
-      this.previewLoadingElement.hide();
-      const canvas = $(this.#currentUgoiraPlayer.canvas);
-      this.previewImageElement.after(canvas);
-      this.previewImageElement.remove();
-      this.previewImageElement = canvas;
-      const ugoiraOriginWidth = ev.currentTarget._frameImages[0].width;
-      const ugoiraOriginHeight = ev.currentTarget._frameImages[0].height;
-      this.#currentIllustSize = [ugoiraOriginWidth, ugoiraOriginHeight];
-      this.previewImageElement.attr({
-        width: ugoiraOriginWidth,
-        height: ugoiraOriginHeight
-      });
-      this.adjustPreviewWrapper({
-        baseOnMousePos: false
-      });
-    };
-    //#endregion
-    /** 初始化显示预览容器 */
-    initPreviewWrapper() {
-      this.previewWrapperElement.show();
-      this.previewLoadingElement.show();
-      this.adjustPreviewWrapper({
-        baseOnMousePos: true
-      });
-    }
-    onMouseMove = (mouseMoveEvent) => {
-      if (mouseMoveEvent.ctrlKey || mouseMoveEvent.metaKey) {
-        return;
-      }
-      const currentElement = $(mouseMoveEvent.target);
-      if (currentElement.is(this.illustElement)) {
-        this.adjustPreviewWrapper({
-          baseOnMousePos: true
-        });
-      } else {
-        this.reset();
-      }
-    };
-    /**
-     * 调整预览容器的位置与大小
-     * @param `baseOnMousePos` 是否根据当前鼠标所在位置调整
-     * @param `illustSize` 作品的实际大小
-     */
-    adjustPreviewWrapper({
-      baseOnMousePos = true
-    } = {}) {
-      const [mousePosX, mousePosY] = baseOnMousePos ? mouse_monitor_default.mouseAbsPos : this.#prevMousePos;
-      this.#prevMousePos = [mousePosX, mousePosY];
-      const [illustWidth, illustHeight] = this.#currentIllustSize;
-      const screenWidth = document.documentElement.clientWidth;
-      const screenHeight = document.documentElement.clientHeight;
-      const isShowLeft = mousePosX > screenWidth / 2;
-      const isShowTop = mousePosY > screenHeight / 2;
-      const illustRatio = illustWidth / illustHeight;
-      const screenRestWidth = isShowLeft ? mousePosX - PREVIEW_WRAPPER_DISTANCE_TO_MOUSE : screenWidth - mousePosX - PREVIEW_WRAPPER_DISTANCE_TO_MOUSE;
-      const screenRestRatio = screenRestWidth / screenHeight;
-      const isFitToFullHeight = screenRestRatio > illustRatio;
-      let fitToScreenScale = 1;
-      if (this.initialized) {
-        if (isFitToFullHeight) {
-          fitToScreenScale = Number((screenHeight / illustHeight).toFixed(3));
-        } else {
-          fitToScreenScale = Number((screenRestWidth / illustWidth).toFixed(3));
-        }
-      }
-      const previewImageFitWidth = Math.floor(illustWidth * fitToScreenScale);
-      const previewImageFitHeight = Math.floor(illustHeight * fitToScreenScale);
-      const previewWrapperElementPos = {
-        left: "",
-        right: "",
-        top: "",
-        bottom: ""
-      };
-      if (isShowLeft) {
-        previewWrapperElementPos.right = `${screenWidth - mousePosX + PREVIEW_WRAPPER_DISTANCE_TO_MOUSE}px`;
-      } else {
-        previewWrapperElementPos.left = `${mousePosX + PREVIEW_WRAPPER_DISTANCE_TO_MOUSE}px`;
-      }
-      if (this.initialized) {
-        if (isFitToFullHeight) {
-          previewWrapperElementPos.top = "0px";
-        } else {
-          const screenRestHeight = isShowTop ? mousePosY : screenHeight - mousePosY;
-          if (previewImageFitHeight > screenRestHeight) {
-            if (isShowTop) {
-              previewWrapperElementPos.top = "0px";
-            } else {
-              previewWrapperElementPos.bottom = "0px";
-            }
-          } else {
-            if (isShowTop) {
-              previewWrapperElementPos.bottom = `${screenHeight - mousePosY}px`;
-            } else {
-              previewWrapperElementPos.top = `${mousePosY}px`;
-            }
-          }
-        }
-      } else {
-        if (isShowTop) {
-          previewWrapperElementPos.bottom = `${screenHeight - mousePosY}px`;
-        } else {
-          previewWrapperElementPos.top = `${mousePosY}px`;
-        }
-      }
-      this.previewWrapperElement.css(previewWrapperElementPos);
-      this.previewImageElement.css({
-        width: `${previewImageFitWidth}px`,
-        height: `${previewImageFitHeight}px`
-      });
-    }
-  }
-  inactiveUnexpectedDoms();
-  const previewIllust = previewIllustWithCache();
-  const debouncedOnMouseOverIllust = debounce_default(
-    onMouseOverIllust,
-    mouseHoverDebounceWait
-  );
-  $(document).mouseover(debouncedOnMouseOverIllust);
-  function onMouseOverIllust(mouseOverEvent) {
-    if (mouseOverEvent.ctrlKey || mouseOverEvent.metaKey) {
-      return;
-    }
-    const target = $(mouseOverEvent.target);
-    if (!(target.is("IMG") || target.is("A"))) {
-      return;
-    }
-    const previewIllustTimeout = setTimeout(() => {
-      previewIllust(target);
-    }, mouseHoverPreviewWait);
-    target.on("mouseout", () => {
-      clearTimeout(previewIllustTimeout);
-      target.off("mouseout");
-    });
-  }
-  function previewIllustWithCache() {
+  };
+  const previewIllust = (() => {
     const previewedIllust = new PreviewedIllust();
     let currentHoveredIllustId = "";
     const getIllustPagesCache = {};
@@ -1194,36 +825,293 @@ var loadIllustPreview = (options) => {
         return;
       }
     };
-  }
-  function getIllustMetadata(target) {
-    let imgLink = target;
-    while (!imgLink.is("A")) {
-      imgLink = imgLink.parent();
-      if (!imgLink.length) {
-        iLog.i("\u672A\u80FD\u627E\u5230\u5F53\u524D\u4F5C\u54C1\u7684\u94FE\u63A5\u5143\u7D20");
-        return null;
+  })();
+  const onMouseOverIllust = (mouseOverEvent) => {
+    if (mouseOverEvent.ctrlKey || mouseOverEvent.metaKey) {
+      return;
+    }
+    const target = $(mouseOverEvent.target);
+    if (!(target.is("IMG") || target.is("A"))) {
+      return;
+    }
+    const previewIllustTimeout = setTimeout(() => {
+      previewIllust(target);
+    }, mouseHoverPreviewWait);
+    const onMouseOut = (mouseOutEvent) => {
+      if (mouseOutEvent.ctrlKey || mouseOutEvent.metaKey) {
+        return;
       }
-    }
-    const illustHref = imgLink.attr("href");
-    const illustHrefMatch = illustHref?.match(/\/artworks\/(\d+)/);
-    if (!illustHrefMatch) {
-      iLog.w("\u5F53\u524D\u94FE\u63A5\u975E\u4F5C\u54C1\u94FE\u63A5\uFF0C\u6216\u5F53\u524D\u4F5C\u54C1\u4E0D\u652F\u6301\u9884\u89C8\uFF0C\u8DF3\u8FC7");
-      return null;
-    }
-    const illustId = illustHrefMatch[1];
-    const ugoiraSvg = imgLink.children("div:first").find("svg:first");
-    const illustType = ugoiraSvg.length || imgLink.hasClass("ugoku-illust") ? 2 /* UGOIRA */ : (
-      // 合并漫画类型 IllustType.MANGA 为 IllustType.ILLUST 统一处理
-      0 /* ILLUST */
-    );
-    return {
-      /** 作品 ID */
-      illustId,
-      /** 作品类型 */
-      illustType
+      clearTimeout(previewIllustTimeout);
+      target.off("mouseout", onMouseOut);
     };
+    target.on("mouseout", onMouseOut);
+  };
+  const debouncedOnMouseOverIllust = debounce_default(
+    onMouseOverIllust,
+    mouseHoverDebounceWait
+  );
+  $(document).on("mouseover", debouncedOnMouseOverIllust);
+  (function inactiveUnexpectedDoms() {
+    const styleRules = $("<style>").prop("type", "text/css");
+    styleRules.append(`
+._layout-thumbnail .sc-hnotl9-0.gDHFA-d {
+  pointer-events: none;
+}`);
+    styleRules.appendTo("head");
+  })();
+  isInitialized = true;
+};
+var PreviewedIllust = class {
+  /** 当前正在预览的作品元素 */
+  illustElement;
+  /** 预览作品是否初始化 */
+  initialized = false;
+  /** 图片的链接 */
+  regularUrls;
+  /** 图片的原图链接 */
+  originalUrls;
+  /** 当前预览图片的页数 */
+  currentPage;
+  /** 当前预览图片的总页数 */
+  pageCount;
+  /** 预览图片或动图容器 */
+  previewWrapperElement;
+  /** 预览容器顶部栏 */
+  previewWrapperHeader;
+  /** 当前预览的是第几张图片标记 */
+  pageCountElement;
+  pageCountText;
+  /** 下载原图按钮 */
+  downloadOriginalElement;
+  /** 预览图片或动图加载状态 */
+  previewLoadingElement;
+  /** 当前预览的图片或动图 */
+  previewImageElement;
+  /** 当前预览图片的实际尺寸 */
+  #currentIllustSize;
+  /** 保存的鼠标位置 */
+  #prevMousePos;
+  /** 当前预览的动图播放器 */
+  #currentUgoiraPlayer;
+  /** 关闭预览组件，重置初始值 */
+  reset() {
+    this.illustElement = $();
+    this.initialized = false;
+    this.regularUrls = [];
+    this.originalUrls = [];
+    this.currentPage = 1;
+    this.pageCount = 1;
+    this.previewWrapperElement?.remove();
+    this.previewWrapperElement = $(document.createElement("div")).attr({ id: "pp-wrapper" }).css({
+      position: "fixed",
+      "z-index": "999999",
+      border: `${PREVIEW_WRAPPER_BORDER_WIDTH}px solid rgb(0, 150, 250)`,
+      "border-radius": `${PREVIEW_WRAPPER_BORDER_RADIUS}px`,
+      background: "rgba(31, 31, 31, 0.8)",
+      "backdrop-filter": "blur(4px)",
+      "text-align": "center"
+    }).hide().appendTo($("body"));
+    this.previewWrapperHeader = $(document.createElement("div")).attr({
+      id: "pp-wrapper__header"
+    }).css({
+      position: "absolute",
+      top: "0px",
+      left: "0px",
+      right: "0px",
+      padding: "5px",
+      display: "flex",
+      gap: "5px",
+      "align-items": "center",
+      "justify-content": "flex-end"
+    }).appendTo(this.previewWrapperElement);
+    this.pageCountText = $(document.createElement("span")).attr({ id: "pp-page-count__text" }).css({ "margin-left": "4px" }).text("1/1");
+    this.pageCountElement = $(document.createElement("div")).attr({ id: "pp-page-count" }).css({
+      display: "flex",
+      "align-items": "center",
+      height: "20px",
+      "border-radius": "10px",
+      color: "white",
+      background: "rgba(0, 0, 0, 0.32)",
+      "font-size": "10px",
+      "line-height": "12px",
+      "font-weight": "bold",
+      flex: "0 0 auto",
+      padding: "3px 6px"
+    }).append(
+      $(
+        '<svg viewBox="0 0 9 10" size="9"><path d="M 8 3 C 8.55228 3 9 3.44772 9 4 L 9 9 C 9 9.55228 8.55228 10 8 10 L 3 10 C 2.44772 10 2 9.55228 2 9 L 6 9 C 7.10457 9 8 8.10457 8 7 L 8 3 Z M 1 1 L 6 1 C 6.55228 1 7 1.44772 7 2 L 7 7 C 7 7.55228 6.55228 8 6 8 L 1 8 C 0.447715 8 0 7.55228 0 7 L 0 2 C 0 1.44772 0.447715 1 1 1 Z"></path></svg>'
+      ).css({
+        "list-style": "none",
+        "pointer-events": "none",
+        color: "rgb(245, 245, 245)",
+        "font-weight": "bold",
+        stroke: "none",
+        fill: "currentcolor",
+        width: "9px",
+        "line-height": 0,
+        "font-size": "0px",
+        "vertical-align": "middle"
+      })
+    ).append(this.pageCountText).hide().prependTo(this.previewWrapperHeader);
+    this.downloadOriginalElement = $(document.createElement("a")).attr({ id: "pp-download-original" }).css({
+      height: "20px",
+      "border-radius": "10px",
+      color: "white",
+      background: "rgba(0, 0, 0, 0.32)",
+      "font-size": "10px",
+      "line-height": "20px",
+      "font-weight": "bold",
+      padding: "3px 6px",
+      cursor: "pointer"
+    }).text("DOWNLOAD").hide().prependTo(this.previewWrapperHeader);
+    this.previewLoadingElement = $(
+      new Image(PREVIEW_WRAPPER_MIN_SIZE, PREVIEW_WRAPPER_MIN_SIZE)
+    ).attr({
+      id: "pp-loading",
+      src: g_loadingImage
+    }).css({
+      "border-radius": "50%"
+    }).appendTo(this.previewWrapperElement);
+    this.previewImageElement = $(new Image()).attr({ id: "pp-image" }).css({
+      "border-radius": `${PREVIEW_WRAPPER_BORDER_RADIUS}px`
+    }).hide().appendTo(this.previewWrapperElement);
+    this.#prevMousePos = [0, 0];
+    this.#currentIllustSize = [
+      PREVIEW_WRAPPER_MIN_SIZE,
+      PREVIEW_WRAPPER_MIN_SIZE
+    ];
+    this.#currentUgoiraPlayer?.stop();
+    this.unbindPreviewImageEvents();
+    this.unbindUgoiraPreviewEvents();
   }
-  function createPlayer(options2) {
+  constructor() {
+    this.reset();
+  }
+  //#region 预览图片功能
+  /** 初始化预览容器，显示第一张图片 */
+  setImage({
+    illustElement,
+    regularUrls,
+    originalUrls
+  }) {
+    this.reset();
+    this.initPreviewWrapper();
+    this.illustElement = illustElement;
+    this.regularUrls = regularUrls;
+    this.originalUrls = originalUrls;
+    this.currentPage = 1;
+    this.pageCount = regularUrls.length;
+    this.preloadImages(0, PREVIEW_PRELOAD_NUM);
+    this.bindPreviewImageEvents();
+    this.updatePreviewImage(0);
+  }
+  bindPreviewImageEvents() {
+    this.previewImageElement.on("load", this.onImageLoad);
+    this.previewImageElement.on("click", this.onPreviewImageMouseClick);
+    this.previewImageElement.on("wheel", this.onPreviewImageMouseWheel);
+    this.downloadOriginalElement.on("click", this.onDownloadImage);
+    $(document).on("mousemove", this.onMouseMove);
+  }
+  unbindPreviewImageEvents() {
+    this.previewImageElement.off();
+    this.downloadOriginalElement.off();
+    $(document).off("mousemove", this.onMouseMove);
+  }
+  /** 显示 pageIndex 指向的图片 */
+  updatePreviewImage(pageIndex) {
+    const currentImageUrl = this.regularUrls[pageIndex];
+    this.previewImageElement.attr("src", currentImageUrl);
+    this.pageCountText.text(`${pageIndex + 1}/${this.pageCount}`);
+  }
+  onImageLoad = () => {
+    this.initialized = true;
+    this.previewLoadingElement.hide();
+    this.previewImageElement.show();
+    this.downloadOriginalElement.show();
+    if (this.pageCount > 1) {
+      this.pageCountElement.show();
+    }
+    this.previewImageElement.css({
+      width: "",
+      height: ""
+    });
+    this.#currentIllustSize = [
+      this.previewImageElement.width() ?? 0,
+      this.previewImageElement.height() ?? 0
+    ];
+    this.adjustPreviewWrapper({
+      baseOnMousePos: false
+    });
+  };
+  nextPage() {
+    if (this.currentPage < this.pageCount) {
+      this.currentPage += 1;
+    } else {
+      this.currentPage = 1;
+    }
+    this.updatePreviewImage(this.currentPage - 1);
+    this.preloadImages(
+      this.currentPage - 1,
+      this.currentPage - 1 + PREVIEW_PRELOAD_NUM
+    );
+  }
+  prevPage() {
+    if (this.currentPage > 1) {
+      this.currentPage -= 1;
+    } else {
+      this.currentPage = this.pageCount;
+    }
+    this.updatePreviewImage(this.currentPage - 1);
+  }
+  preloadImages(from, to) {
+    this.regularUrls.slice(from, to).map((url) => {
+      const preloadImage = new Image();
+      preloadImage.src = url;
+    });
+  }
+  onPreviewImageMouseClick = () => {
+    this.nextPage();
+  };
+  onPreviewImageMouseWheel = (mouseWheelEvent) => {
+    mouseWheelEvent.preventDefault();
+    if (mouseWheelEvent.originalEvent.deltaY > 0) {
+      this.nextPage();
+    } else {
+      this.prevPage();
+    }
+  };
+  onDownloadImage = (onClickEvent) => {
+    onClickEvent.preventDefault();
+    const currentImageOriginalUrl = this.originalUrls[this.currentPage - 1];
+    const currentImageFilename = currentImageOriginalUrl.split("/").pop() || "illust.jpg";
+    downloadIllust({
+      url: currentImageOriginalUrl,
+      filename: currentImageFilename
+    });
+  };
+  //#endregion
+  //#region 预览动图功能
+  setUgoira({
+    illustElement,
+    src,
+    // originalSrc,
+    mime_type,
+    frames
+  }) {
+    this.reset();
+    this.initPreviewWrapper();
+    this.illustElement = illustElement;
+    illustElement.siblings("svg").css({ "pointer-events": "none" });
+    this.#currentUgoiraPlayer = this.createUgoiraPlayer({
+      source: src,
+      metadata: {
+        mime_type,
+        frames
+      }
+    });
+    this.bindUgoiraPreviewEvents();
+  }
+  createUgoiraPlayer(options) {
     const canvas = document.createElement("canvas");
     const p = new ugoira_player_default({
       canvas,
@@ -1231,20 +1119,134 @@ var loadIllustPreview = (options) => {
       loop: true,
       autoStart: true,
       debug: false,
-      ...options2
+      ...options
     });
     p.canvas = canvas;
     return p;
   }
-  function inactiveUnexpectedDoms() {
-    const styleRules = $("<style>").prop("type", "text/css");
-    styleRules.append(`
-._layout-thumbnail .sc-hnotl9-0.gDHFA-d {
-  pointer-events: none;
-}`);
-    styleRules.appendTo("head");
+  bindUgoiraPreviewEvents() {
+    $(this.#currentUgoiraPlayer).on("frameLoaded", this.onUgoiraFrameLoaded);
+    $(document).on("mousemove", this.onMouseMove);
   }
-  isInitialized = true;
+  unbindUgoiraPreviewEvents() {
+    $(this.#currentUgoiraPlayer).off();
+    $(document).off("mousemove", this.onMouseMove);
+  }
+  onUgoiraFrameLoaded = (ev, frame) => {
+    if (frame !== 0) {
+      return;
+    }
+    this.initialized = true;
+    this.previewLoadingElement.hide();
+    const canvas = $(this.#currentUgoiraPlayer.canvas);
+    this.previewImageElement.after(canvas);
+    this.previewImageElement.remove();
+    this.previewImageElement = canvas;
+    const ugoiraOriginWidth = ev.currentTarget._frameImages[0].width;
+    const ugoiraOriginHeight = ev.currentTarget._frameImages[0].height;
+    this.#currentIllustSize = [ugoiraOriginWidth, ugoiraOriginHeight];
+    this.previewImageElement.attr({
+      width: ugoiraOriginWidth,
+      height: ugoiraOriginHeight
+    });
+    this.adjustPreviewWrapper({
+      baseOnMousePos: false
+    });
+  };
+  //#endregion
+  /** 初始化显示预览容器 */
+  initPreviewWrapper() {
+    this.previewWrapperElement.show();
+    this.previewLoadingElement.show();
+    this.adjustPreviewWrapper({
+      baseOnMousePos: true
+    });
+  }
+  onMouseMove = (mouseMoveEvent) => {
+    if (mouseMoveEvent.ctrlKey || mouseMoveEvent.metaKey) {
+      return;
+    }
+    const currentElement = $(mouseMoveEvent.target);
+    if (currentElement.is(this.illustElement)) {
+      this.adjustPreviewWrapper({
+        baseOnMousePos: true
+      });
+    } else {
+      this.reset();
+    }
+  };
+  /**
+   * 调整预览容器的位置与大小
+   * @param `baseOnMousePos` 是否根据当前鼠标所在位置调整
+   * @param `illustSize` 作品的实际大小
+   */
+  adjustPreviewWrapper({
+    baseOnMousePos = true
+  } = {}) {
+    const [mousePosX, mousePosY] = baseOnMousePos ? mouse_monitor_default.mouseAbsPos : this.#prevMousePos;
+    this.#prevMousePos = [mousePosX, mousePosY];
+    const [illustWidth, illustHeight] = this.#currentIllustSize;
+    const screenWidth = document.documentElement.clientWidth;
+    const screenHeight = document.documentElement.clientHeight;
+    const isShowLeft = mousePosX > screenWidth / 2;
+    const isShowTop = mousePosY > screenHeight / 2;
+    const illustRatio = illustWidth / illustHeight;
+    const screenRestWidth = isShowLeft ? mousePosX - PREVIEW_WRAPPER_DISTANCE_TO_MOUSE : screenWidth - mousePosX - PREVIEW_WRAPPER_DISTANCE_TO_MOUSE;
+    const screenRestRatio = screenRestWidth / screenHeight;
+    const isFitToFullHeight = screenRestRatio > illustRatio;
+    let fitToScreenScale = 1;
+    if (this.initialized) {
+      if (isFitToFullHeight) {
+        fitToScreenScale = Number((screenHeight / illustHeight).toFixed(3));
+      } else {
+        fitToScreenScale = Number((screenRestWidth / illustWidth).toFixed(3));
+      }
+    }
+    const previewImageFitWidth = Math.floor(illustWidth * fitToScreenScale);
+    const previewImageFitHeight = Math.floor(illustHeight * fitToScreenScale);
+    const previewWrapperElementPos = {
+      left: "",
+      right: "",
+      top: "",
+      bottom: ""
+    };
+    if (isShowLeft) {
+      previewWrapperElementPos.right = `${screenWidth - mousePosX + PREVIEW_WRAPPER_DISTANCE_TO_MOUSE}px`;
+    } else {
+      previewWrapperElementPos.left = `${mousePosX + PREVIEW_WRAPPER_DISTANCE_TO_MOUSE}px`;
+    }
+    if (this.initialized) {
+      if (isFitToFullHeight) {
+        previewWrapperElementPos.top = "0px";
+      } else {
+        const screenRestHeight = isShowTop ? mousePosY : screenHeight - mousePosY;
+        if (previewImageFitHeight > screenRestHeight) {
+          if (isShowTop) {
+            previewWrapperElementPos.top = "0px";
+          } else {
+            previewWrapperElementPos.bottom = "0px";
+          }
+        } else {
+          if (isShowTop) {
+            previewWrapperElementPos.bottom = `${screenHeight - mousePosY}px`;
+          } else {
+            previewWrapperElementPos.top = `${mousePosY}px`;
+          }
+        }
+      }
+    } else {
+      if (isShowTop) {
+        previewWrapperElementPos.bottom = `${screenHeight - mousePosY}px`;
+      } else {
+        previewWrapperElementPos.top = `${mousePosY}px`;
+      }
+    }
+    this.previewWrapperElement.css(previewWrapperElementPos);
+    this.previewImageElement.css({
+      width: `${previewImageFitWidth}px`,
+      height: `${previewImageFitHeight}px`
+    });
+  }
 };
 
 // src/i18n/index.ts
@@ -1440,7 +1442,7 @@ Texts[3 /* ja_JP */] = {
 var i18n_default = Texts;
 
 // src/utils/jquery.ts
-var JQUERY_VERSION = "2.2.4";
+var JQUERY_VERSION = "3.7.1";
 var checkJQuery = function() {
   const jqueryCdns = [
     `http://code.jquery.com/jquery-${JQUERY_VERSION}.min.js`,

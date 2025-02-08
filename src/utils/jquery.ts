@@ -1,6 +1,6 @@
 import { iLog } from "./logger";
 
-const JQUERY_VERSION = "2.2.4";
+const JQUERY_VERSION = "3.7.1";
 
 // https://greasyfork.org/zh-CN/scripts/417760-checkjquery
 export const checkJQuery = function () {
