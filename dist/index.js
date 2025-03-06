@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                PixivPreviewerL
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             0.1.0-2025/2/8
+// @version             0.1.1-2025/3/6
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @match               *://www.pixiv.net/*
@@ -15,7 +15,7 @@
 // ==/UserScript==
 
 // src/constants/index.ts
-var g_version = "0.1.0";
+var g_version = "0.1.1";
 var g_getUgoiraUrl = "/ajax/illust/#id#/ugoira_meta";
 var g_getNovelUrl = "/ajax/search/novels/#key#?word=#key#&p=#page#";
 var g_loadingImage = "https://pp-1252089172.cos.ap-chengdu.myqcloud.com/loading.gif";
@@ -197,12 +197,12 @@ var getUgoiraMetadataRequestUrl = (id) => {
 
 // src/utils/debounce.ts
 function debounce(func, delay = 100) {
-  let timeoutId = null;
+  let timeout = null;
   return function(...args) {
-    if (timeoutId) {
-      clearTimeout(timeoutId);
+    if (timeout) {
+      clearTimeout(timeout);
     }
-    timeoutId = setTimeout(() => {
+    timeout = setTimeout(() => {
       func(...args);
     }, delay);
   };
@@ -727,7 +727,7 @@ var loadIllustPreview = (options) => {
     const illustId = illustHrefMatch[1];
     const ugoiraSvg = imgLink.children("div:first").find("svg:first");
     const illustType = ugoiraSvg.length || imgLink.hasClass("ugoku-illust") ? 2 /* UGOIRA */ : (
-      // 合并漫画类型 IllustType.MANGA 为 IllustType.ILLUST 统一处理
+      // 合并漫画类型作品 IllustType.MANGA 为 IllustType.ILLUST 统一处理
       0 /* ILLUST */
     );
     return {
@@ -740,14 +740,15 @@ var loadIllustPreview = (options) => {
   const previewIllust = (() => {
     const previewedIllust = new PreviewedIllust();
     let currentHoveredIllustId = "";
+    let ajaxRequest = $.ajax();
     const getIllustPagesCache = {};
     const getUgoiraMetadataCache = {};
-    return (target) => {
-      const illustMetadata = getIllustMetadata(target);
-      if (!illustMetadata) {
-        return;
-      }
-      const { illustId, illustType } = illustMetadata;
+    return ({
+      target,
+      illustId,
+      illustType
+    }) => {
+      ajaxRequest.abort();
       currentHoveredIllustId = illustId;
       if (illustType === 2 /* UGOIRA */ && !enableAnimePreview) {
         iLog.i("Anime preview disabled.");
@@ -761,12 +762,12 @@ var loadIllustPreview = (options) => {
           });
           return;
         }
-        $.ajax(getIllustPagesRequestUrl(illustId), {
+        ajaxRequest = $.ajax(getIllustPagesRequestUrl(illustId), {
           method: "GET",
           success: (data) => {
             if (data.error) {
               iLog.e(
-                `Get an error while requesting illust url: ${data.message}`
+                `An error occurred while requesting preview urls of illust ${illustId}: ${data.message}`
               );
               return;
             }
@@ -785,7 +786,9 @@ var loadIllustPreview = (options) => {
             });
           },
           error: (err) => {
-            iLog.e(`Get an error while requesting illust url: ${err}`);
+            iLog.e(
+              `An error occurred while requesting preview urls of illust ${illustId}: ${err}`
+            );
           }
         });
       } else if (illustType === 2 /* UGOIRA */) {
@@ -796,12 +799,12 @@ var loadIllustPreview = (options) => {
           });
           return;
         }
-        $.ajax(getUgoiraMetadataRequestUrl(illustId), {
+        ajaxRequest = $.ajax(getUgoiraMetadataRequestUrl(illustId), {
           method: "GET",
           success: (data) => {
             if (data.error) {
               iLog.e(
-                `Get an error while requesting ugoira metadata: ${data.message}`
+                `An error occurred while requesting metadata of ugoira ${illustId}: ${data.message}`
               );
               return;
             }
@@ -817,7 +820,9 @@ var loadIllustPreview = (options) => {
             });
           },
           error: (err) => {
-            iLog.e(`Get an error while requesting ugoira metadata: ${err}`);
+            iLog.e(
+              `An error occurred while requesting metadata of ugoira ${illustId}: ${err}`
+            );
           }
         });
       } else {
@@ -826,16 +831,20 @@ var loadIllustPreview = (options) => {
       }
     };
   })();
-  const onMouseOverIllust = (mouseOverEvent) => {
-    if (mouseOverEvent.ctrlKey || mouseOverEvent.metaKey) {
-      return;
-    }
-    const target = $(mouseOverEvent.target);
+  const onMouseOverIllust = (target) => {
     if (!(target.is("IMG") || target.is("A"))) {
       return;
     }
+    const { illustId, illustType } = getIllustMetadata(target) || {};
+    if (illustId === void 0 || illustType === void 0) {
+      return;
+    }
+    const pathname = location.pathname;
+    if (illustId === /^\/artworks\/(\d+)$/.exec(pathname)?.[1]) {
+      return;
+    }
     const previewIllustTimeout = setTimeout(() => {
-      previewIllust(target);
+      previewIllust({ target, illustId, illustType });
     }, mouseHoverPreviewWait);
     const onMouseOut = (mouseOutEvent) => {
       if (mouseOutEvent.ctrlKey || mouseOutEvent.metaKey) {
@@ -846,11 +855,27 @@ var loadIllustPreview = (options) => {
     };
     target.on("mouseout", onMouseOut);
   };
-  const debouncedOnMouseOverIllust = debounce_default(
-    onMouseOverIllust,
-    mouseHoverDebounceWait
-  );
-  $(document).on("mouseover", debouncedOnMouseOverIllust);
+  const onMouseMoveDocument = (() => {
+    const debouncedOnMouseOverIllust = debounce_default(
+      onMouseOverIllust,
+      mouseHoverDebounceWait
+    );
+    let prevTarget;
+    return (mouseMoveEvent) => {
+      if (mouseMoveEvent.ctrlKey || mouseMoveEvent.metaKey) {
+        return;
+      }
+      const currentTarget = $(
+        mouseMoveEvent.target
+      );
+      if (currentTarget.is(prevTarget)) {
+        return;
+      }
+      prevTarget = currentTarget;
+      debouncedOnMouseOverIllust(currentTarget);
+    };
+  })();
+  $(document).on("mousemove", onMouseMoveDocument);
   (function inactiveUnexpectedDoms() {
     const styleRules = $("<style>").prop("type", "text/css");
     styleRules.append(`
@@ -862,41 +887,49 @@ var loadIllustPreview = (options) => {
   isInitialized = true;
 };
 var PreviewedIllust = class {
-  /** 当前正在预览的作品元素 */
-  illustElement;
-  /** 预览作品是否初始化 */
-  initialized = false;
+  /** 当前正在预览的作品 DOM 元素 */
+  illustElement = $();
+  /** 当前预览的作品是否加载完毕 */
+  illustLoaded = false;
   /** 图片的链接 */
-  regularUrls;
+  regularUrls = [];
   /** 图片的原图链接 */
-  originalUrls;
+  originalUrls = [];
   /** 当前预览图片的页数 */
-  currentPage;
+  currentPage = 1;
   /** 当前预览图片的总页数 */
-  pageCount;
-  /** 预览图片或动图容器 */
-  previewWrapperElement;
-  /** 预览容器顶部栏 */
-  previewWrapperHeader;
-  /** 当前预览的是第几张图片标记 */
-  pageCountElement;
-  pageCountText;
-  /** 下载原图按钮 */
-  downloadOriginalElement;
-  /** 预览图片或动图加载状态 */
-  previewLoadingElement;
-  /** 当前预览的图片或动图 */
-  previewImageElement;
-  /** 当前预览图片的实际尺寸 */
-  #currentIllustSize;
+  pageCount = 1;
+  /** 预览图片或动图容器 DOM */
+  previewWrapperElement = $();
+  /** 预览容器顶部栏 DOM */
+  previewWrapperHeader = $();
+  /** 当前预览的是第几张图片标记 DOM */
+  pageCountElement = $();
+  pageCountText = $();
+  /** 下载原图按钮 DOM */
+  downloadOriginalElement = $();
+  /** 预览图片或动图加载状态 DOM */
+  previewLoadingElement = $();
+  /** 当前预览的图片或动图 DOM */
+  previewImageElement = $();
+  /** 预加载图片的列表 */
+  #images = [];
   /** 保存的鼠标位置 */
-  #prevMousePos;
+  #prevMousePos = [0, 0];
+  /** 当前预览图片的实际尺寸 */
+  #currentIllustSize = [
+    PREVIEW_WRAPPER_MIN_SIZE,
+    PREVIEW_WRAPPER_MIN_SIZE
+  ];
   /** 当前预览的动图播放器 */
   #currentUgoiraPlayer;
-  /** 关闭预览组件，重置初始值 */
+  constructor() {
+    this.reset();
+  }
+  /** 初始化预览组件 */
   reset() {
     this.illustElement = $();
-    this.initialized = false;
+    this.illustLoaded = false;
     this.regularUrls = [];
     this.originalUrls = [];
     this.currentPage = 1;
@@ -975,6 +1008,10 @@ var PreviewedIllust = class {
     this.previewImageElement = $(new Image()).attr({ id: "pp-image" }).css({
       "border-radius": `${PREVIEW_WRAPPER_BORDER_RADIUS}px`
     }).hide().appendTo(this.previewWrapperElement);
+    this.#images.forEach((image) => {
+      if (image) image.src = "";
+    });
+    this.#images = [];
     this.#prevMousePos = [0, 0];
     this.#currentIllustSize = [
       PREVIEW_WRAPPER_MIN_SIZE,
@@ -983,9 +1020,6 @@ var PreviewedIllust = class {
     this.#currentUgoiraPlayer?.stop();
     this.unbindPreviewImageEvents();
     this.unbindUgoiraPreviewEvents();
-  }
-  constructor() {
-    this.reset();
   }
   //#region 预览图片功能
   /** 初始化预览容器，显示第一张图片 */
@@ -1024,7 +1058,7 @@ var PreviewedIllust = class {
     this.pageCountText.text(`${pageIndex + 1}/${this.pageCount}`);
   }
   onImageLoad = () => {
-    this.initialized = true;
+    this.illustLoaded = true;
     this.previewLoadingElement.hide();
     this.previewImageElement.show();
     this.downloadOriginalElement.show();
@@ -1064,10 +1098,14 @@ var PreviewedIllust = class {
     this.updatePreviewImage(this.currentPage - 1);
   }
   preloadImages(from, to) {
-    this.regularUrls.slice(from, to).map((url) => {
+    if (!this.#images.length) {
+      this.#images = new Array(this.regularUrls.length);
+    }
+    for (let i = from; i < to && i < this.regularUrls.length; i += 1) {
       const preloadImage = new Image();
-      preloadImage.src = url;
-    });
+      preloadImage.src = this.regularUrls[i];
+      this.#images[i] = preloadImage;
+    }
   }
   onPreviewImageMouseClick = () => {
     this.nextPage();
@@ -1136,7 +1174,7 @@ var PreviewedIllust = class {
     if (frame !== 0) {
       return;
     }
-    this.initialized = true;
+    this.illustLoaded = true;
     this.previewLoadingElement.hide();
     const canvas = $(this.#currentUgoiraPlayer.canvas);
     this.previewImageElement.after(canvas);
@@ -1195,7 +1233,7 @@ var PreviewedIllust = class {
     const screenRestRatio = screenRestWidth / screenHeight;
     const isFitToFullHeight = screenRestRatio > illustRatio;
     let fitToScreenScale = 1;
-    if (this.initialized) {
+    if (this.illustLoaded) {
       if (isFitToFullHeight) {
         fitToScreenScale = Number((screenHeight / illustHeight).toFixed(3));
       } else {
@@ -1215,7 +1253,7 @@ var PreviewedIllust = class {
     } else {
       previewWrapperElementPos.left = `${mousePosX + PREVIEW_WRAPPER_DISTANCE_TO_MOUSE}px`;
     }
-    if (this.initialized) {
+    if (this.illustLoaded) {
       if (isFitToFullHeight) {
         previewWrapperElementPos.top = "0px";
       } else {
@@ -1835,7 +1873,7 @@ Pages[3 /* Member */] = {
 Pages[4 /* Home */] = {
   PageTypeString: "HomePage",
   CheckUrl: function(url) {
-    return /https?:\/\/www.pixiv.net\/?$/.test(url) || /https?:\/\/www.pixiv.net\/en\/?$/.test(url) || /https?:\/\/www.pixiv.net\/cate_r18\.php$/.test(url) || /https?:\/\/www.pixiv.net\/en\/cate_r18\.php$/.test(url);
+    return /https?:\/\/www.pixiv.net\/?$/.test(url) || /https?:\/\/www.pixiv.net\/en\/?$/.test(url) || /https?:\/\/www.pixiv.net\/illustration\/?$/.test(url) || /https?:\/\/www.pixiv.net\/manga\/?$/.test(url) || /https?:\/\/www.pixiv.net\/cate_r18\.php$/.test(url) || /https?:\/\/www.pixiv.net\/en\/cate_r18\.php$/.test(url);
   },
   ProcessPageElements: function() {
     const returnMap = {
