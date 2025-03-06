@@ -59,7 +59,7 @@ export const loadIllustPreview = (
     const illustType =
       ugoiraSvg.length || imgLink.hasClass("ugoku-illust")
         ? IllustType.UGOIRA
-        : // 合并漫画类型 IllustType.MANGA 为 IllustType.ILLUST 统一处理
+        : // 合并漫画类型作品 IllustType.MANGA 为 IllustType.ILLUST 统一处理
           IllustType.ILLUST;
 
     return {
@@ -76,7 +76,8 @@ export const loadIllustPreview = (
    */
   const previewIllust = (() => {
     const previewedIllust = new PreviewedIllust();
-    let currentHoveredIllustId: string = "";
+    let currentHoveredIllustId = "";
+    let ajaxRequest = $.ajax();
 
     // TODO: 自动清理缓存，避免占用内存过大
     const getIllustPagesCache: Record<
@@ -86,25 +87,30 @@ export const loadIllustPreview = (
     const getUgoiraMetadataCache: Record<string, GetUgoiraMetaResponseData> =
       {};
 
-    return (target: JQuery<HTMLElement>) => {
-      const illustMetadata = getIllustMetadata(target);
-      // 获取作品元数据失败，跳过
-      if (!illustMetadata) {
-        return;
-      }
-      const { illustId, illustType } = illustMetadata;
-      // 立即更新当前鼠标悬浮作品 ID，防止异步完成时显示之前悬浮的作品预览
+    return ({
+      target,
+      illustId,
+      illustType,
+    }: {
+      target: JQuery<HTMLElement>;
+      illustId: string;
+      illustType: IllustType;
+    }) => {
+      // 停止正在处理的获取元数据请求
+      ajaxRequest.abort();
+
+      // 更新当前鼠标悬浮作品 ID，避免异步任务结束后显示之前悬浮的作品
       currentHoveredIllustId = illustId;
 
-      // 当前悬浮的作品为动图，但是用户禁用了动图预览，跳过
+      // 当前鼠标悬浮作品为动图，但是用户禁用了动图预览，跳过
       if (illustType === IllustType.UGOIRA && !enableAnimePreview) {
         iLog.i("Anime preview disabled.");
         return;
       }
 
       if ([IllustType.ILLUST, IllustType.MANGA].includes(illustType)) {
-        // 命中缓存，直接使用缓存中的访问链接
         if (getIllustPagesCache[illustId]) {
+          // 命中缓存，直接使用缓存中的元数据
           previewedIllust.setImage({
             illustElement: target,
             ...getIllustPagesCache[illustId],
@@ -114,12 +120,12 @@ export const loadIllustPreview = (
 
         // 根据作品的 ID 获取作品的访问链接
         // 例如：`125424620` -> `https://i.pximg.net/img-master/img/2024/12/22/19/13/41/125424620_p0_master1200.jpg`
-        $.ajax(getIllustPagesRequestUrl(illustId), {
+        ajaxRequest = $.ajax(getIllustPagesRequestUrl(illustId), {
           method: "GET",
           success: (data: GetIllustPagesResponse) => {
             if (data.error) {
               iLog.e(
-                `Get an error while requesting illust url: ${data.message}`
+                `An error occurred while requesting preview urls of illust ${illustId}: ${data.message}`
               );
               return;
             }
@@ -144,12 +150,14 @@ export const loadIllustPreview = (
             });
           },
           error: (err) => {
-            iLog.e(`Get an error while requesting illust url: ${err}`);
+            iLog.e(
+              `An error occurred while requesting preview urls of illust ${illustId}: ${err}`
+            );
           },
         });
       } else if (illustType === IllustType.UGOIRA) {
-        // 命中缓存，直接使用缓存中的元数据
         if (getUgoiraMetadataCache[illustId]) {
+          // 命中缓存，直接使用缓存中的元数据
           previewedIllust.setUgoira({
             illustElement: target,
             ...getUgoiraMetadataCache[illustId],
@@ -158,12 +166,12 @@ export const loadIllustPreview = (
         }
 
         // 根据动图的 ID 获取动图的元数据
-        $.ajax(getUgoiraMetadataRequestUrl(illustId), {
+        ajaxRequest = $.ajax(getUgoiraMetadataRequestUrl(illustId), {
           method: "GET",
           success: (data: GetUgoiraMetaResponse) => {
             if (data.error) {
               iLog.e(
-                `Get an error while requesting ugoira metadata: ${data.message}`
+                `An error occurred while requesting metadata of ugoira ${illustId}: ${data.message}`
               );
               return;
             }
@@ -182,7 +190,9 @@ export const loadIllustPreview = (
             });
           },
           error: (err) => {
-            iLog.e(`Get an error while requesting ugoira metadata: ${err}`);
+            iLog.e(
+              `An error occurred while requesting metadata of ugoira ${illustId}: ${err}`
+            );
           },
         });
       } else {
@@ -193,21 +203,26 @@ export const loadIllustPreview = (
   })();
 
   //#region 绑定鼠标悬浮图片监听事件
-  const onMouseOverIllust = (mouseOverEvent: JQuery.MouseOverEvent) => {
-    // 按住 Ctrl 键时跳过
-    if (mouseOverEvent.ctrlKey || mouseOverEvent.metaKey) {
-      return;
-    }
-
-    const target = $(mouseOverEvent.target);
-    // 当前悬浮元素不是作品或作品链接，跳过
+  const onMouseOverIllust = (target: JQuery<HTMLElement>) => {
     if (!(target.is("IMG") || target.is("A"))) {
+      // 当前当前鼠标悬浮元素不是作品或作品链接，跳过
       return;
     }
 
-    // TODO：特殊情况不显示预览
+    const { illustId, illustType } = getIllustMetadata(target) || {};
+    if (illustId === undefined || illustType === undefined) {
+      // 获取当前鼠标悬浮元素的元数据失败，跳过
+      return;
+    }
+
+    const pathname = location.pathname;
+    if (illustId === /^\/artworks\/(\d+)$/.exec(pathname)?.[1]) {
+      // 跳过预览作品页当前正查看的作品
+      return;
+    }
+
     const previewIllustTimeout = setTimeout(() => {
-      previewIllust(target);
+      previewIllust({ target, illustId, illustType });
     }, mouseHoverPreviewWait);
 
     const onMouseOut = (mouseOutEvent: JQuery.MouseOutEvent) => {
@@ -219,18 +234,40 @@ export const loadIllustPreview = (
     };
     target.on("mouseout", onMouseOut);
   };
-  const debouncedOnMouseOverIllust = debounce(
-    onMouseOverIllust,
-    mouseHoverDebounceWait
-  );
-  $(document).on("mouseover", debouncedOnMouseOverIllust);
+
+  const onMouseMoveDocument = (() => {
+    const debouncedOnMouseOverIllust = debounce(
+      onMouseOverIllust,
+      mouseHoverDebounceWait
+    );
+    let prevTarget: JQuery<HTMLElement>;
+
+    return (mouseMoveEvent: JQuery.MouseMoveEvent) => {
+      if (mouseMoveEvent.ctrlKey || mouseMoveEvent.metaKey) {
+        // 按住 Ctrl 或 Meta 键时，跳过
+        return;
+      }
+
+      const currentTarget = $(
+        mouseMoveEvent.target
+      ) as unknown as JQuery<HTMLElement>;
+      if (currentTarget.is(prevTarget)) {
+        // 鼠标在同一个 DOM 元素上移动时，跳过
+        return;
+      }
+      prevTarget = currentTarget;
+
+      debouncedOnMouseOverIllust(currentTarget);
+    };
+  })();
+  $(document).on("mousemove", onMouseMoveDocument);
   //#endregion
 
   //#region 取消预期外节点的鼠标事件
   (function inactiveUnexpectedDoms() {
     const styleRules = $("<style>").prop("type", "text/css");
     // https://www.pixiv.net/ranking.php 排行榜页面加载后续作品时，
-    // 会插入一个影响鼠标悬浮判定的节点 \`.sc-hnotl9-0.gDHFA-d\`，
+    // 会插入一个影响鼠标悬浮判定的空节点 \`.sc-hnotl9-0.gDHFA-d\`，
     // 在此处将其设置为不触发鼠标事件
     styleRules.append(`
 ._layout-thumbnail .sc-hnotl9-0.gDHFA-d {
@@ -244,47 +281,56 @@ export const loadIllustPreview = (
 };
 
 class PreviewedIllust {
-  /** 当前正在预览的作品元素 */
-  illustElement: JQuery<HTMLElement>;
-  /** 预览作品是否初始化 */
-  initialized = false;
+  /** 当前正在预览的作品 DOM 元素 */
+  illustElement: JQuery<HTMLElement> = $();
+  /** 当前预览的作品是否加载完毕 */
+  illustLoaded = false;
 
   /** 图片的链接 */
-  regularUrls: string[];
+  regularUrls: string[] = [];
   /** 图片的原图链接 */
-  originalUrls: string[];
+  originalUrls: string[] = [];
   /** 当前预览图片的页数 */
-  currentPage: number;
+  currentPage: number = 1;
   /** 当前预览图片的总页数 */
-  pageCount: number;
+  pageCount: number = 1;
 
-  /** 预览图片或动图容器 */
-  previewWrapperElement: JQuery<HTMLElement>;
-  /** 预览容器顶部栏 */
-  previewWrapperHeader: JQuery<HTMLElement>;
-  /** 当前预览的是第几张图片标记 */
-  pageCountElement: JQuery<HTMLElement>;
-  pageCountText: JQuery<HTMLElement>;
-  /** 下载原图按钮 */
-  downloadOriginalElement: JQuery<HTMLElement>;
-  /** 预览图片或动图加载状态 */
-  previewLoadingElement: JQuery<HTMLElement>;
-  /** 当前预览的图片或动图 */
-  previewImageElement: JQuery<HTMLElement>;
+  /** 预览图片或动图容器 DOM */
+  previewWrapperElement: JQuery<HTMLElement> = $();
+  /** 预览容器顶部栏 DOM */
+  previewWrapperHeader: JQuery<HTMLElement> = $();
+  /** 当前预览的是第几张图片标记 DOM */
+  pageCountElement: JQuery<HTMLElement> = $();
+  pageCountText: JQuery<HTMLElement> = $();
+  /** 下载原图按钮 DOM */
+  downloadOriginalElement: JQuery<HTMLElement> = $();
+  /** 预览图片或动图加载状态 DOM */
+  previewLoadingElement: JQuery<HTMLElement> = $();
+  /** 当前预览的图片或动图 DOM */
+  previewImageElement: JQuery<HTMLElement> = $();
 
-  /** 当前预览图片的实际尺寸 */
-  #currentIllustSize: [number, number];
+  /** 预加载图片的列表 */
+  #images: (HTMLImageElement | undefined)[] = [];
   /** 保存的鼠标位置 */
-  #prevMousePos: [number, number];
+  #prevMousePos: [number, number] = [0, 0];
+  /** 当前预览图片的实际尺寸 */
+  #currentIllustSize: [number, number] = [
+    PREVIEW_WRAPPER_MIN_SIZE,
+    PREVIEW_WRAPPER_MIN_SIZE,
+  ];
   /** 当前预览的动图播放器 */
   #currentUgoiraPlayer: ZipImagePlayer & {
     canvas: HTMLCanvasElement;
   };
 
-  /** 关闭预览组件，重置初始值 */
+  constructor() {
+    this.reset();
+  }
+
+  /** 初始化预览组件 */
   reset() {
     this.illustElement = $();
-    this.initialized = false;
+    this.illustLoaded = false;
 
     this.regularUrls = [];
     this.originalUrls = [];
@@ -396,6 +442,11 @@ class PreviewedIllust {
       .appendTo(this.previewWrapperElement);
 
     // 初始化私有变量值
+    this.#images.forEach((image) => {
+      // 取消未开始的预加载图片请求
+      if (image) image.src = "";
+    });
+    this.#images = [];
     this.#prevMousePos = [0, 0];
     this.#currentIllustSize = [
       PREVIEW_WRAPPER_MIN_SIZE,
@@ -406,10 +457,6 @@ class PreviewedIllust {
     // 取消所有绑定的监听事件
     this.unbindPreviewImageEvents();
     this.unbindUgoiraPreviewEvents();
-  }
-
-  constructor() {
-    this.reset();
   }
 
   //#region 预览图片功能
@@ -470,7 +517,7 @@ class PreviewedIllust {
   }
 
   onImageLoad = () => {
-    this.initialized = true;
+    this.illustLoaded = true;
     this.previewLoadingElement.hide();
     this.previewImageElement.show();
 
@@ -519,17 +566,22 @@ class PreviewedIllust {
   }
 
   preloadImages(from: number, to: number) {
-    this.regularUrls.slice(from, to).map((url) => {
+    if (!this.#images.length) {
+      this.#images = new Array(this.regularUrls.length);
+    }
+
+    for (let i = from; i < to && i < this.regularUrls.length; i += 1) {
       const preloadImage = new Image();
-      preloadImage.src = url;
-    });
+      preloadImage.src = this.regularUrls[i];
+      this.#images[i] = preloadImage;
+    }
   }
 
   onPreviewImageMouseClick = () => {
     this.nextPage();
   };
 
-  onPreviewImageMouseWheel = (mouseWheelEvent: JQueryEventObject) => {
+  onPreviewImageMouseWheel = (mouseWheelEvent: JQuery.TriggeredEvent) => {
     mouseWheelEvent.preventDefault();
 
     if ((mouseWheelEvent.originalEvent as WheelEvent).deltaY > 0) {
@@ -541,7 +593,7 @@ class PreviewedIllust {
     }
   };
 
-  onDownloadImage = (onClickEvent: JQueryEventObject) => {
+  onDownloadImage = (onClickEvent: JQuery.ClickEvent) => {
     onClickEvent.preventDefault();
 
     const currentImageOriginalUrl = this.originalUrls[this.currentPage - 1];
@@ -612,7 +664,7 @@ class PreviewedIllust {
       return;
     }
 
-    this.initialized = true;
+    this.illustLoaded = true;
     this.previewLoadingElement.hide();
 
     const canvas = $(this.#currentUgoiraPlayer.canvas);
@@ -700,7 +752,7 @@ class PreviewedIllust {
     const isFitToFullHeight = screenRestRatio > illustRatio;
 
     let fitToScreenScale = 1;
-    if (this.initialized) {
+    if (this.illustLoaded) {
       // 当前预览的是实际作品，进行缩放处理
       if (isFitToFullHeight) {
         // 作品高度缩放占满可视区域，宽度自适应
@@ -726,7 +778,7 @@ class PreviewedIllust {
       previewWrapperElementPos.left = `${mousePosX + PREVIEW_WRAPPER_DISTANCE_TO_MOUSE}px`;
     }
     // 设置预览容器的垂直位置
-    if (this.initialized) {
+    if (this.illustLoaded) {
       if (isFitToFullHeight) {
         // 图片高度占满可视区域
         previewWrapperElementPos.top = "0px";
