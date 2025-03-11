@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                PixivPreviewerL
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             0.1.1-2025/3/6
+// @version             0.1.2-2025/3/11
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @match               *://www.pixiv.net/*
@@ -15,7 +15,7 @@
 // ==/UserScript==
 
 // src/constants/index.ts
-var g_version = "0.1.1";
+var g_version = "0.1.2";
 var g_getUgoiraUrl = "/ajax/illust/#id#/ugoira_meta";
 var g_getNovelUrl = "/ajax/search/novels/#key#?word=#key#&p=#page#";
 var g_loadingImage = "https://pp-1252089172.cos.ap-chengdu.myqcloud.com/loading.gif";
@@ -1045,11 +1045,13 @@ var PreviewedIllust = class {
     this.previewImageElement.on("wheel", this.onPreviewImageMouseWheel);
     this.downloadOriginalElement.on("click", this.onDownloadImage);
     $(document).on("mousemove", this.onMouseMove);
+    window.addEventListener("wheel", this.preventPageZoom, { passive: false });
   }
   unbindPreviewImageEvents() {
     this.previewImageElement.off();
     this.downloadOriginalElement.off();
     $(document).off("mousemove", this.onMouseMove);
+    window.removeEventListener("wheel", this.preventPageZoom);
   }
   /** 显示 pageIndex 指向的图片 */
   updatePreviewImage(pageIndex) {
@@ -1200,6 +1202,16 @@ var PreviewedIllust = class {
       baseOnMousePos: true
     });
   }
+  /** 阻止页面缩放事件 */
+  preventPageZoom = (mouseWheelEvent) => {
+    if (mouseWheelEvent.ctrlKey || mouseWheelEvent.metaKey) {
+      mouseWheelEvent.preventDefault();
+    }
+  };
+  /**
+   * 根据鼠标移动调整预览容器位置与显隐
+   * @param mouseMoveEvent
+   */
   onMouseMove = (mouseMoveEvent) => {
     if (mouseMoveEvent.ctrlKey || mouseMoveEvent.metaKey) {
       return;

@@ -260,6 +260,8 @@ export const loadIllustPreview = (
       debouncedOnMouseOverIllust(currentTarget);
     };
   })();
+
+  // 监听 MouseMove 事件而非 MouseOver 事件，以避免事件中的 ctrlKey 等值出现预期外的 false
   $(document).on("mousemove", onMouseMoveDocument);
   //#endregion
 
@@ -500,12 +502,15 @@ class PreviewedIllust {
     this.downloadOriginalElement.on("click", this.onDownloadImage);
     // 监听鼠标移动事件
     $(document).on("mousemove", this.onMouseMove);
+    // 监听鼠标滚动事件
+    window.addEventListener("wheel", this.preventPageZoom, { passive: false });
   }
 
   unbindPreviewImageEvents() {
     this.previewImageElement.off();
     this.downloadOriginalElement.off();
     $(document).off("mousemove", this.onMouseMove);
+    window.removeEventListener("wheel", this.preventPageZoom);
   }
 
   /** 显示 pageIndex 指向的图片 */
@@ -696,6 +701,17 @@ class PreviewedIllust {
     });
   }
 
+  /** 阻止页面缩放事件 */
+  preventPageZoom = (mouseWheelEvent: WheelEvent) => {
+    if (mouseWheelEvent.ctrlKey || mouseWheelEvent.metaKey) {
+      mouseWheelEvent.preventDefault();
+    }
+  };
+
+  /**
+   * 根据鼠标移动调整预览容器位置与显隐
+   * @param mouseMoveEvent
+   */
   onMouseMove = (mouseMoveEvent: JQuery.MouseMoveEvent) => {
     if (mouseMoveEvent.ctrlKey || mouseMoveEvent.metaKey) {
       return;
