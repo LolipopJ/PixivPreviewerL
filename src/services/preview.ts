@@ -67,7 +67,7 @@ export type GetIllustPagesResponseData = {
 export type GetIllustPagesResponse =
   PixivStandardResponse<GetIllustPagesResponseData>;
 
-/** 获取图片链接的链接 */
+/** 获取图片分页信息和访问链接 */
 export const getIllustPagesRequestUrl = (id: string) => {
   return `/ajax/illust/${id}/pages`;
 };

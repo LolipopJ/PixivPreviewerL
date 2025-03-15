@@ -118,7 +118,7 @@ export const loadIllustPreview = (
           return;
         }
 
-        // 根据作品的 ID 获取作品的访问链接
+        // 根据作品的 ID 获取作品的页数和访问链接
         // 例如：`125424620` -> `https://i.pximg.net/img-master/img/2024/12/22/19/13/41/125424620_p0_master1200.jpg`
         ajaxRequest = $.ajax(getIllustPagesRequestUrl(illustId), {
           method: "GET",
@@ -225,10 +225,17 @@ export const loadIllustPreview = (
       previewIllust({ target, illustId, illustType });
     }, mouseHoverPreviewWait);
 
-    const onMouseOut = (mouseOutEvent: JQuery.MouseOutEvent) => {
-      if (mouseOutEvent.ctrlKey || mouseOutEvent.metaKey) {
-        return;
+    const onMouseMove = (mouseMoveEvent: JQuery.MouseMoveEvent) => {
+      if (mouseMoveEvent.ctrlKey || mouseMoveEvent.metaKey) {
+        // 鼠标悬浮在作品上时若按住了 ctrl 或 meta 键，跳过显示预览
+        clearTimeout(previewIllustTimeout);
+        target.off("mousemove", onMouseMove);
       }
+    };
+    target.on("mousemove", onMouseMove);
+
+    const onMouseOut = () => {
+      // 鼠标移出作品，跳过显示预览
       clearTimeout(previewIllustTimeout);
       target.off("mouseout", onMouseOut);
     };
@@ -321,6 +328,7 @@ class PreviewedIllust {
     PREVIEW_WRAPPER_MIN_SIZE,
   ];
   /** 当前预览的动图播放器 */
+  // @ts-expect-error: ignore type defines
   #currentUgoiraPlayer: ZipImagePlayer & {
     canvas: HTMLCanvasElement;
   };

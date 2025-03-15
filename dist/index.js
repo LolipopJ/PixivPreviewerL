@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                PixivPreviewerL
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             0.1.2-2025/3/11
+// @version             0.1.2-2025/3/15
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @match               *://www.pixiv.net/*
@@ -846,10 +846,14 @@ var loadIllustPreview = (options) => {
     const previewIllustTimeout = setTimeout(() => {
       previewIllust({ target, illustId, illustType });
     }, mouseHoverPreviewWait);
-    const onMouseOut = (mouseOutEvent) => {
-      if (mouseOutEvent.ctrlKey || mouseOutEvent.metaKey) {
-        return;
+    const onMouseMove = (mouseMoveEvent) => {
+      if (mouseMoveEvent.ctrlKey || mouseMoveEvent.metaKey) {
+        clearTimeout(previewIllustTimeout);
+        target.off("mousemove", onMouseMove);
       }
+    };
+    target.on("mousemove", onMouseMove);
+    const onMouseOut = () => {
       clearTimeout(previewIllustTimeout);
       target.off("mouseout", onMouseOut);
     };
@@ -922,6 +926,7 @@ var PreviewedIllust = class {
     PREVIEW_WRAPPER_MIN_SIZE
   ];
   /** 当前预览的动图播放器 */
+  // @ts-expect-error: ignore type defines
   #currentUgoiraPlayer;
   constructor() {
     this.reset();
