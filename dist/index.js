@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                PixivPreviewerL
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             0.1.2-2025/3/15
+// @version             0.1.3-2025/3/17
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @match               *://www.pixiv.net/*
@@ -15,7 +15,7 @@
 // ==/UserScript==
 
 // src/constants/index.ts
-var g_version = "0.1.2";
+var g_version = "0.1.3";
 var g_getUgoiraUrl = "/ajax/illust/#id#/ugoira_meta";
 var g_getNovelUrl = "/ajax/search/novels/#key#?word=#key#&p=#page#";
 var g_loadingImage = "https://pp-1252089172.cos.ap-chengdu.myqcloud.com/loading.gif";
@@ -1672,6 +1672,33 @@ function findLiByImgTag() {
   });
   return lis;
 }
+function showSearchLinksForDeletedArtworks() {
+  const searchEngines = [
+    { name: "Google", url: "https://www.google.com/search?q=" },
+    { name: "Bing", url: "https://www.bing.com/search?q=" },
+    { name: "Baidu", url: "https://www.baidu.com/s?wd=" }
+  ];
+  const spans = document.querySelectorAll("span[to]");
+  spans.forEach((span) => {
+    const artworkPath = span.getAttribute("to");
+    if (span?.textContent?.trim() === "-----" && artworkPath?.startsWith("/artworks/")) {
+      const keyword = `pixiv "${artworkPath.slice(10)}"`;
+      const container = document.createElement("span");
+      container.className = span.className;
+      searchEngines.forEach((engine, i) => {
+        const link = document.createElement("a");
+        link.href = engine.url + encodeURIComponent(keyword);
+        link.textContent = engine.name;
+        link.target = "_blank";
+        container.appendChild(link);
+        if (i < searchEngines.length - 1) {
+          container.appendChild(document.createTextNode(" | "));
+        }
+      });
+      span?.parentNode?.replaceChild(container, span);
+    }
+  });
+}
 Pages[0 /* Search */] = {
   PageTypeString: "SearchPage",
   CheckUrl: function(url) {
@@ -1849,6 +1876,7 @@ Pages[3 /* Member */] = {
     return /^https?:\/\/www.pixiv.net\/(en\/)?users\/\d+/.test(url);
   },
   ProcessPageElements: function() {
+    showSearchLinksForDeletedArtworks();
     const returnMap = {
       loadingComplete: false,
       controlElements: []

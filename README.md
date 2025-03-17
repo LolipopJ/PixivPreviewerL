@@ -19,7 +19,7 @@
 
 如果您想获取跟我一样的体验，那么请看插件页面 ~~[PixivPreviewerL](https://greasyfork.org/zh-CN/scripts/)~~（暂未上架）。或者直接在 Tampermonkey 上导入已经打包好的插件代码：[`dist/index.js`](./dist/index.js)。
 
-[Pixiv Plus](https://greasyfork.org/en/scripts/34153) 是另一个我在浏览器上的必备插件，在兼容它的同时，对此插件的维护开发也将避免做与它重复的工作。您可以放心地将此插件与它一起使用。
+[Pixiv Plus](https://greasyfork.org/en/scripts/34153) 是另一个我在浏览器上的必备插件，在兼容它的同时，对此插件的维护开发也将避免做与它重复的工作。您可以放心地同时启用这两个插件。
 
 ## 开发
 
@@ -29,7 +29,7 @@
 yarn
 ```
 
-开发与维护插件代码，可编辑 `src/` 目录里的文件；修改 Tampermonkey 的元数据，可编辑 `tsup.config.ts` 中的 `banner` 配置。
+开发与维护插件，可编辑 `src/` 目录里的源码；修改 Tampermonkey 的元数据，可编辑 `tsup.config.ts` 中的 `banner` 配置。
 
 查找并修复质量或格式问题：
 
