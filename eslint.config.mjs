@@ -28,5 +28,8 @@ export default tseslint.config(
       },
     },
   },
-  eslintPluginPrettierRecommended
+  eslintPluginPrettierRecommended,
+  {
+    ignores: ["dist/", "node_modules/"],
+  }
 );

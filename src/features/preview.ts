@@ -490,10 +490,12 @@ class PreviewedIllust {
   bindPreviewImageEvents() {
     // 监听图片加载完毕事件
     this.previewImageElement.on("load", this.onImageLoad);
-    // 监听鼠标点击切换图片事件，触摸板友好
+    // 监听鼠标点击切换图片事件
     this.previewImageElement.on("click", this.onPreviewImageMouseClick);
     // 监听鼠标滚动切换图片事件
-    this.previewImageElement.on("wheel", this.onPreviewImageMouseWheel);
+    $(document).on("wheel", this.onPreviewImageMouseWheel);
+    // 监听方向键切换图片事件
+    $(document).on("keydown", this.onPreviewImageKeyDown);
     // 监听点击下载按钮事件
     this.downloadOriginalElement.on("click", this.onDownloadImage);
     // 监听鼠标移动事件
@@ -505,6 +507,8 @@ class PreviewedIllust {
   unbindPreviewImageEvents() {
     this.previewImageElement.off();
     this.downloadOriginalElement.off();
+    $(document).off("wheel", this.onPreviewImageMouseWheel);
+    $(document).off("keydown", this.onPreviewImageKeyDown);
     $(document).off("mousemove", this.onMouseMove);
     window.removeEventListener("wheel", this.preventPageZoom);
   }
@@ -583,14 +587,33 @@ class PreviewedIllust {
   };
 
   onPreviewImageMouseWheel = (mouseWheelEvent: JQuery.TriggeredEvent) => {
-    mouseWheelEvent.preventDefault();
+    if (mouseWheelEvent.ctrlKey || mouseWheelEvent.metaKey) {
+      mouseWheelEvent.preventDefault();
 
-    if ((mouseWheelEvent.originalEvent as WheelEvent).deltaY > 0) {
-      // 滑轮向下滚动，切换到下一张图片预览
-      this.nextPage();
-    } else {
-      // 滑轮向上滚动，切换到上一张图片预览
-      this.prevPage();
+      if ((mouseWheelEvent.originalEvent as WheelEvent).deltaY > 0) {
+        // 滑轮向下滚动，切换到下一张图片预览
+        this.nextPage();
+      } else {
+        // 滑轮向上滚动，切换到上一张图片预览
+        this.prevPage();
+      }
+    }
+  };
+
+  onPreviewImageKeyDown = (keyDownEvent: JQuery.KeyDownEvent) => {
+    if (keyDownEvent.ctrlKey || keyDownEvent.metaKey) {
+      keyDownEvent.preventDefault();
+
+      switch (keyDownEvent.key) {
+        case "ArrowUp":
+        case "ArrowRight":
+          this.nextPage();
+          break;
+        case "ArrowDown":
+        case "ArrowLeft":
+          this.prevPage();
+          break;
+      }
     }
   };
 
