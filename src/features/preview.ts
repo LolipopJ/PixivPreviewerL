@@ -378,37 +378,24 @@ class PreviewedIllust {
       .appendTo(this.previewWrapperElement);
     this.pageCountText = $(document.createElement("span"))
       .attr({ id: "pp-page-count__text" })
-      .css({ "margin-left": "4px" })
       .text("1/1");
     this.pageCountElement = $(document.createElement("div"))
       .attr({ id: "pp-page-count" })
       .css({
-        display: "flex",
-        "align-items": "center",
         height: "20px",
         "border-radius": "10px",
         color: "white",
         background: "rgba(0, 0, 0, 0.32)",
         "font-size": "10px",
-        "line-height": "12px",
+        "line-height": "1",
         "font-weight": "bold",
-        flex: "0 0 auto",
         padding: "3px 6px",
+        cursor: "pointer",
+        display: "flex",
+        "align-items": "center",
+        gap: "4px",
       })
-      .append(
-        $(pageIcon).css({
-          "list-style": "none",
-          "pointer-events": "none",
-          color: "rgb(245, 245, 245)",
-          "font-weight": "bold",
-          stroke: "none",
-          fill: "currentcolor",
-          width: "9px",
-          "line-height": 0,
-          "font-size": "0px",
-          "vertical-align": "middle",
-        })
-      )
+      .append(pageIcon)
       .append(this.pageCountText)
       .hide()
       .prependTo(this.previewWrapperHeader);
@@ -420,6 +407,7 @@ class PreviewedIllust {
         color: "white",
         background: "rgba(0, 0, 0, 0.32)",
         "font-size": "10px",
+        "line-height": "1",
         "font-weight": "bold",
         padding: "3px 6px",
         cursor: "pointer",
