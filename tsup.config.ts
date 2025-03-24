@@ -1,3 +1,4 @@
+import svg from "esbuild-plugin-svg";
 import { defineConfig } from "tsup";
 
 import packageJson from "./package.json";
@@ -5,8 +6,11 @@ import packageJson from "./package.json";
 export default defineConfig({
   entry: ["src/index.ts"],
   target: ["chrome107"],
+  minify: false,
   splitting: false,
   clean: true,
+  platform: "browser",
+  esbuildPlugins: [svg()],
   env: {
     VERSION: packageJson.version,
   },
