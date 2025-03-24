@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                PixivPreviewerL
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             0.2.0-2025/3/24
+// @version             0.2.1-2025/3/24
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @match               *://www.pixiv.net/*
@@ -15,7 +15,7 @@
 // ==/UserScript==
 
 // src/constants/index.ts
-var g_version = "0.2.0";
+var g_version = "0.2.1";
 var g_getUgoiraUrl = "/ajax/illust/#id#/ugoira_meta";
 var g_getNovelUrl = "/ajax/search/novels/#key#?word=#key#&p=#page#";
 var g_loadingImage = "https://pp-1252089172.cos.ap-chengdu.myqcloud.com/loading.gif";
@@ -71,7 +71,7 @@ var download_default = '<svg t="1742281193586" class="icon" viewBox="0 0 1024 10
 var loading_default = '<svg t="1742282291278" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg"\n  p-id="38665" width="48" height="48">\n  <path\n    d="M988 548c-19.9 0-36-16.1-36-36 0-59.4-11.6-117-34.6-171.3a440.45 440.45 0 0 0-94.3-139.9 437.71 437.71 0 0 0-139.9-94.3C629 83.6 571.4 72 512 72c-19.9 0-36-16.1-36-36s16.1-36 36-36c69.1 0 136.2 13.5 199.3 40.3C772.3 66 827 103 874 150c47 47 83.9 101.8 109.7 162.7 26.7 63.1 40.2 130.2 40.2 199.3 0.1 19.9-16 36-35.9 36z"\n    p-id="38666" fill="#1296db"></path>\n</svg>';
 
 // src/icons/page.svg
-var page_default = '<svg viewBox="0 0 9 10" size="9">\n  <path\n    d="M 8 3 C 8.55228 3 9 3.44772 9 4 L 9 9 C 9 9.55228 8.55228 10 8 10 L 3 10 C 2.44772 10 2 9.55228 2 9 L 6 9 C 7.10457 9 8 8.10457 8 7 L 8 3 Z M 1 1 L 6 1 C 6.55228 1 7 1.44772 7 2 L 7 7 C 7 7.55228 6.55228 8 6 8 L 1 8 C 0.447715 8 0 7.55228 0 7 L 0 2 C 0 1.44772 0.447715 1 1 1 Z">\n  </path>\n</svg>';
+var page_default = '<svg viewBox="0 0 10 10" width="10" height="10">\n  <path\n    d="M 8 3 C 8.55228 3 9 3.44772 9 4 L 9 9 C 9 9.55228 8.55228 10 8 10 L 3 10 C 2.44772 10 2 9.55228 2 9 L 6 9 C 7.10457 9 8 8.10457 8 7 L 8 3 Z M 1 1 L 6 1 C 6.55228 1 7 1.44772 7 2 L 7 7 C 7 7.55228 6.55228 8 6 8 L 1 8 C 0.447715 8 0 7.55228 0 7 L 0 2 C 0 1.44772 0.447715 1 1 1 Z"\n    fill="#ffffff"></path>\n</svg>';
 
 // src/utils/logger.ts
 var ILog = class {
@@ -969,39 +969,28 @@ var PreviewedIllust = class {
       "align-items": "center",
       "justify-content": "flex-end"
     }).appendTo(this.previewWrapperElement);
-    this.pageCountText = $(document.createElement("span")).attr({ id: "pp-page-count__text" }).css({ "margin-left": "4px" }).text("1/1");
+    this.pageCountText = $(document.createElement("span")).attr({ id: "pp-page-count__text" }).text("1/1");
     this.pageCountElement = $(document.createElement("div")).attr({ id: "pp-page-count" }).css({
-      display: "flex",
-      "align-items": "center",
       height: "20px",
       "border-radius": "10px",
       color: "white",
       background: "rgba(0, 0, 0, 0.32)",
       "font-size": "10px",
-      "line-height": "12px",
+      "line-height": "1",
       "font-weight": "bold",
-      flex: "0 0 auto",
-      padding: "3px 6px"
-    }).append(
-      $(page_default).css({
-        "list-style": "none",
-        "pointer-events": "none",
-        color: "rgb(245, 245, 245)",
-        "font-weight": "bold",
-        stroke: "none",
-        fill: "currentcolor",
-        width: "9px",
-        "line-height": 0,
-        "font-size": "0px",
-        "vertical-align": "middle"
-      })
-    ).append(this.pageCountText).hide().prependTo(this.previewWrapperHeader);
+      padding: "3px 6px",
+      cursor: "pointer",
+      display: "flex",
+      "align-items": "center",
+      gap: "4px"
+    }).append(page_default).append(this.pageCountText).hide().prependTo(this.previewWrapperHeader);
     this.downloadOriginalElement = $(document.createElement("a")).attr({ id: "pp-download-original" }).css({
       height: "20px",
       "border-radius": "10px",
       color: "white",
       background: "rgba(0, 0, 0, 0.32)",
       "font-size": "10px",
+      "line-height": "1",
       "font-weight": "bold",
       padding: "3px 6px",
       cursor: "pointer",
@@ -1044,7 +1033,8 @@ var PreviewedIllust = class {
   bindPreviewImageEvents() {
     this.previewImageElement.on("load", this.onImageLoad);
     this.previewImageElement.on("click", this.onPreviewImageMouseClick);
-    this.previewImageElement.on("wheel", this.onPreviewImageMouseWheel);
+    $(document).on("wheel", this.onPreviewImageMouseWheel);
+    $(document).on("keydown", this.onPreviewImageKeyDown);
     this.downloadOriginalElement.on("click", this.onDownloadImage);
     $(document).on("mousemove", this.onMouseMove);
     window.addEventListener("wheel", this.preventPageZoom, { passive: false });
@@ -1052,6 +1042,8 @@ var PreviewedIllust = class {
   unbindPreviewImageEvents() {
     this.previewImageElement.off();
     this.downloadOriginalElement.off();
+    $(document).off("wheel", this.onPreviewImageMouseWheel);
+    $(document).off("keydown", this.onPreviewImageKeyDown);
     $(document).off("mousemove", this.onMouseMove);
     window.removeEventListener("wheel", this.preventPageZoom);
   }
@@ -1115,11 +1107,28 @@ var PreviewedIllust = class {
     this.nextPage();
   };
   onPreviewImageMouseWheel = (mouseWheelEvent) => {
-    mouseWheelEvent.preventDefault();
-    if (mouseWheelEvent.originalEvent.deltaY > 0) {
-      this.nextPage();
-    } else {
-      this.prevPage();
+    if (mouseWheelEvent.ctrlKey || mouseWheelEvent.metaKey) {
+      mouseWheelEvent.preventDefault();
+      if (mouseWheelEvent.originalEvent.deltaY > 0) {
+        this.nextPage();
+      } else {
+        this.prevPage();
+      }
+    }
+  };
+  onPreviewImageKeyDown = (keyDownEvent) => {
+    if (keyDownEvent.ctrlKey || keyDownEvent.metaKey) {
+      keyDownEvent.preventDefault();
+      switch (keyDownEvent.key) {
+        case "ArrowUp":
+        case "ArrowRight":
+          this.nextPage();
+          break;
+        case "ArrowDown":
+        case "ArrowLeft":
+          this.prevPage();
+          break;
+      }
     }
   };
   onDownloadImage = (onClickEvent) => {
