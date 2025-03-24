@@ -48,8 +48,6 @@ export const g_defaultSettings: GlobalSettings = {
 /** 作品预览容器的背景图片链接 */
 export const PREVIEW_WRAPPER_BACKGROUND_IMAGE_URL =
   "https://pp-1252089172.cos.ap-chengdu.myqcloud.com/transparent.png";
-/** 作品预览容器的最小尺寸 */
-export const PREVIEW_WRAPPER_MIN_SIZE = 48;
 /** 作品预览容器的边框宽度 */
 export const PREVIEW_WRAPPER_BORDER_WIDTH = 2;
 /** 作品预览容器的边框弧度 */

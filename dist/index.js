@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                PixivPreviewerL
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             0.1.3-2025/3/17
+// @version             0.2.0-2025/3/24
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @match               *://www.pixiv.net/*
@@ -15,7 +15,7 @@
 // ==/UserScript==
 
 // src/constants/index.ts
-var g_version = "0.1.3";
+var g_version = "0.2.0";
 var g_getUgoiraUrl = "/ajax/illust/#id#/ugoira_meta";
 var g_getNovelUrl = "/ajax/search/novels/#key#?word=#key#&p=#page#";
 var g_loadingImage = "https://pp-1252089172.cos.ap-chengdu.myqcloud.com/loading.gif";
@@ -49,7 +49,6 @@ var g_defaultSettings = {
   logLevel: 1,
   version: g_version
 };
-var PREVIEW_WRAPPER_MIN_SIZE = 48;
 var PREVIEW_WRAPPER_BORDER_WIDTH = 2;
 var PREVIEW_WRAPPER_BORDER_RADIUS = 8;
 var PREVIEW_WRAPPER_DISTANCE_TO_MOUSE = 20;
@@ -64,6 +63,15 @@ var LogLevel = /* @__PURE__ */ ((LogLevel2) => {
   LogLevel2[LogLevel2["Elements"] = 4] = "Elements";
   return LogLevel2;
 })(LogLevel || {});
+
+// src/icons/download.svg
+var download_default = '<svg t="1742281193586" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg"\n  p-id="24408" width="10" height="10">\n  <path\n    d="M1024 896v128H0v-320h128v192h768v-192h128v192zM576 554.688L810.688 320 896 405.312l-384 384-384-384L213.312 320 448 554.688V0h128v554.688z"\n    fill="#ffffff" p-id="24409"></path>\n</svg>';
+
+// src/icons/loading.svg
+var loading_default = '<svg t="1742282291278" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg"\n  p-id="38665" width="48" height="48">\n  <path\n    d="M988 548c-19.9 0-36-16.1-36-36 0-59.4-11.6-117-34.6-171.3a440.45 440.45 0 0 0-94.3-139.9 437.71 437.71 0 0 0-139.9-94.3C629 83.6 571.4 72 512 72c-19.9 0-36-16.1-36-36s16.1-36 36-36c69.1 0 136.2 13.5 199.3 40.3C772.3 66 827 103 874 150c47 47 83.9 101.8 109.7 162.7 26.7 63.1 40.2 130.2 40.2 199.3 0.1 19.9-16 36-35.9 36z"\n    p-id="38666" fill="#1296db"></path>\n</svg>';
+
+// src/icons/page.svg
+var page_default = '<svg viewBox="0 0 9 10" size="9">\n  <path\n    d="M 8 3 C 8.55228 3 9 3.44772 9 4 L 9 9 C 9 9.55228 8.55228 10 8 10 L 3 10 C 2.44772 10 2 9.55228 2 9 L 6 9 C 7.10457 9 8 8.10457 8 7 L 8 3 Z M 1 1 L 6 1 C 6.55228 1 7 1.44772 7 2 L 7 7 C 7 7.55228 6.55228 8 6 8 L 1 8 C 0.447715 8 0 7.55228 0 7 L 0 2 C 0 1.44772 0.447715 1 1 1 Z">\n  </path>\n</svg>';
 
 // src/utils/logger.ts
 var ILog = class {
@@ -832,9 +840,6 @@ var loadIllustPreview = (options) => {
     };
   })();
   const onMouseOverIllust = (target) => {
-    if (!(target.is("IMG") || target.is("A"))) {
-      return;
-    }
     const { illustId, illustType } = getIllustMetadata(target) || {};
     if (illustId === void 0 || illustType === void 0) {
       return;
@@ -883,7 +888,12 @@ var loadIllustPreview = (options) => {
   (function inactiveUnexpectedDoms() {
     const styleRules = $("<style>").prop("type", "text/css");
     styleRules.append(`
-._layout-thumbnail .sc-hnotl9-0.gDHFA-d {
+@keyframes pp-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}`);
+    styleRules.append(`
+._layout-thumbnail img + div {
   pointer-events: none;
 }`);
     styleRules.appendTo("head");
@@ -921,10 +931,7 @@ var PreviewedIllust = class {
   /** 保存的鼠标位置 */
   #prevMousePos = [0, 0];
   /** 当前预览图片的实际尺寸 */
-  #currentIllustSize = [
-    PREVIEW_WRAPPER_MIN_SIZE,
-    PREVIEW_WRAPPER_MIN_SIZE
-  ];
+  #currentIllustSize = [0, 0];
   /** 当前预览的动图播放器 */
   // @ts-expect-error: ignore type defines
   #currentUgoiraPlayer;
@@ -976,9 +983,7 @@ var PreviewedIllust = class {
       flex: "0 0 auto",
       padding: "3px 6px"
     }).append(
-      $(
-        '<svg viewBox="0 0 9 10" size="9"><path d="M 8 3 C 8.55228 3 9 3.44772 9 4 L 9 9 C 9 9.55228 8.55228 10 8 10 L 3 10 C 2.44772 10 2 9.55228 2 9 L 6 9 C 7.10457 9 8 8.10457 8 7 L 8 3 Z M 1 1 L 6 1 C 6.55228 1 7 1.44772 7 2 L 7 7 C 7 7.55228 6.55228 8 6 8 L 1 8 C 0.447715 8 0 7.55228 0 7 L 0 2 C 0 1.44772 0.447715 1 1 1 Z"></path></svg>'
-      ).css({
+      $(page_default).css({
         "list-style": "none",
         "pointer-events": "none",
         color: "rgb(245, 245, 245)",
@@ -997,19 +1002,14 @@ var PreviewedIllust = class {
       color: "white",
       background: "rgba(0, 0, 0, 0.32)",
       "font-size": "10px",
-      "line-height": "20px",
       "font-weight": "bold",
       padding: "3px 6px",
-      cursor: "pointer"
-    }).text("DOWNLOAD").hide().prependTo(this.previewWrapperHeader);
-    this.previewLoadingElement = $(
-      new Image(PREVIEW_WRAPPER_MIN_SIZE, PREVIEW_WRAPPER_MIN_SIZE)
-    ).attr({
-      id: "pp-loading",
-      src: g_loadingImage
-    }).css({
-      "border-radius": "50%"
-    }).appendTo(this.previewWrapperElement);
+      cursor: "pointer",
+      display: "flex",
+      "align-items": "center",
+      gap: "4px"
+    }).append(`${download_default}<span>\u539F\u56FE</span>`).hide().prependTo(this.previewWrapperHeader);
+    this.previewLoadingElement = $(loading_default).attr({ id: "pp-loading" }).css({ padding: "12px", animation: "pp-spin 1s linear infinite" }).appendTo(this.previewWrapperElement);
     this.previewImageElement = $(new Image()).attr({ id: "pp-image" }).css({
       "border-radius": `${PREVIEW_WRAPPER_BORDER_RADIUS}px`
     }).hide().appendTo(this.previewWrapperElement);
@@ -1018,10 +1018,7 @@ var PreviewedIllust = class {
     });
     this.#images = [];
     this.#prevMousePos = [0, 0];
-    this.#currentIllustSize = [
-      PREVIEW_WRAPPER_MIN_SIZE,
-      PREVIEW_WRAPPER_MIN_SIZE
-    ];
+    this.#currentIllustSize = [0, 0];
     this.#currentUgoiraPlayer?.stop();
     this.unbindPreviewImageEvents();
     this.unbindUgoiraPreviewEvents();

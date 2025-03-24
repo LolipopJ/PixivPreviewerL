@@ -1,12 +1,13 @@
 import {
-  g_loadingImage,
   PREVIEW_PRELOAD_NUM,
   PREVIEW_WRAPPER_BORDER_RADIUS,
   PREVIEW_WRAPPER_BORDER_WIDTH,
   PREVIEW_WRAPPER_DISTANCE_TO_MOUSE,
-  PREVIEW_WRAPPER_MIN_SIZE,
 } from "../constants";
 import { IllustType } from "../enums";
+import downloadIcon from "../icons/download.svg";
+import loadingIcon from "../icons/loading.svg";
+import pageIcon from "../icons/page.svg";
 import {
   downloadIllust,
   getIllustPagesRequestUrl,
@@ -204,11 +205,6 @@ export const loadIllustPreview = (
 
   //#region 绑定鼠标悬浮图片监听事件
   const onMouseOverIllust = (target: JQuery<HTMLElement>) => {
-    if (!(target.is("IMG") || target.is("A"))) {
-      // 当前当前鼠标悬浮元素不是作品或作品链接，跳过
-      return;
-    }
-
     const { illustId, illustType } = getIllustMetadata(target) || {};
     if (illustId === undefined || illustType === undefined) {
       // 获取当前鼠标悬浮元素的元数据失败，跳过
@@ -275,11 +271,16 @@ export const loadIllustPreview = (
   //#region 取消预期外节点的鼠标事件
   (function inactiveUnexpectedDoms() {
     const styleRules = $("<style>").prop("type", "text/css");
-    // https://www.pixiv.net/ranking.php 排行榜页面加载后续作品时，
-    // 会插入一个影响鼠标悬浮判定的空节点 \`.sc-hnotl9-0.gDHFA-d\`，
-    // 在此处将其设置为不触发鼠标事件
+    // 添加旋转动画样式
     styleRules.append(`
-._layout-thumbnail .sc-hnotl9-0.gDHFA-d {
+@keyframes pp-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}`);
+    // https://www.pixiv.net/ranking.php 排行榜页面加载后续作品时，
+    // 会插入一个影响鼠标悬浮判定的空节点，在此处将其设置为不触发鼠标事件
+    styleRules.append(`
+._layout-thumbnail img + div {
   pointer-events: none;
 }`);
     styleRules.appendTo("head");
@@ -323,10 +324,7 @@ class PreviewedIllust {
   /** 保存的鼠标位置 */
   #prevMousePos: [number, number] = [0, 0];
   /** 当前预览图片的实际尺寸 */
-  #currentIllustSize: [number, number] = [
-    PREVIEW_WRAPPER_MIN_SIZE,
-    PREVIEW_WRAPPER_MIN_SIZE,
-  ];
+  #currentIllustSize: [number, number] = [0, 0];
   /** 当前预览的动图播放器 */
   // @ts-expect-error: ignore type defines
   #currentUgoiraPlayer: ZipImagePlayer & {
@@ -398,9 +396,7 @@ class PreviewedIllust {
         padding: "3px 6px",
       })
       .append(
-        $(
-          '<svg viewBox="0 0 9 10" size="9"><path d="M 8 3 C 8.55228 3 9 3.44772 9 4 L 9 9 C 9 9.55228 8.55228 10 8 10 L 3 10 C 2.44772 10 2 9.55228 2 9 L 6 9 C 7.10457 9 8 8.10457 8 7 L 8 3 Z M 1 1 L 6 1 C 6.55228 1 7 1.44772 7 2 L 7 7 C 7 7.55228 6.55228 8 6 8 L 1 8 C 0.447715 8 0 7.55228 0 7 L 0 2 C 0 1.44772 0.447715 1 1 1 Z"></path></svg>'
-        ).css({
+        $(pageIcon).css({
           "list-style": "none",
           "pointer-events": "none",
           color: "rgb(245, 245, 245)",
@@ -424,24 +420,19 @@ class PreviewedIllust {
         color: "white",
         background: "rgba(0, 0, 0, 0.32)",
         "font-size": "10px",
-        "line-height": "20px",
         "font-weight": "bold",
         padding: "3px 6px",
         cursor: "pointer",
+        display: "flex",
+        "align-items": "center",
+        gap: "4px",
       })
-      .text("DOWNLOAD")
+      .append(`${downloadIcon}<span>原图</span>`)
       .hide()
       .prependTo(this.previewWrapperHeader);
-    this.previewLoadingElement = $(
-      new Image(PREVIEW_WRAPPER_MIN_SIZE, PREVIEW_WRAPPER_MIN_SIZE)
-    )
-      .attr({
-        id: "pp-loading",
-        src: g_loadingImage,
-      })
-      .css({
-        "border-radius": "50%",
-      })
+    this.previewLoadingElement = $(loadingIcon)
+      .attr({ id: "pp-loading" })
+      .css({ padding: "12px", animation: "pp-spin 1s linear infinite" })
       .appendTo(this.previewWrapperElement);
     this.previewImageElement = $(new Image())
       .attr({ id: "pp-image" })
@@ -458,10 +449,7 @@ class PreviewedIllust {
     });
     this.#images = [];
     this.#prevMousePos = [0, 0];
-    this.#currentIllustSize = [
-      PREVIEW_WRAPPER_MIN_SIZE,
-      PREVIEW_WRAPPER_MIN_SIZE,
-    ];
+    this.#currentIllustSize = [0, 0];
     this.#currentUgoiraPlayer?.stop();
 
     // 取消所有绑定的监听事件

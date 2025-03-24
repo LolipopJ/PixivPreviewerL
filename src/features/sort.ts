@@ -38,10 +38,10 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
   }
 
   class IllustSorter {
-    currentPage: number;
+    currentPage: number = 1;
 
-    progressElement: JQuery;
-    progressText: JQuery;
+    progressElement: JQuery = $();
+    progressText: JQuery = $();
 
     constructor() {
       this.reset();
