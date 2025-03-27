@@ -4,10 +4,36 @@ const Texts = {} as Record<Lang, Record<string, string>>;
 
 Texts[Lang.zh_CN] = {
   // 安装或更新后弹出的提示
-  install_title: "欢迎使用 PixivPreviewerL v",
+  install_title: "欢迎使用 Pixiv Previewer by Lolipop v",
   install_body:
-    '<div style="position: absolute;left: 50%;top: 30%;font-size: 20px; color: white;transform:translate(-50%,0);"><p style="text-indent: 2em;">欢迎反馈问题和提出建议！><a style="color: green;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer/feedback" target="_blank">反馈页面</a><</p><br><p style="text-indent: 2em;">如果您是第一次使用，推荐到<a style="color: green;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer" target="_blank"> 详情页 </a>查看脚本介绍。</p></div>',
-  upgrade_body: "",
+    '<div style="position: absolute;left: 50%;top: 30%;font-size: 20px; color: white;transform:translate(-50%,0);"><p style="text-indent: 2em;">欢迎反馈问题和提出建议！><a style="color: skyblue;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer/feedback" target="_blank">反馈页面</a><</p><br><p style="text-indent: 2em;">如果您是第一次使用，推荐到<a style="color: skyblue;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer" target="_blank"> 详情页 </a>查看脚本介绍。</p></div>',
+  upgrade_body: `<div>
+  <p style="text-indent: 2em">
+    本脚本基于
+    <a
+      style="color: skyblue"
+      href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer"
+      target="_blank"
+      >Pixiv Previewer</a
+    >
+    二次开发，旨在满足开发者自己需要的能力。
+  </p>
+  <br />
+  <p style="text-indent: 2em">
+    如果想要提出建议，请前往原脚本的<a
+      style="color: skyblue"
+      href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer/feedback"
+      target="_blank"
+      >反馈页面</a
+    >或开启一个新的
+    <a
+      style="color: skyblue"
+      href="https://github.com/Ocrosoft/PixivPreviewer/issues"
+      target="_blank"
+      >Github 议题</a
+    >！
+  </p>
+</div>`,
   // 设置项
   setting_language: "语言",
   setting_preview: "预览",
@@ -60,8 +86,8 @@ Texts[Lang.zh_CN] = {
 Texts[Lang.en_US] = {
   install_title: "Welcome to PixivPreviewerL v",
   install_body:
-    '<div style="position: absolute;left: 50%;top: 30%;font-size: 20px; color: white;transform:translate(-50%,0);"><p style="text-indent: 2em;">Feedback questions and suggestions are welcome! ><a style="color: green;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer/feedback" target="_blank">Feedback Page</a><</p><br><p style="text-indent: 2em;">If you are using it for the first time, it is recommended to go to the<a style="color: green;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer" target="_blank"> Details Page </a>to see the script introduction.</p></div>',
-  upgrade_body: "",
+    '<div style="position: absolute;left: 50%;top: 30%;font-size: 20px; color: white;transform:translate(-50%,0);"><p style="text-indent: 2em;">Feedback questions and suggestions are welcome! ><a style="color: skyblue;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer/feedback" target="_blank">Feedback Page</a><</p><br><p style="text-indent: 2em;">If you are using it for the first time, it is recommended to go to the<a style="color: skyblue;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer" target="_blank"> Details Page </a>to see the script introduction.</p></div>',
+  upgrade_body: Texts[Lang.zh_CN].upgrade_body,
   setting_language: "Language",
   setting_preview: "Preview",
   setting_animePreview: "Animation preview",
@@ -114,8 +140,8 @@ Texts[Lang.en_US] = {
 Texts[Lang.ru_RU] = {
   install_title: "Добро пожаловать в PixivPreviewerL v",
   install_body:
-    '<div style="position: absolute;left: 50%;top: 30%;font-size: 20px; color: white;transform:translate(-50%,0);"><p style="text-indent: 2em;">Вопросы и предложения приветствуются! ><a style="color: green;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer/feedback" target="_blank">Страница обратной связи</a><</p><br><p style="text-indent: 2em;">Если вы используете это впервые, рекомендуется перейти к<a style="color: green;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer" target="_blank"> Странице подробностей </a>, чтобы посмотреть введение в скрипт.</p></div>',
-  upgrade_body: Texts[Lang.en_US].upgrade_body,
+    '<div style="position: absolute;left: 50%;top: 30%;font-size: 20px; color: white;transform:translate(-50%,0);"><p style="text-indent: 2em;">Вопросы и предложения приветствуются! ><a style="color: skyblue;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer/feedback" target="_blank">Страница обратной связи</a><</p><br><p style="text-indent: 2em;">Если вы используете это впервые, рекомендуется перейти к<a style="color: skyblue;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer" target="_blank"> Странице подробностей </a>, чтобы посмотреть введение в скрипт.</p></div>',
+  upgrade_body: Texts[Lang.zh_CN].upgrade_body,
   setting_language: "Язык",
   setting_preview: "Предпросмотр",
   setting_animePreview: Texts[Lang.en_US].setting_animePreview,
@@ -172,8 +198,8 @@ Texts[Lang.ru_RU] = {
 Texts[Lang.ja_JP] = {
   install_title: "Welcome to PixivPreviewerL v",
   install_body:
-    '<div style="position: absolute;left: 50%;top: 30%;font-size: 20px; color: white;transform:translate(-50%,0);"><p style="text-indent: 2em;"ご意見や提案は大歓迎です! ><a style="color: green;" href="https://greasyfork.org/ja/scripts/30766-pixiv-previewer/feedback" target="_blank">フィードバックページ</a><</p><br><p style="text-indent: 2em;">初めて使う場合は、<a style="color: green;" href="https://greasyfork.org/ja/scripts/30766-pixiv-previewer" target="_blank"> 詳細ページ </a>でスクリプトの紹介を見ることをお勧めします。</p></div>',
-  upgrade_body: "",
+    '<div style="position: absolute;left: 50%;top: 30%;font-size: 20px; color: white;transform:translate(-50%,0);"><p style="text-indent: 2em;"ご意見や提案は大歓迎です! ><a style="color: skyblue;" href="https://greasyfork.org/ja/scripts/30766-pixiv-previewer/feedback" target="_blank">フィードバックページ</a><</p><br><p style="text-indent: 2em;">初めて使う場合は、<a style="color: skyblue;" href="https://greasyfork.org/ja/scripts/30766-pixiv-previewer" target="_blank"> 詳細ページ </a>でスクリプトの紹介を見ることをお勧めします。</p></div>',
+  upgrade_body: Texts[Lang.zh_CN].upgrade_body,
   setting_language: "言語",
   setting_preview: "プレビュー機能",
   setting_animePreview: "うごイラプレビュー",

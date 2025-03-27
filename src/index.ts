@@ -2775,10 +2775,10 @@ function ShowUpgradeMessage() {
 
   const body = Texts[g_language].upgrade_body;
   bg.get(0).innerHTML =
-    '<img id="pps-close"src="https://pp-1252089172.cos.ap-chengdu.myqcloud.com/Close.png"style="position: absolute; right: 35px; top: 20px; width: 32px; height: 32px; cursor: pointer;"><div style="position: absolute;width: 40%;left: 30%;top: 25%;font-size: 25px; text-align: center; color: white;">' +
+    '<img id="pps-close"src="https://pp-1252089172.cos.ap-chengdu.myqcloud.com/Close.png"style="position: absolute; right: 35px; top: 20px; width: 32px; height: 32px; cursor: pointer;"><div style="position: absolute; width: 40%; left: 30%; top: 25%; font-size: 25px; font-weight: bold; text-align: center; color: white;">' +
     Texts[g_language].install_title +
     g_version +
-    '</div><br><div style="position:absolute;left:50%;top:30%;font-size:20px;color:white;transform:translate(-50%,0);height:50%;overflow:auto;">' +
+    '</div><br><div style="position: absolute; left: 50%; top: 35%; font-size: 20px; color: white; transform: translate(-50%,0); height: 50%; overflow: auto;">' +
     body +
     "</div>";
   $("#pps-close").click(function () {
@@ -2892,30 +2892,30 @@ function ShowSetting() {
   }
   ul.empty();
   addItem(getSelectAction("pps-lang"), Texts[g_language].setting_language);
-  addItem(
-    getImageAction("pps-fullSizeThumb"),
-    Texts[g_language].sort_fullSizeThumb
-  );
-  addItem("", "&nbsp");
-  addItem(getImageAction("pps-preview"), Texts[g_language].setting_preview);
-  addItem(
-    getImageAction("pps-animePreview"),
-    Texts[g_language].setting_animePreview
-  );
-  addItem(getImageAction("pps-anime"), Texts[g_language].setting_anime);
-  addItem(getImageAction("pps-original"), Texts[g_language].setting_origin);
+  // addItem(
+  //   getImageAction("pps-fullSizeThumb"),
+  //   Texts[g_language].sort_fullSizeThumb
+  // );
+  // addItem("", "&nbsp");
+  // addItem(getImageAction("pps-preview"), Texts[g_language].setting_preview);
+  // addItem(
+  //   getImageAction("pps-animePreview"),
+  //   Texts[g_language].setting_animePreview
+  // );
+  // addItem(getImageAction("pps-anime"), Texts[g_language].setting_anime);
+  // addItem(getImageAction("pps-original"), Texts[g_language].setting_origin);
   addItem(
     getInputAction("pps-previewDelay"),
     Texts[g_language].setting_previewDelay
   );
-  addItem(
-    getImageAction("pps-previewByKey"),
-    Texts[g_language].setting_previewByKey
-  );
-  $("#pps-previewByKey").attr(
-    "title",
-    Texts[g_language].setting_previewByKeyHelp
-  );
+  // addItem(
+  //   getImageAction("pps-previewByKey"),
+  //   Texts[g_language].setting_previewByKey
+  // );
+  // $("#pps-previewByKey").attr(
+  //   "title",
+  //   Texts[g_language].setting_previewByKeyHelp
+  // );
   addItem("", "&nbsp");
   addItem(getImageAction("pps-sort"), Texts[g_language].setting_sort);
   addItem(getInputAction("pps-maxPage"), Texts[g_language].setting_maxPage);
@@ -2943,20 +2943,20 @@ function ShowSetting() {
   );
   addItem(getImageAction("pps-newTab"), Texts[g_language].setting_blank);
   addItem(getImageAction("pps-pageKey"), Texts[g_language].setting_turnPage);
-  addItem("", "&nbsp");
-  addItem(getImageAction("pps-novelSort"), Texts[g_language].setting_novelSort);
-  addItem(
-    getInputAction("pps-novelMaxPage"),
-    Texts[g_language].setting_novelMaxPage
-  );
-  addItem(
-    getInputAction("pps-novelHideWork"),
-    Texts[g_language].setting_novelHideWork
-  );
-  addItem(
-    getImageAction("pps-novelHideBookmarked"),
-    Texts[g_language].setting_novelHideFav
-  );
+  // addItem("", "&nbsp");
+  // addItem(getImageAction("pps-novelSort"), Texts[g_language].setting_novelSort);
+  // addItem(
+  //   getInputAction("pps-novelMaxPage"),
+  //   Texts[g_language].setting_novelMaxPage
+  // );
+  // addItem(
+  //   getInputAction("pps-novelHideWork"),
+  //   Texts[g_language].setting_novelHideWork
+  // );
+  // addItem(
+  //   getImageAction("pps-novelHideBookmarked"),
+  //   Texts[g_language].setting_novelHideFav
+  // );
 
   const imgOn = "https://pp-1252089172.cos.ap-chengdu.myqcloud.com/On.png";
   const imgOff = "https://pp-1252089172.cos.ap-chengdu.myqcloud.com/Off.png";
