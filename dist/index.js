@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                PixivPreviewerL
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             0.2.2-2025/3/27
+// @version             0.2.3-2025/3/28
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @match               *://www.pixiv.net/*
@@ -15,7 +15,7 @@
 // ==/UserScript==
 
 // src/constants/index.ts
-var g_version = "0.2.2";
+var g_version = "0.2.3";
 var g_getUgoiraUrl = "/ajax/illust/#id#/ugoira_meta";
 var g_getNovelUrl = "/ajax/search/novels/#key#?word=#key#&p=#page#";
 var g_loadingImage = "https://pp-1252089172.cos.ap-chengdu.myqcloud.com/loading.gif";
@@ -1318,9 +1318,35 @@ var PreviewedIllust = class {
 var Texts = {};
 Texts[0 /* zh_CN */] = {
   // 安装或更新后弹出的提示
-  install_title: "\u6B22\u8FCE\u4F7F\u7528 PixivPreviewerL v",
-  install_body: '<div style="position: absolute;left: 50%;top: 30%;font-size: 20px; color: white;transform:translate(-50%,0);"><p style="text-indent: 2em;">\u6B22\u8FCE\u53CD\u9988\u95EE\u9898\u548C\u63D0\u51FA\u5EFA\u8BAE\uFF01><a style="color: green;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer/feedback" target="_blank">\u53CD\u9988\u9875\u9762</a><</p><br><p style="text-indent: 2em;">\u5982\u679C\u60A8\u662F\u7B2C\u4E00\u6B21\u4F7F\u7528\uFF0C\u63A8\u8350\u5230<a style="color: green;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer" target="_blank"> \u8BE6\u60C5\u9875 </a>\u67E5\u770B\u811A\u672C\u4ECB\u7ECD\u3002</p></div>',
-  upgrade_body: "",
+  install_title: "\u6B22\u8FCE\u4F7F\u7528 Pixiv Previewer by Lolipop v",
+  install_body: '<div style="position: absolute;left: 50%;top: 30%;font-size: 20px; color: white;transform:translate(-50%,0);"><p style="text-indent: 2em;">\u6B22\u8FCE\u53CD\u9988\u95EE\u9898\u548C\u63D0\u51FA\u5EFA\u8BAE\uFF01><a style="color: skyblue;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer/feedback" target="_blank">\u53CD\u9988\u9875\u9762</a><</p><br><p style="text-indent: 2em;">\u5982\u679C\u60A8\u662F\u7B2C\u4E00\u6B21\u4F7F\u7528\uFF0C\u63A8\u8350\u5230<a style="color: skyblue;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer" target="_blank"> \u8BE6\u60C5\u9875 </a>\u67E5\u770B\u811A\u672C\u4ECB\u7ECD\u3002</p></div>',
+  upgrade_body: `<div>
+  <p style="text-indent: 2em">
+    \u672C\u811A\u672C\u57FA\u4E8E
+    <a
+      style="color: skyblue"
+      href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer"
+      target="_blank"
+      >Pixiv Previewer</a
+    >
+    \u4E8C\u6B21\u5F00\u53D1\uFF0C\u65E8\u5728\u6EE1\u8DB3\u5F00\u53D1\u8005\u81EA\u5DF1\u9700\u8981\u7684\u80FD\u529B\u3002
+  </p>
+  <br />
+  <p style="text-indent: 2em">
+    \u5982\u679C\u60F3\u8981\u63D0\u51FA\u5EFA\u8BAE\uFF0C\u8BF7\u524D\u5F80\u539F\u811A\u672C\u7684<a
+      style="color: skyblue"
+      href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer/feedback"
+      target="_blank"
+      >\u53CD\u9988\u9875\u9762</a
+    >\u6216\u5F00\u542F\u4E00\u4E2A\u65B0\u7684
+    <a
+      style="color: skyblue"
+      href="https://github.com/Ocrosoft/PixivPreviewer/issues"
+      target="_blank"
+      >Github \u8BAE\u9898</a
+    >\uFF01
+  </p>
+</div>`,
   // 设置项
   setting_language: "\u8BED\u8A00",
   setting_preview: "\u9884\u89C8",
@@ -1368,8 +1394,8 @@ Texts[0 /* zh_CN */] = {
 };
 Texts[1 /* en_US */] = {
   install_title: "Welcome to PixivPreviewerL v",
-  install_body: '<div style="position: absolute;left: 50%;top: 30%;font-size: 20px; color: white;transform:translate(-50%,0);"><p style="text-indent: 2em;">Feedback questions and suggestions are welcome! ><a style="color: green;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer/feedback" target="_blank">Feedback Page</a><</p><br><p style="text-indent: 2em;">If you are using it for the first time, it is recommended to go to the<a style="color: green;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer" target="_blank"> Details Page </a>to see the script introduction.</p></div>',
-  upgrade_body: "",
+  install_body: '<div style="position: absolute;left: 50%;top: 30%;font-size: 20px; color: white;transform:translate(-50%,0);"><p style="text-indent: 2em;">Feedback questions and suggestions are welcome! ><a style="color: skyblue;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer/feedback" target="_blank">Feedback Page</a><</p><br><p style="text-indent: 2em;">If you are using it for the first time, it is recommended to go to the<a style="color: skyblue;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer" target="_blank"> Details Page </a>to see the script introduction.</p></div>',
+  upgrade_body: Texts[0 /* zh_CN */].upgrade_body,
   setting_language: "Language",
   setting_preview: "Preview",
   setting_animePreview: "Animation preview",
@@ -1414,8 +1440,8 @@ Texts[1 /* en_US */] = {
 };
 Texts[2 /* ru_RU */] = {
   install_title: "\u0414\u043E\u0431\u0440\u043E \u043F\u043E\u0436\u0430\u043B\u043E\u0432\u0430\u0442\u044C \u0432 PixivPreviewerL v",
-  install_body: '<div style="position: absolute;left: 50%;top: 30%;font-size: 20px; color: white;transform:translate(-50%,0);"><p style="text-indent: 2em;">\u0412\u043E\u043F\u0440\u043E\u0441\u044B \u0438 \u043F\u0440\u0435\u0434\u043B\u043E\u0436\u0435\u043D\u0438\u044F \u043F\u0440\u0438\u0432\u0435\u0442\u0441\u0442\u0432\u0443\u044E\u0442\u0441\u044F! ><a style="color: green;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer/feedback" target="_blank">\u0421\u0442\u0440\u0430\u043D\u0438\u0446\u0430 \u043E\u0431\u0440\u0430\u0442\u043D\u043E\u0439 \u0441\u0432\u044F\u0437\u0438</a><</p><br><p style="text-indent: 2em;">\u0415\u0441\u043B\u0438 \u0432\u044B \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0435\u0442\u0435 \u044D\u0442\u043E \u0432\u043F\u0435\u0440\u0432\u044B\u0435, \u0440\u0435\u043A\u043E\u043C\u0435\u043D\u0434\u0443\u0435\u0442\u0441\u044F \u043F\u0435\u0440\u0435\u0439\u0442\u0438 \u043A<a style="color: green;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer" target="_blank"> \u0421\u0442\u0440\u0430\u043D\u0438\u0446\u0435 \u043F\u043E\u0434\u0440\u043E\u0431\u043D\u043E\u0441\u0442\u0435\u0439 </a>, \u0447\u0442\u043E\u0431\u044B \u043F\u043E\u0441\u043C\u043E\u0442\u0440\u0435\u0442\u044C \u0432\u0432\u0435\u0434\u0435\u043D\u0438\u0435 \u0432 \u0441\u043A\u0440\u0438\u043F\u0442.</p></div>',
-  upgrade_body: Texts[1 /* en_US */].upgrade_body,
+  install_body: '<div style="position: absolute;left: 50%;top: 30%;font-size: 20px; color: white;transform:translate(-50%,0);"><p style="text-indent: 2em;">\u0412\u043E\u043F\u0440\u043E\u0441\u044B \u0438 \u043F\u0440\u0435\u0434\u043B\u043E\u0436\u0435\u043D\u0438\u044F \u043F\u0440\u0438\u0432\u0435\u0442\u0441\u0442\u0432\u0443\u044E\u0442\u0441\u044F! ><a style="color: skyblue;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer/feedback" target="_blank">\u0421\u0442\u0440\u0430\u043D\u0438\u0446\u0430 \u043E\u0431\u0440\u0430\u0442\u043D\u043E\u0439 \u0441\u0432\u044F\u0437\u0438</a><</p><br><p style="text-indent: 2em;">\u0415\u0441\u043B\u0438 \u0432\u044B \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0435\u0442\u0435 \u044D\u0442\u043E \u0432\u043F\u0435\u0440\u0432\u044B\u0435, \u0440\u0435\u043A\u043E\u043C\u0435\u043D\u0434\u0443\u0435\u0442\u0441\u044F \u043F\u0435\u0440\u0435\u0439\u0442\u0438 \u043A<a style="color: skyblue;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer" target="_blank"> \u0421\u0442\u0440\u0430\u043D\u0438\u0446\u0435 \u043F\u043E\u0434\u0440\u043E\u0431\u043D\u043E\u0441\u0442\u0435\u0439 </a>, \u0447\u0442\u043E\u0431\u044B \u043F\u043E\u0441\u043C\u043E\u0442\u0440\u0435\u0442\u044C \u0432\u0432\u0435\u0434\u0435\u043D\u0438\u0435 \u0432 \u0441\u043A\u0440\u0438\u043F\u0442.</p></div>',
+  upgrade_body: Texts[0 /* zh_CN */].upgrade_body,
   setting_language: "\u042F\u0437\u044B\u043A",
   setting_preview: "\u041F\u0440\u0435\u0434\u043F\u0440\u043E\u0441\u043C\u043E\u0442\u0440",
   setting_animePreview: Texts[1 /* en_US */].setting_animePreview,
@@ -1460,8 +1486,8 @@ Texts[2 /* ru_RU */] = {
 };
 Texts[3 /* ja_JP */] = {
   install_title: "Welcome to PixivPreviewerL v",
-  install_body: '<div style="position: absolute;left: 50%;top: 30%;font-size: 20px; color: white;transform:translate(-50%,0);"><p style="text-indent: 2em;"\u3054\u610F\u898B\u3084\u63D0\u6848\u306F\u5927\u6B53\u8FCE\u3067\u3059! ><a style="color: green;" href="https://greasyfork.org/ja/scripts/30766-pixiv-previewer/feedback" target="_blank">\u30D5\u30A3\u30FC\u30C9\u30D0\u30C3\u30AF\u30DA\u30FC\u30B8</a><</p><br><p style="text-indent: 2em;">\u521D\u3081\u3066\u4F7F\u3046\u5834\u5408\u306F\u3001<a style="color: green;" href="https://greasyfork.org/ja/scripts/30766-pixiv-previewer" target="_blank"> \u8A73\u7D30\u30DA\u30FC\u30B8 </a>\u3067\u30B9\u30AF\u30EA\u30D7\u30C8\u306E\u7D39\u4ECB\u3092\u898B\u308B\u3053\u3068\u3092\u304A\u52E7\u3081\u3057\u307E\u3059\u3002</p></div>',
-  upgrade_body: "",
+  install_body: '<div style="position: absolute;left: 50%;top: 30%;font-size: 20px; color: white;transform:translate(-50%,0);"><p style="text-indent: 2em;"\u3054\u610F\u898B\u3084\u63D0\u6848\u306F\u5927\u6B53\u8FCE\u3067\u3059! ><a style="color: skyblue;" href="https://greasyfork.org/ja/scripts/30766-pixiv-previewer/feedback" target="_blank">\u30D5\u30A3\u30FC\u30C9\u30D0\u30C3\u30AF\u30DA\u30FC\u30B8</a><</p><br><p style="text-indent: 2em;">\u521D\u3081\u3066\u4F7F\u3046\u5834\u5408\u306F\u3001<a style="color: skyblue;" href="https://greasyfork.org/ja/scripts/30766-pixiv-previewer" target="_blank"> \u8A73\u7D30\u30DA\u30FC\u30B8 </a>\u3067\u30B9\u30AF\u30EA\u30D7\u30C8\u306E\u7D39\u4ECB\u3092\u898B\u308B\u3053\u3068\u3092\u304A\u52E7\u3081\u3057\u307E\u3059\u3002</p></div>',
+  upgrade_body: Texts[0 /* zh_CN */].upgrade_body,
   setting_language: "\u8A00\u8A9E",
   setting_preview: "\u30D7\u30EC\u30D3\u30E5\u30FC\u6A5F\u80FD",
   setting_animePreview: "\u3046\u3054\u30A4\u30E9\u30D7\u30EC\u30D3\u30E5\u30FC",
@@ -3691,7 +3717,7 @@ function ShowUpgradeMessage() {
   });
   $("body").append(bg);
   const body = i18n_default[g_language].upgrade_body;
-  bg.get(0).innerHTML = '<img id="pps-close"src="https://pp-1252089172.cos.ap-chengdu.myqcloud.com/Close.png"style="position: absolute; right: 35px; top: 20px; width: 32px; height: 32px; cursor: pointer;"><div style="position: absolute;width: 40%;left: 30%;top: 25%;font-size: 25px; text-align: center; color: white;">' + i18n_default[g_language].install_title + g_version + '</div><br><div style="position:absolute;left:50%;top:30%;font-size:20px;color:white;transform:translate(-50%,0);height:50%;overflow:auto;">' + body + "</div>";
+  bg.get(0).innerHTML = '<img id="pps-close"src="https://pp-1252089172.cos.ap-chengdu.myqcloud.com/Close.png"style="position: absolute; right: 35px; top: 20px; width: 32px; height: 32px; cursor: pointer;"><div style="position: absolute; width: 40%; left: 30%; top: 25%; font-size: 25px; font-weight: bold; text-align: center; color: white;">' + i18n_default[g_language].install_title + g_version + '</div><br><div style="position: absolute; left: 50%; top: 35%; font-size: 20px; color: white; transform: translate(-50%,0); height: 50%; overflow: auto;">' + body + "</div>";
   $("#pps-close").click(function() {
     $("#pp-bg").remove();
   });
@@ -3766,28 +3792,8 @@ function ShowSetting() {
   ul.empty();
   addItem(getSelectAction("pps-lang"), i18n_default[g_language].setting_language);
   addItem(
-    getImageAction("pps-fullSizeThumb"),
-    i18n_default[g_language].sort_fullSizeThumb
-  );
-  addItem("", "&nbsp");
-  addItem(getImageAction("pps-preview"), i18n_default[g_language].setting_preview);
-  addItem(
-    getImageAction("pps-animePreview"),
-    i18n_default[g_language].setting_animePreview
-  );
-  addItem(getImageAction("pps-anime"), i18n_default[g_language].setting_anime);
-  addItem(getImageAction("pps-original"), i18n_default[g_language].setting_origin);
-  addItem(
     getInputAction("pps-previewDelay"),
     i18n_default[g_language].setting_previewDelay
-  );
-  addItem(
-    getImageAction("pps-previewByKey"),
-    i18n_default[g_language].setting_previewByKey
-  );
-  $("#pps-previewByKey").attr(
-    "title",
-    i18n_default[g_language].setting_previewByKeyHelp
   );
   addItem("", "&nbsp");
   addItem(getImageAction("pps-sort"), i18n_default[g_language].setting_sort);
@@ -3809,20 +3815,6 @@ function ShowSetting() {
   );
   addItem(getImageAction("pps-newTab"), i18n_default[g_language].setting_blank);
   addItem(getImageAction("pps-pageKey"), i18n_default[g_language].setting_turnPage);
-  addItem("", "&nbsp");
-  addItem(getImageAction("pps-novelSort"), i18n_default[g_language].setting_novelSort);
-  addItem(
-    getInputAction("pps-novelMaxPage"),
-    i18n_default[g_language].setting_novelMaxPage
-  );
-  addItem(
-    getInputAction("pps-novelHideWork"),
-    i18n_default[g_language].setting_novelHideWork
-  );
-  addItem(
-    getImageAction("pps-novelHideBookmarked"),
-    i18n_default[g_language].setting_novelHideFav
-  );
   const imgOn = "https://pp-1252089172.cos.ap-chengdu.myqcloud.com/On.png";
   const imgOff = "https://pp-1252089172.cos.ap-chengdu.myqcloud.com/Off.png";
   $("#pps-preview").attr("src", settings.enablePreview ? imgOn : imgOff).addClass(settings.enablePreview ? "on" : "off").css("cursor: pointer");
