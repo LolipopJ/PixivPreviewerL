@@ -49,12 +49,13 @@ export const loadIllustPreview = (
     }
 
     const illustHref = imgLink.attr("href");
-    const illustHrefMatch = illustHref?.match(/\/artworks\/(\d+)/);
+    const illustHrefMatch = illustHref?.match(/\/artworks\/(\d+)(#(\d+))?/);
     if (!illustHrefMatch) {
       iLog.w("当前链接非作品链接，或当前作品不支持预览，跳过");
       return null;
     }
     const illustId = illustHrefMatch[1];
+    const previewPage = Number(illustHrefMatch[3] ?? 1);
 
     const ugoiraSvg = imgLink.children("div:first").find("svg:first");
     const illustType =
@@ -66,6 +67,8 @@ export const loadIllustPreview = (
     return {
       /** 作品 ID */
       illustId,
+      /** 作品页码 */
+      previewPage,
       /** 作品类型 */
       illustType,
     };
@@ -91,10 +94,12 @@ export const loadIllustPreview = (
     return ({
       target,
       illustId,
+      previewPage = 1,
       illustType,
     }: {
       target: JQuery<HTMLElement>;
       illustId: string;
+      previewPage?: number;
       illustType: IllustType;
     }) => {
       // 停止正在处理的获取元数据请求
@@ -114,6 +119,7 @@ export const loadIllustPreview = (
           // 命中缓存，直接使用缓存中的元数据
           previewedIllust.setImage({
             illustElement: target,
+            previewPage,
             ...getIllustPagesCache[illustId],
           });
           return;
@@ -146,6 +152,7 @@ export const loadIllustPreview = (
 
             previewedIllust.setImage({
               illustElement: target,
+              previewPage,
               regularUrls,
               originalUrls,
             });
@@ -205,7 +212,8 @@ export const loadIllustPreview = (
 
   //#region 绑定鼠标悬浮图片监听事件
   const onMouseOverIllust = (target: JQuery<HTMLElement>) => {
-    const { illustId, illustType } = getIllustMetadata(target) || {};
+    const { illustId, previewPage, illustType } =
+      getIllustMetadata(target) || {};
     if (illustId === undefined || illustType === undefined) {
       // 获取当前鼠标悬浮元素的元数据失败，跳过
       return;
@@ -218,7 +226,7 @@ export const loadIllustPreview = (
     }
 
     const previewIllustTimeout = setTimeout(() => {
-      previewIllust({ target, illustId, illustType });
+      previewIllust({ target, illustId, previewPage, illustType });
     }, mouseHoverPreviewWait);
 
     const onMouseMove = (mouseMoveEvent: JQuery.MouseMoveEvent) => {
@@ -446,33 +454,35 @@ class PreviewedIllust {
   }
 
   //#region 预览图片功能
-  /** 初始化预览容器，显示第一张图片 */
+  /** 初始化预览容器，默认显示第一张图片 */
   setImage({
     illustElement,
+    previewPage = 1,
     regularUrls,
     originalUrls,
   }: {
     illustElement: JQuery<HTMLElement>;
+    previewPage?: number;
     regularUrls: string[];
     originalUrls: string[];
   }) {
     this.reset();
-
     this.initPreviewWrapper();
 
     this.illustElement = illustElement;
     this.regularUrls = regularUrls;
     this.originalUrls = originalUrls;
-    this.currentPage = 1;
+    this.currentPage = previewPage;
     this.pageCount = regularUrls.length;
 
     // 预加载前 PREVIEW_PRELOAD_NUM 张图片
-    this.preloadImages(0, PREVIEW_PRELOAD_NUM);
+    this.preloadImages();
 
     // 绑定图片预览监听事件
     this.bindPreviewImageEvents();
+
     // 初始化图片显示
-    this.updatePreviewImage(0);
+    this.updatePreviewImage();
   }
 
   bindPreviewImageEvents() {
@@ -480,14 +490,16 @@ class PreviewedIllust {
     this.previewImageElement.on("load", this.onImageLoad);
     // 监听鼠标点击切换图片事件
     this.previewImageElement.on("click", this.onPreviewImageMouseClick);
+    // 监听点击下载按钮事件
+    this.downloadOriginalElement.on("click", this.onDownloadImage);
+
     // 监听鼠标滚动切换图片事件
     $(document).on("wheel", this.onPreviewImageMouseWheel);
     // 监听方向键切换图片事件
     $(document).on("keydown", this.onPreviewImageKeyDown);
-    // 监听点击下载按钮事件
-    this.downloadOriginalElement.on("click", this.onDownloadImage);
     // 监听鼠标移动事件
     $(document).on("mousemove", this.onMouseMove);
+
     // 监听鼠标滚动事件
     window.addEventListener("wheel", this.preventPageZoom, { passive: false });
   }
@@ -495,18 +507,20 @@ class PreviewedIllust {
   unbindPreviewImageEvents() {
     this.previewImageElement.off();
     this.downloadOriginalElement.off();
+
     $(document).off("wheel", this.onPreviewImageMouseWheel);
     $(document).off("keydown", this.onPreviewImageKeyDown);
     $(document).off("mousemove", this.onMouseMove);
+
     window.removeEventListener("wheel", this.preventPageZoom);
   }
 
   /** 显示 pageIndex 指向的图片 */
-  updatePreviewImage(pageIndex: number) {
-    const currentImageUrl = this.regularUrls[pageIndex];
+  updatePreviewImage(page: number = this.currentPage) {
+    const currentImageUrl = this.regularUrls[page - 1];
     this.previewImageElement.attr("src", currentImageUrl);
 
-    this.pageCountText.text(`${pageIndex + 1}/${this.pageCount}`);
+    this.pageCountText.text(`${page}/${this.pageCount}`);
   }
 
   onImageLoad = () => {
@@ -541,12 +555,9 @@ class PreviewedIllust {
     } else {
       this.currentPage = 1;
     }
-    this.updatePreviewImage(this.currentPage - 1);
+    this.updatePreviewImage();
 
-    this.preloadImages(
-      this.currentPage - 1,
-      this.currentPage - 1 + PREVIEW_PRELOAD_NUM
-    );
+    this.preloadImages();
   }
 
   prevPage() {
@@ -555,10 +566,13 @@ class PreviewedIllust {
     } else {
       this.currentPage = this.pageCount;
     }
-    this.updatePreviewImage(this.currentPage - 1);
+    this.updatePreviewImage();
   }
 
-  preloadImages(from: number, to: number) {
+  preloadImages(
+    from: number = this.currentPage - 1,
+    to: number = this.currentPage - 1 + PREVIEW_PRELOAD_NUM
+  ) {
     if (!this.#images.length) {
       this.#images = new Array(this.regularUrls.length);
     }
