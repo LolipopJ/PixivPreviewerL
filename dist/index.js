@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                PixivPreviewerL
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             0.2.1-2025/3/24
+// @version             0.2.2-2025/3/27
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @match               *://www.pixiv.net/*
@@ -15,7 +15,7 @@
 // ==/UserScript==
 
 // src/constants/index.ts
-var g_version = "0.2.1";
+var g_version = "0.2.2";
 var g_getUgoiraUrl = "/ajax/illust/#id#/ugoira_meta";
 var g_getNovelUrl = "/ajax/search/novels/#key#?word=#key#&p=#page#";
 var g_loadingImage = "https://pp-1252089172.cos.ap-chengdu.myqcloud.com/loading.gif";
@@ -727,12 +727,13 @@ var loadIllustPreview = (options) => {
       }
     }
     const illustHref = imgLink.attr("href");
-    const illustHrefMatch = illustHref?.match(/\/artworks\/(\d+)/);
+    const illustHrefMatch = illustHref?.match(/\/artworks\/(\d+)(#(\d+))?/);
     if (!illustHrefMatch) {
       iLog.w("\u5F53\u524D\u94FE\u63A5\u975E\u4F5C\u54C1\u94FE\u63A5\uFF0C\u6216\u5F53\u524D\u4F5C\u54C1\u4E0D\u652F\u6301\u9884\u89C8\uFF0C\u8DF3\u8FC7");
       return null;
     }
     const illustId = illustHrefMatch[1];
+    const previewPage = Number(illustHrefMatch[3] ?? 1);
     const ugoiraSvg = imgLink.children("div:first").find("svg:first");
     const illustType = ugoiraSvg.length || imgLink.hasClass("ugoku-illust") ? 2 /* UGOIRA */ : (
       // 合并漫画类型作品 IllustType.MANGA 为 IllustType.ILLUST 统一处理
@@ -741,6 +742,8 @@ var loadIllustPreview = (options) => {
     return {
       /** 作品 ID */
       illustId,
+      /** 作品页码 */
+      previewPage,
       /** 作品类型 */
       illustType
     };
@@ -754,6 +757,7 @@ var loadIllustPreview = (options) => {
     return ({
       target,
       illustId,
+      previewPage = 1,
       illustType
     }) => {
       ajaxRequest.abort();
@@ -766,6 +770,7 @@ var loadIllustPreview = (options) => {
         if (getIllustPagesCache[illustId]) {
           previewedIllust.setImage({
             illustElement: target,
+            previewPage,
             ...getIllustPagesCache[illustId]
           });
           return;
@@ -789,6 +794,7 @@ var loadIllustPreview = (options) => {
             if (currentHoveredIllustId !== illustId) return;
             previewedIllust.setImage({
               illustElement: target,
+              previewPage,
               regularUrls,
               originalUrls
             });
@@ -840,7 +846,7 @@ var loadIllustPreview = (options) => {
     };
   })();
   const onMouseOverIllust = (target) => {
-    const { illustId, illustType } = getIllustMetadata(target) || {};
+    const { illustId, previewPage, illustType } = getIllustMetadata(target) || {};
     if (illustId === void 0 || illustType === void 0) {
       return;
     }
@@ -849,7 +855,7 @@ var loadIllustPreview = (options) => {
       return;
     }
     const previewIllustTimeout = setTimeout(() => {
-      previewIllust({ target, illustId, illustType });
+      previewIllust({ target, illustId, previewPage, illustType });
     }, mouseHoverPreviewWait);
     const onMouseMove = (mouseMoveEvent) => {
       if (mouseMoveEvent.ctrlKey || mouseMoveEvent.metaKey) {
@@ -1013,9 +1019,10 @@ var PreviewedIllust = class {
     this.unbindUgoiraPreviewEvents();
   }
   //#region 预览图片功能
-  /** 初始化预览容器，显示第一张图片 */
+  /** 初始化预览容器，默认显示第一张图片 */
   setImage({
     illustElement,
+    previewPage = 1,
     regularUrls,
     originalUrls
   }) {
@@ -1024,18 +1031,18 @@ var PreviewedIllust = class {
     this.illustElement = illustElement;
     this.regularUrls = regularUrls;
     this.originalUrls = originalUrls;
-    this.currentPage = 1;
+    this.currentPage = previewPage;
     this.pageCount = regularUrls.length;
-    this.preloadImages(0, PREVIEW_PRELOAD_NUM);
+    this.preloadImages();
     this.bindPreviewImageEvents();
-    this.updatePreviewImage(0);
+    this.updatePreviewImage();
   }
   bindPreviewImageEvents() {
     this.previewImageElement.on("load", this.onImageLoad);
     this.previewImageElement.on("click", this.onPreviewImageMouseClick);
+    this.downloadOriginalElement.on("click", this.onDownloadImage);
     $(document).on("wheel", this.onPreviewImageMouseWheel);
     $(document).on("keydown", this.onPreviewImageKeyDown);
-    this.downloadOriginalElement.on("click", this.onDownloadImage);
     $(document).on("mousemove", this.onMouseMove);
     window.addEventListener("wheel", this.preventPageZoom, { passive: false });
   }
@@ -1048,10 +1055,10 @@ var PreviewedIllust = class {
     window.removeEventListener("wheel", this.preventPageZoom);
   }
   /** 显示 pageIndex 指向的图片 */
-  updatePreviewImage(pageIndex) {
-    const currentImageUrl = this.regularUrls[pageIndex];
+  updatePreviewImage(page = this.currentPage) {
+    const currentImageUrl = this.regularUrls[page - 1];
     this.previewImageElement.attr("src", currentImageUrl);
-    this.pageCountText.text(`${pageIndex + 1}/${this.pageCount}`);
+    this.pageCountText.text(`${page}/${this.pageCount}`);
   }
   onImageLoad = () => {
     this.illustLoaded = true;
@@ -1079,11 +1086,8 @@ var PreviewedIllust = class {
     } else {
       this.currentPage = 1;
     }
-    this.updatePreviewImage(this.currentPage - 1);
-    this.preloadImages(
-      this.currentPage - 1,
-      this.currentPage - 1 + PREVIEW_PRELOAD_NUM
-    );
+    this.updatePreviewImage();
+    this.preloadImages();
   }
   prevPage() {
     if (this.currentPage > 1) {
@@ -1091,9 +1095,9 @@ var PreviewedIllust = class {
     } else {
       this.currentPage = this.pageCount;
     }
-    this.updatePreviewImage(this.currentPage - 1);
+    this.updatePreviewImage();
   }
-  preloadImages(from, to) {
+  preloadImages(from = this.currentPage - 1, to = this.currentPage - 1 + PREVIEW_PRELOAD_NUM) {
     if (!this.#images.length) {
       this.#images = new Array(this.regularUrls.length);
     }
