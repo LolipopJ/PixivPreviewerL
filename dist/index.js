@@ -1,36 +1,35 @@
 // ==UserScript==
-// @name                PixivPreviewerL
+// @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             0.2.3-2025/3/28
+// @version             0.2.4-2025/4/2
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
+// @license             GPL-3.0
+// @supportURL          https://github.com/LolipopJ/PixivPreviewer
 // @match               *://www.pixiv.net/*
 // @grant               unsafeWindow
 // @grant               GM.xmlHttpRequest
 // @grant               GM_xmlhttpRequest
-// @license             GPL-3.0
+// @grant               GM_registerMenuCommand
 // @icon                https://t0.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&size=32&url=https://www.pixiv.net
 // @icon64              https://t0.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&size=64&url=https://www.pixiv.net
 // @require             https://raw.githubusercontent.com/Tampermonkey/utils/refs/heads/main/requires/gh_2215_make_GM_xhr_more_parallel_again.js
+// @require             http://code.jquery.com/jquery-3.7.1.min.js
+// @run-at              document-end
 // ==/UserScript==
 
 // src/constants/index.ts
-var g_version = "0.2.3";
+var g_version = "0.2.4";
 var g_getUgoiraUrl = "/ajax/illust/#id#/ugoira_meta";
 var g_getNovelUrl = "/ajax/search/novels/#key#?word=#key#&p=#page#";
 var g_loadingImage = "https://pp-1252089172.cos.ap-chengdu.myqcloud.com/loading.gif";
 var g_maxXhr = 64;
 var g_defaultSettings = {
-  lang: -1,
+  lang: 0 /* zh_CN */,
   enablePreview: 1,
   enableAnimePreview: 1,
-  enableSort: 1,
-  enableAnimeDownload: 1,
-  original: 0,
   previewDelay: 500,
-  previewByKey: 0,
-  previewKey: 17,
-  previewFullScreen: 0,
+  enableSort: 1,
   pageCount: 3,
   favFilter: 0,
   aiFilter: 0,
@@ -40,29 +39,12 @@ var g_defaultSettings = {
   hideByTagList: "",
   linkBlank: 1,
   pageByKey: 0,
-  fullSizeThumb: 0,
-  enableNovelSort: 1,
-  novelPageCount: 3,
-  novelFavFilter: 0,
-  novelHideFavorite: 0,
-  novelHideFollowed: 0,
-  logLevel: 1,
   version: g_version
 };
 var PREVIEW_WRAPPER_BORDER_WIDTH = 2;
 var PREVIEW_WRAPPER_BORDER_RADIUS = 8;
 var PREVIEW_WRAPPER_DISTANCE_TO_MOUSE = 20;
 var PREVIEW_PRELOAD_NUM = 5;
-
-// src/enums/index.ts
-var LogLevel = /* @__PURE__ */ ((LogLevel2) => {
-  LogLevel2[LogLevel2["None"] = 0] = "None";
-  LogLevel2[LogLevel2["Error"] = 1] = "Error";
-  LogLevel2[LogLevel2["Warning"] = 2] = "Warning";
-  LogLevel2[LogLevel2["Info"] = 3] = "Info";
-  LogLevel2[LogLevel2["Elements"] = 4] = "Elements";
-  return LogLevel2;
-})(LogLevel || {});
 
 // src/icons/download.svg
 var download_default = '<svg t="1742281193586" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg"\n  p-id="24408" width="10" height="10">\n  <path\n    d="M1024 896v128H0v-320h128v192h768v-192h128v192zM576 554.688L810.688 320 896 405.312l-384 384-384-384L213.312 320 448 554.688V0h128v554.688z"\n    fill="#ffffff" p-id="24409"></path>\n</svg>';
@@ -75,66 +57,59 @@ var page_default = '<svg viewBox="0 0 10 10" width="10" height="10">\n  <path\n 
 
 // src/utils/logger.ts
 var ILog = class {
-  prefix = "Pixiv Preview: ";
-  LogLevel = {
-    Verbose: 0,
-    Info: 1,
-    Warning: 2,
-    Error: 3
-  };
-  level = this.LogLevel.Warning;
-  v(value) {
-    if (this.level <= this.LogLevel.Verbose) {
-      console.log(this.prefix + value);
-    }
+  prefix = "%c Pixiv Preview";
+  v(...values) {
+    console.log(
+      this.prefix + " [VERBOSE] ",
+      "color:#333 ;background-color: #fff",
+      ...values
+    );
   }
-  i(info) {
-    if (this.level <= this.LogLevel.Info) {
-      console.info(this.prefix + info);
-    }
+  i(...infos) {
+    console.info(
+      this.prefix + " [INFO] ",
+      "color:#333 ;background-color: #fff;",
+      ...infos
+    );
   }
-  w(warning) {
-    if (this.level <= this.LogLevel.Warning) {
-      console.warn(this.prefix + warning);
-    }
+  w(...warnings) {
+    console.warn(
+      this.prefix + " [WARNING] ",
+      "color:#111 ;background-color:#ffa500;",
+      ...warnings
+    );
   }
-  e(error) {
-    if (this.level <= this.LogLevel.Error) {
-      console.error(this.prefix + error);
-    }
+  e(...errors) {
+    console.error(
+      this.prefix + " [ERROR] ",
+      "color:#111 ;background-color:#ff0000;",
+      ...errors
+    );
   }
-  d(data) {
-    if (this.level <= this.LogLevel.Verbose) {
-      console.log(String(data));
-    }
-  }
-  setLogLevel(logLevel) {
-    this.level = logLevel;
+  d(...data) {
+    console.log(
+      this.prefix + " [DATA] ",
+      "color:#333 ;background-color: #fff;",
+      ...data
+    );
   }
 };
 var iLog = new ILog();
-function DoLog(level, msgOrElement) {
-  if (level <= 1 /* Error */) {
-    let prefix = "%c";
-    let param = "";
-    if (level == 1 /* Error */) {
-      prefix += "[Error]";
-      param = "color:#ff0000";
-    } else if (level == 2 /* Warning */) {
-      prefix += "[Warning]";
-      param = "color:#ffa500";
-    } else if (level == 3 /* Info */) {
-      prefix += "[Info]";
-      param = "color:#000000";
-    } else if (level == 4 /* Elements */) {
-      prefix += "Elements";
-      param = "color:#000000";
-    }
-    if (level != 4 /* Elements */) {
-      console.log(prefix + msgOrElement, param);
-    } else {
-      console.log(msgOrElement);
-    }
+function DoLog(level = 3 /* Info */, ...msgOrElement) {
+  switch (level) {
+    case 1 /* Error */:
+      iLog.e(...msgOrElement);
+      break;
+    case 2 /* Warning */:
+      iLog.w(...msgOrElement);
+      break;
+    case 3 /* Info */:
+      iLog.i(...msgOrElement);
+      break;
+    case 4 /* Elements */:
+    case 0 /* None */:
+    default:
+      iLog.v(...msgOrElement);
   }
 }
 
@@ -216,6 +191,11 @@ function debounce(func, delay = 100) {
   };
 }
 var debounce_default = debounce;
+
+// src/utils/event.ts
+var stopEventPropagation = (event) => {
+  event.stopPropagation();
+};
 
 // src/utils/mouse-monitor.ts
 var MouseMonitor = class {
@@ -714,7 +694,7 @@ var ugoira_player_default = ZipImagePlayer;
 var isInitialized = false;
 var loadIllustPreview = (options) => {
   if (isInitialized) return;
-  const { previewDelay, enableAnimePreview } = options;
+  const { previewDelay, enableAnimePreview, linkBlank } = options;
   const mouseHoverDebounceWait = previewDelay / 5;
   const mouseHoverPreviewWait = previewDelay - mouseHoverDebounceWait;
   const getIllustMetadata = (target) => {
@@ -722,14 +702,12 @@ var loadIllustPreview = (options) => {
     while (!imgLink.is("A")) {
       imgLink = imgLink.parent();
       if (!imgLink.length) {
-        iLog.i("\u672A\u80FD\u627E\u5230\u5F53\u524D\u4F5C\u54C1\u7684\u94FE\u63A5\u5143\u7D20");
         return null;
       }
     }
     const illustHref = imgLink.attr("href");
     const illustHrefMatch = illustHref?.match(/\/artworks\/(\d+)(#(\d+))?/);
     if (!illustHrefMatch) {
-      iLog.w("\u5F53\u524D\u94FE\u63A5\u975E\u4F5C\u54C1\u94FE\u63A5\uFF0C\u6216\u5F53\u524D\u4F5C\u54C1\u4E0D\u652F\u6301\u9884\u89C8\uFF0C\u8DF3\u8FC7");
       return null;
     }
     const illustId = illustHrefMatch[1];
@@ -745,7 +723,9 @@ var loadIllustPreview = (options) => {
       /** 作品页码 */
       previewPage,
       /** 作品类型 */
-      illustType
+      illustType,
+      /** 作品链接 DOM */
+      illustLinkDom: imgLink
     };
   };
   const previewIllust = (() => {
@@ -763,12 +743,13 @@ var loadIllustPreview = (options) => {
       ajaxRequest.abort();
       currentHoveredIllustId = illustId;
       if (illustType === 2 /* UGOIRA */ && !enableAnimePreview) {
-        iLog.i("Anime preview disabled.");
+        iLog.i("\u52A8\u56FE\u9884\u89C8\u5DF2\u7981\u7528\uFF0C\u8DF3\u8FC7");
         return;
       }
       if ([0 /* ILLUST */, 1 /* MANGA */].includes(illustType)) {
         if (getIllustPagesCache[illustId]) {
           previewedIllust.setImage({
+            illustId,
             illustElement: target,
             previewPage,
             ...getIllustPagesCache[illustId]
@@ -793,6 +774,7 @@ var loadIllustPreview = (options) => {
             };
             if (currentHoveredIllustId !== illustId) return;
             previewedIllust.setImage({
+              illustId,
               illustElement: target,
               previewPage,
               regularUrls,
@@ -808,6 +790,7 @@ var loadIllustPreview = (options) => {
       } else if (illustType === 2 /* UGOIRA */) {
         if (getUgoiraMetadataCache[illustId]) {
           previewedIllust.setUgoira({
+            illustId,
             illustElement: target,
             ...getUgoiraMetadataCache[illustId]
           });
@@ -826,6 +809,7 @@ var loadIllustPreview = (options) => {
             if (currentHoveredIllustId !== illustId) return;
             const { src, originalSrc, mime_type, frames } = data.body;
             previewedIllust.setUgoira({
+              illustId,
               illustElement: target,
               src,
               originalSrc,
@@ -846,13 +830,18 @@ var loadIllustPreview = (options) => {
     };
   })();
   const onMouseOverIllust = (target) => {
-    const { illustId, previewPage, illustType } = getIllustMetadata(target) || {};
+    const { illustId, previewPage, illustType, illustLinkDom } = getIllustMetadata(target) || {};
     if (illustId === void 0 || illustType === void 0) {
       return;
     }
     const pathname = location.pathname;
     if (illustId === /^\/artworks\/(\d+)$/.exec(pathname)?.[1]) {
       return;
+    }
+    if (linkBlank) {
+      illustLinkDom.attr({ target: "_blank", rel: "external" });
+      illustLinkDom.off("click", stopEventPropagation);
+      illustLinkDom.on("click", stopEventPropagation);
     }
     const previewIllustTimeout = setTimeout(() => {
       previewIllust({ target, illustId, previewPage, illustType });
@@ -907,6 +896,8 @@ var loadIllustPreview = (options) => {
   isInitialized = true;
 };
 var PreviewedIllust = class {
+  /** 当前正在预览的作品的 ID */
+  illustId = "";
   /** 当前正在预览的作品 DOM 元素 */
   illustElement = $();
   /** 当前预览的作品是否加载完毕 */
@@ -946,6 +937,7 @@ var PreviewedIllust = class {
   }
   /** 初始化预览组件 */
   reset() {
+    this.illustId = "";
     this.illustElement = $();
     this.illustLoaded = false;
     this.regularUrls = [];
@@ -1021,6 +1013,7 @@ var PreviewedIllust = class {
   //#region 预览图片功能
   /** 初始化预览容器，默认显示第一张图片 */
   setImage({
+    illustId,
     illustElement,
     previewPage = 1,
     regularUrls,
@@ -1028,6 +1021,7 @@ var PreviewedIllust = class {
   }) {
     this.reset();
     this.initPreviewWrapper();
+    this.illustId = illustId;
     this.illustElement = illustElement;
     this.regularUrls = regularUrls;
     this.originalUrls = originalUrls;
@@ -1147,6 +1141,7 @@ var PreviewedIllust = class {
   //#endregion
   //#region 预览动图功能
   setUgoira({
+    illustId,
     illustElement,
     src,
     // originalSrc,
@@ -1155,6 +1150,7 @@ var PreviewedIllust = class {
   }) {
     this.reset();
     this.initPreviewWrapper();
+    this.illustId = illustId;
     this.illustElement = illustElement;
     illustElement.siblings("svg").css({ "pointer-events": "none" });
     this.#currentUgoiraPlayer = this.createUgoiraPlayer({
@@ -1319,9 +1315,9 @@ var Texts = {};
 Texts[0 /* zh_CN */] = {
   // 安装或更新后弹出的提示
   install_title: "\u6B22\u8FCE\u4F7F\u7528 Pixiv Previewer by Lolipop v",
-  install_body: '<div style="position: absolute;left: 50%;top: 30%;font-size: 20px; color: white;transform:translate(-50%,0);"><p style="text-indent: 2em;">\u6B22\u8FCE\u53CD\u9988\u95EE\u9898\u548C\u63D0\u51FA\u5EFA\u8BAE\uFF01><a style="color: skyblue;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer/feedback" target="_blank">\u53CD\u9988\u9875\u9762</a><</p><br><p style="text-indent: 2em;">\u5982\u679C\u60A8\u662F\u7B2C\u4E00\u6B21\u4F7F\u7528\uFF0C\u63A8\u8350\u5230<a style="color: skyblue;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer" target="_blank"> \u8BE6\u60C5\u9875 </a>\u67E5\u770B\u811A\u672C\u4ECB\u7ECD\u3002</p></div>',
+  install_body: '<div style="position: absolute;left: 50%;top: 30%;font-size: 20px; color: white;transform:translate(-50%,0);"><p>\u6B22\u8FCE\u53CD\u9988\u95EE\u9898\u548C\u63D0\u51FA\u5EFA\u8BAE\uFF01><a style="color: skyblue;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer/feedback" target="_blank">\u53CD\u9988\u9875\u9762</a><</p><br><p>\u5982\u679C\u60A8\u662F\u7B2C\u4E00\u6B21\u4F7F\u7528\uFF0C\u63A8\u8350\u5230<a style="color: skyblue;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer" target="_blank"> \u8BE6\u60C5\u9875 </a>\u67E5\u770B\u811A\u672C\u4ECB\u7ECD\u3002</p></div>',
   upgrade_body: `<div>
-  <p style="text-indent: 2em">
+  <p>
     \u672C\u811A\u672C\u57FA\u4E8E
     <a
       style="color: skyblue"
@@ -1332,7 +1328,7 @@ Texts[0 /* zh_CN */] = {
     \u4E8C\u6B21\u5F00\u53D1\uFF0C\u65E8\u5728\u6EE1\u8DB3\u5F00\u53D1\u8005\u81EA\u5DF1\u9700\u8981\u7684\u80FD\u529B\u3002
   </p>
   <br />
-  <p style="text-indent: 2em">
+  <p>
     \u5982\u679C\u60F3\u8981\u63D0\u51FA\u5EFA\u8BAE\uFF0C\u8BF7\u524D\u5F80\u539F\u811A\u672C\u7684<a
       style="color: skyblue"
       href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer/feedback"
@@ -1394,7 +1390,7 @@ Texts[0 /* zh_CN */] = {
 };
 Texts[1 /* en_US */] = {
   install_title: "Welcome to PixivPreviewerL v",
-  install_body: '<div style="position: absolute;left: 50%;top: 30%;font-size: 20px; color: white;transform:translate(-50%,0);"><p style="text-indent: 2em;">Feedback questions and suggestions are welcome! ><a style="color: skyblue;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer/feedback" target="_blank">Feedback Page</a><</p><br><p style="text-indent: 2em;">If you are using it for the first time, it is recommended to go to the<a style="color: skyblue;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer" target="_blank"> Details Page </a>to see the script introduction.</p></div>',
+  install_body: '<div style="position: absolute;left: 50%;top: 30%;font-size: 20px; color: white;transform:translate(-50%,0);"><p>Feedback questions and suggestions are welcome! ><a style="color: skyblue;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer/feedback" target="_blank">Feedback Page</a><</p><br><p>If you are using it for the first time, it is recommended to go to the<a style="color: skyblue;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer" target="_blank"> Details Page </a>to see the script introduction.</p></div>',
   upgrade_body: Texts[0 /* zh_CN */].upgrade_body,
   setting_language: "Language",
   setting_preview: "Preview",
@@ -1440,7 +1436,7 @@ Texts[1 /* en_US */] = {
 };
 Texts[2 /* ru_RU */] = {
   install_title: "\u0414\u043E\u0431\u0440\u043E \u043F\u043E\u0436\u0430\u043B\u043E\u0432\u0430\u0442\u044C \u0432 PixivPreviewerL v",
-  install_body: '<div style="position: absolute;left: 50%;top: 30%;font-size: 20px; color: white;transform:translate(-50%,0);"><p style="text-indent: 2em;">\u0412\u043E\u043F\u0440\u043E\u0441\u044B \u0438 \u043F\u0440\u0435\u0434\u043B\u043E\u0436\u0435\u043D\u0438\u044F \u043F\u0440\u0438\u0432\u0435\u0442\u0441\u0442\u0432\u0443\u044E\u0442\u0441\u044F! ><a style="color: skyblue;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer/feedback" target="_blank">\u0421\u0442\u0440\u0430\u043D\u0438\u0446\u0430 \u043E\u0431\u0440\u0430\u0442\u043D\u043E\u0439 \u0441\u0432\u044F\u0437\u0438</a><</p><br><p style="text-indent: 2em;">\u0415\u0441\u043B\u0438 \u0432\u044B \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0435\u0442\u0435 \u044D\u0442\u043E \u0432\u043F\u0435\u0440\u0432\u044B\u0435, \u0440\u0435\u043A\u043E\u043C\u0435\u043D\u0434\u0443\u0435\u0442\u0441\u044F \u043F\u0435\u0440\u0435\u0439\u0442\u0438 \u043A<a style="color: skyblue;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer" target="_blank"> \u0421\u0442\u0440\u0430\u043D\u0438\u0446\u0435 \u043F\u043E\u0434\u0440\u043E\u0431\u043D\u043E\u0441\u0442\u0435\u0439 </a>, \u0447\u0442\u043E\u0431\u044B \u043F\u043E\u0441\u043C\u043E\u0442\u0440\u0435\u0442\u044C \u0432\u0432\u0435\u0434\u0435\u043D\u0438\u0435 \u0432 \u0441\u043A\u0440\u0438\u043F\u0442.</p></div>',
+  install_body: '<div style="position: absolute;left: 50%;top: 30%;font-size: 20px; color: white;transform:translate(-50%,0);"><p>\u0412\u043E\u043F\u0440\u043E\u0441\u044B \u0438 \u043F\u0440\u0435\u0434\u043B\u043E\u0436\u0435\u043D\u0438\u044F \u043F\u0440\u0438\u0432\u0435\u0442\u0441\u0442\u0432\u0443\u044E\u0442\u0441\u044F! ><a style="color: skyblue;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer/feedback" target="_blank">\u0421\u0442\u0440\u0430\u043D\u0438\u0446\u0430 \u043E\u0431\u0440\u0430\u0442\u043D\u043E\u0439 \u0441\u0432\u044F\u0437\u0438</a><</p><br><p>\u0415\u0441\u043B\u0438 \u0432\u044B \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0435\u0442\u0435 \u044D\u0442\u043E \u0432\u043F\u0435\u0440\u0432\u044B\u0435, \u0440\u0435\u043A\u043E\u043C\u0435\u043D\u0434\u0443\u0435\u0442\u0441\u044F \u043F\u0435\u0440\u0435\u0439\u0442\u0438 \u043A<a style="color: skyblue;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer" target="_blank"> \u0421\u0442\u0440\u0430\u043D\u0438\u0446\u0435 \u043F\u043E\u0434\u0440\u043E\u0431\u043D\u043E\u0441\u0442\u0435\u0439 </a>, \u0447\u0442\u043E\u0431\u044B \u043F\u043E\u0441\u043C\u043E\u0442\u0440\u0435\u0442\u044C \u0432\u0432\u0435\u0434\u0435\u043D\u0438\u0435 \u0432 \u0441\u043A\u0440\u0438\u043F\u0442.</p></div>',
   upgrade_body: Texts[0 /* zh_CN */].upgrade_body,
   setting_language: "\u042F\u0437\u044B\u043A",
   setting_preview: "\u041F\u0440\u0435\u0434\u043F\u0440\u043E\u0441\u043C\u043E\u0442\u0440",
@@ -1486,7 +1482,7 @@ Texts[2 /* ru_RU */] = {
 };
 Texts[3 /* ja_JP */] = {
   install_title: "Welcome to PixivPreviewerL v",
-  install_body: '<div style="position: absolute;left: 50%;top: 30%;font-size: 20px; color: white;transform:translate(-50%,0);"><p style="text-indent: 2em;"\u3054\u610F\u898B\u3084\u63D0\u6848\u306F\u5927\u6B53\u8FCE\u3067\u3059! ><a style="color: skyblue;" href="https://greasyfork.org/ja/scripts/30766-pixiv-previewer/feedback" target="_blank">\u30D5\u30A3\u30FC\u30C9\u30D0\u30C3\u30AF\u30DA\u30FC\u30B8</a><</p><br><p style="text-indent: 2em;">\u521D\u3081\u3066\u4F7F\u3046\u5834\u5408\u306F\u3001<a style="color: skyblue;" href="https://greasyfork.org/ja/scripts/30766-pixiv-previewer" target="_blank"> \u8A73\u7D30\u30DA\u30FC\u30B8 </a>\u3067\u30B9\u30AF\u30EA\u30D7\u30C8\u306E\u7D39\u4ECB\u3092\u898B\u308B\u3053\u3068\u3092\u304A\u52E7\u3081\u3057\u307E\u3059\u3002</p></div>',
+  install_body: '<div style="position: absolute;left: 50%;top: 30%;font-size: 20px; color: white;transform:translate(-50%,0);"><p\u3054\u610F\u898B\u3084\u63D0\u6848\u306F\u5927\u6B53\u8FCE\u3067\u3059! ><a style="color: skyblue;" href="https://greasyfork.org/ja/scripts/30766-pixiv-previewer/feedback" target="_blank">\u30D5\u30A3\u30FC\u30C9\u30D0\u30C3\u30AF\u30DA\u30FC\u30B8</a><</p><br><p>\u521D\u3081\u3066\u4F7F\u3046\u5834\u5408\u306F\u3001<a style="color: skyblue;" href="https://greasyfork.org/ja/scripts/30766-pixiv-previewer" target="_blank"> \u8A73\u7D30\u30DA\u30FC\u30B8 </a>\u3067\u30B9\u30AF\u30EA\u30D7\u30C8\u306E\u7D39\u4ECB\u3092\u898B\u308B\u3053\u3068\u3092\u304A\u52E7\u3081\u3057\u307E\u3059\u3002</p></div>',
   upgrade_body: Texts[0 /* zh_CN */].upgrade_body,
   setting_language: "\u8A00\u8A9E",
   setting_preview: "\u30D7\u30EC\u30D3\u30E5\u30FC\u6A5F\u80FD",
@@ -1532,76 +1528,6 @@ Texts[3 /* ja_JP */] = {
 };
 var i18n_default = Texts;
 
-// src/utils/jquery.ts
-var JQUERY_VERSION = "3.7.1";
-var checkJQuery = function() {
-  const jqueryCdns = [
-    `http://code.jquery.com/jquery-${JQUERY_VERSION}.min.js`,
-    `https://ajax.aspnetcdn.com/ajax/jquery/jquery-${JQUERY_VERSION}.min.js`,
-    `https://ajax.googleapis.com/ajax/libs/jquery/${JQUERY_VERSION}/jquery.min.js`,
-    `https://cdn.staticfile.org/jquery/${JQUERY_VERSION}/jquery.min.js`,
-    `https://apps.bdimg.com/libs/jquery/${JQUERY_VERSION}/jquery.min.js`
-  ];
-  function isJQueryValid() {
-    try {
-      const wd = unsafeWindow;
-      if (wd.jQuery && !wd.$) {
-        wd.$ = wd.jQuery;
-      }
-      $();
-      return true;
-    } catch (exception) {
-      iLog.i(`JQuery is not available: ${exception}`);
-      return false;
-    }
-  }
-  function insertJQuery(url) {
-    const script = document.createElement("script");
-    script.src = url;
-    document.head.appendChild(script);
-    return script;
-  }
-  function converProtocolIfNeeded(url) {
-    const isHttps = location.href.indexOf("https://") != -1;
-    const urlIsHttps = url.indexOf("https://") != -1;
-    if (isHttps && !urlIsHttps) {
-      return url.replace("http://", "https://");
-    } else if (!isHttps && urlIsHttps) {
-      return url.replace("https://", "http://");
-    }
-    return url;
-  }
-  function waitAndCheckJQuery(cdnIndex, resolve) {
-    if (cdnIndex >= jqueryCdns.length) {
-      iLog.e("\u65E0\u6CD5\u52A0\u8F7D jQuery\uFF0C\u6B63\u5728\u9000\u51FA\u3002");
-      resolve(false);
-      return;
-    }
-    const url = converProtocolIfNeeded(jqueryCdns[cdnIndex]);
-    iLog.i("\u5C1D\u8BD5\u7B2C " + (cdnIndex + 1) + " \u4E2A jQuery CDN\uFF1A" + url + "\u3002");
-    const script = insertJQuery(url);
-    setTimeout(function() {
-      if (isJQueryValid()) {
-        iLog.i("\u5DF2\u52A0\u8F7D jQuery\u3002");
-        resolve(true);
-      } else {
-        iLog.w("\u65E0\u6CD5\u8BBF\u95EE\u3002");
-        script.remove();
-        waitAndCheckJQuery(cdnIndex + 1, resolve);
-      }
-    }, 100);
-  }
-  return new Promise(function(resolve) {
-    if (isJQueryValid()) {
-      iLog.i("\u5DF2\u52A0\u8F7D jQuery\u3002");
-      resolve(true);
-    } else {
-      iLog.i("\u672A\u53D1\u73B0 jQuery\uFF0C\u5C1D\u8BD5\u52A0\u8F7D\u3002");
-      waitAndCheckJQuery(0, resolve);
-    }
-  });
-};
-
 // src/index.ts
 var g_language = 0 /* zh_CN */;
 var g_csrfToken = "";
@@ -1624,117 +1550,6 @@ function convertThumbUrlToSmall(thumbUrl) {
   const replace2 = "_master";
   return thumbUrl.replace(/c\/.*\/custom-thumb/, replace1).replace("_custom", replace2).replace(/c\/.*\/img-master/, replace1).replace("_square", replace2);
 }
-function processElementListCommon(lis) {
-  $.each(lis, function(i, e) {
-    const li = $(e);
-    const ctlAttrs = {
-      illustId: "",
-      illustType: 0,
-      pageCount: 1
-    };
-    const imageLink = li.find("a:first");
-    const animationSvg = imageLink.children("div:first").find("svg:first");
-    const pageCountSpan = imageLink.children("div:last").find("span:last");
-    if (imageLink == null) {
-      DoLog(2 /* Warning */, "Can not found img or imageLink, skip this.");
-      return;
-    }
-    const link = imageLink.attr("href");
-    if (link == null) {
-      DoLog(2 /* Warning */, "Invalid href, skip this.");
-      return;
-    }
-    const linkMatched = link.match(/artworks\/(\d+)/);
-    if (linkMatched) {
-      ctlAttrs.illustId = linkMatched[1];
-    } else {
-      DoLog(1 /* Error */, "Get illustId failed, skip this list item!");
-      return;
-    }
-    if (animationSvg.length > 0) {
-      ctlAttrs.illustType = 2;
-    }
-    if (pageCountSpan.length > 0) {
-      ctlAttrs.pageCount = parseInt(pageCountSpan.text());
-    }
-    let control = li.children("div:first");
-    if (control.children().length == 0) {
-      if (li.children("div").length > 1) {
-        control = $(li.children("div").get(1));
-      }
-    } else {
-      control = control.children("div:first");
-    }
-    control.attr({
-      illustId: ctlAttrs.illustId,
-      illustType: ctlAttrs.illustType,
-      pageCount: ctlAttrs.pageCount
-    });
-    control.addClass("pp-control");
-  });
-}
-function replaceThumbCommon(elements) {
-  $.each(elements, (i, e) => {
-    e = $(e);
-    const img = e.find("img");
-    if (img.length == 0) {
-      iLog.w("No img in the control element.");
-      return true;
-    }
-    const src = img.attr("src");
-    const fullSizeSrc = convertThumbUrlToSmall(src);
-    if (src != fullSizeSrc) {
-      img.attr("src", fullSizeSrc).css("object-fit", "contain");
-    }
-  });
-}
-function findLiByImgTag() {
-  const lis = [];
-  $.each($("img"), (i, e) => {
-    let el = $(e);
-    const p = el.parent().parent().parent();
-    if (p.attr("data-gtm-value") != "" && p.attr("href") && p.attr("href").indexOf("/artwork") != -1) {
-      for (let i2 = 0; i2 < 10; ++i2) {
-        el = el.parent();
-        if (el.length == 0) {
-          break;
-        }
-        if (el.get(0).tagName == "LI" || el.parent().get(0).tagName == "UL") {
-          lis.push(el);
-          break;
-        }
-      }
-    }
-  });
-  return lis;
-}
-function showSearchLinksForDeletedArtworks() {
-  const searchEngines = [
-    { name: "Google", url: "https://www.google.com/search?q=" },
-    { name: "Bing", url: "https://www.bing.com/search?q=" },
-    { name: "Baidu", url: "https://www.baidu.com/s?wd=" }
-  ];
-  const spans = document.querySelectorAll("span[to]");
-  spans.forEach((span) => {
-    const artworkPath = span.getAttribute("to");
-    if (span?.textContent?.trim() === "-----" && artworkPath?.startsWith("/artworks/")) {
-      const keyword = `pixiv "${artworkPath.slice(10)}"`;
-      const container = document.createElement("span");
-      container.className = span.className;
-      searchEngines.forEach((engine, i) => {
-        const link = document.createElement("a");
-        link.href = engine.url + encodeURIComponent(keyword);
-        link.textContent = engine.name;
-        link.target = "_blank";
-        container.appendChild(link);
-        if (i < searchEngines.length - 1) {
-          container.appendChild(document.createTextNode(" | "));
-        }
-      });
-      span?.parentNode?.replaceChild(container, span);
-    }
-  });
-}
 Pages[0 /* Search */] = {
   PageTypeString: "SearchPage",
   CheckUrl: function(url) {
@@ -1743,65 +1558,6 @@ Pages[0 /* Search */] = {
     ) || /^https?:\/\/www.pixiv.net\/en\/tags\/.*\/(artworks|illustrations|manga)/.test(
       url
     );
-  },
-  ProcessPageElements: function() {
-    const returnMap = {
-      loadingComplete: false,
-      controlElements: []
-    };
-    const sections = $("section");
-    DoLog(3 /* Info */, "Page has " + sections.length + " <section>.");
-    DoLog(4 /* Elements */, sections);
-    let premiumSectionIndex = -1;
-    let resultSectionIndex = 0;
-    if (sections.length == 0) {
-      iLog.e("No suitable <section>!");
-      return returnMap;
-    }
-    $.each(sections, (i, e) => {
-      if ($(e).find("aside").length > 0) {
-        premiumSectionIndex = i;
-      } else {
-        resultSectionIndex = i;
-      }
-    });
-    iLog.v("premium: " + premiumSectionIndex);
-    iLog.v("result: " + resultSectionIndex);
-    const ul = $(sections[resultSectionIndex]).find("ul");
-    let lis = ul.find("li").toArray();
-    if (premiumSectionIndex != -1) {
-      const lis2 = $(sections[premiumSectionIndex]).find("ul").find("li");
-      lis = lis.concat(lis2.toArray());
-    }
-    if (premiumSectionIndex != -1) {
-      const aside = $(sections[premiumSectionIndex]).find("aside");
-      $.each(aside.children(), (i, e) => {
-        if (e.tagName.toLowerCase() != "ul") {
-          e.remove();
-        } else {
-          $(e).css("-webkit-mask", "0");
-        }
-      });
-      aside.next().remove();
-    }
-    processElementListCommon(lis);
-    returnMap.controlElements = $(".pp-control");
-    this.private.pageSelector = ul.next().get(0);
-    if (this.private.pageSelector == null) {
-      this.private.pageSelector = ul.parent().next().get(0);
-    }
-    returnMap.loadingComplete = true;
-    this.private.imageListConrainer = ul.get(0);
-    DoLog(3 /* Info */, "Process page elements complete.");
-    DoLog(4 /* Elements */, returnMap);
-    this.private.returnMap = returnMap;
-    return returnMap;
-  },
-  GetProcessedPageElements: function() {
-    if (this.private.returnMap == null) {
-      return this.ProcessPageElements();
-    }
-    return this.private.returnMap;
   },
   GetToolBar: function() {
     return findToolbarCommon();
@@ -1828,35 +1584,6 @@ Pages[1 /* BookMarkNew */] = {
   CheckUrl: function(url) {
     return /^https:\/\/www.pixiv.net\/bookmark_new_illust.php.*/.test(url) || /^https:\/\/www.pixiv.net\/bookmark_new_illust_r18.php.*/.test(url);
   },
-  ProcessPageElements: function() {
-    const returnMap = {
-      loadingComplete: false,
-      controlElements: []
-    };
-    const sections = $("section");
-    DoLog(3 /* Info */, "Page has " + sections.length + " <section>.");
-    DoLog(4 /* Elements */, sections);
-    const lis = sections.find("ul").find("li");
-    processElementListCommon(lis);
-    returnMap.controlElements = $(".pp-control");
-    returnMap.loadingComplete = true;
-    DoLog(3 /* Info */, "Process page elements complete.");
-    DoLog(4 /* Elements */, returnMap);
-    this.private.returnMap = returnMap;
-    if (g_settings.fullSizeThumb) {
-      if (!this.private.returnMap.loadingComplete) {
-        return;
-      }
-      replaceThumbCommon(this.private.returnMap.controlElements);
-    }
-    return returnMap;
-  },
-  GetProcessedPageElements: function() {
-    if (this.private.returnMap == null) {
-      return this.ProcessPageElements();
-    }
-    return this.private.returnMap;
-  },
   GetToolBar: function() {
     return findToolbarCommon();
   },
@@ -1870,34 +1597,6 @@ Pages[2 /* Discovery */] = {
   CheckUrl: function(url) {
     return /^https?:\/\/www.pixiv.net\/discovery.*/.test(url);
   },
-  ProcessPageElements: function() {
-    const returnMap = {
-      loadingComplete: false,
-      controlElements: []
-    };
-    const containerDiv = $(".gtm-illust-recommend-zone");
-    if (containerDiv.length > 0) {
-      DoLog(3 /* Info */, "Found container div.");
-      DoLog(4 /* Elements */, containerDiv);
-    } else {
-      DoLog(1 /* Error */, "Can not found container div.");
-      return returnMap;
-    }
-    const lis = containerDiv.find("ul").children("li");
-    processElementListCommon(lis);
-    returnMap.controlElements = $(".pp-control");
-    returnMap.loadingComplete = true;
-    DoLog(3 /* Info */, "Process page elements complete.");
-    DoLog(4 /* Elements */, returnMap);
-    this.private.returnMap = returnMap;
-    return returnMap;
-  },
-  GetProcessedPageElements: function() {
-    if (this.private.returnMap == null) {
-      return this.ProcessPageElements();
-    }
-    return this.private.returnMap;
-  },
   GetToolBar: function() {
     return findToolbarCommon();
   },
@@ -1910,37 +1609,6 @@ Pages[3 /* Member */] = {
   PageTypeString: "MemberPage/MemberIllustPage/MemberBookMark",
   CheckUrl: function(url) {
     return /^https?:\/\/www.pixiv.net\/(en\/)?users\/\d+/.test(url);
-  },
-  ProcessPageElements: function() {
-    showSearchLinksForDeletedArtworks();
-    const returnMap = {
-      loadingComplete: false,
-      controlElements: []
-    };
-    const lis = findLiByImgTag();
-    DoLog(4 /* Elements */, lis);
-    const sections = $("section");
-    DoLog(3 /* Info */, "Page has " + sections.length + " <section>.");
-    DoLog(4 /* Elements */, sections);
-    processElementListCommon(lis);
-    returnMap.controlElements = $(".pp-control");
-    returnMap.loadingComplete = true;
-    DoLog(3 /* Info */, "Process page elements complete.");
-    DoLog(4 /* Elements */, returnMap);
-    this.private.returnMap = returnMap;
-    if (g_settings.fullSizeThumb) {
-      if (!this.private.returnMap.loadingComplete) {
-        return;
-      }
-      replaceThumbCommon(this.private.returnMap.controlElements);
-    }
-    return returnMap;
-  },
-  GetProcessedPageElements: function() {
-    if (this.private.returnMap == null) {
-      return this.ProcessPageElements();
-    }
-    return this.private.returnMap;
   },
   GetToolBar: function() {
     return findToolbarCommon();
@@ -1956,32 +1624,6 @@ Pages[4 /* Home */] = {
   CheckUrl: function(url) {
     return /https?:\/\/www.pixiv.net\/?$/.test(url) || /https?:\/\/www.pixiv.net\/en\/?$/.test(url) || /https?:\/\/www.pixiv.net\/illustration\/?$/.test(url) || /https?:\/\/www.pixiv.net\/manga\/?$/.test(url) || /https?:\/\/www.pixiv.net\/cate_r18\.php$/.test(url) || /https?:\/\/www.pixiv.net\/en\/cate_r18\.php$/.test(url);
   },
-  ProcessPageElements: function() {
-    const returnMap = {
-      loadingComplete: false,
-      controlElements: []
-    };
-    const lis = findLiByImgTag();
-    processElementListCommon(lis);
-    returnMap.controlElements = $(".pp-control");
-    returnMap.loadingComplete = true;
-    DoLog(3 /* Info */, "Process page elements complete.");
-    DoLog(4 /* Elements */, returnMap);
-    this.private.returnMap = returnMap;
-    if (g_settings.fullSizeThumb) {
-      if (!this.private.returnMap.loadingComplete) {
-        return;
-      }
-      replaceThumbCommon(this.private.returnMap.controlElements);
-    }
-    return returnMap;
-  },
-  GetProcessedPageElements: function() {
-    if (this.private.returnMap == null) {
-      return this.ProcessPageElements();
-    }
-    return this.private.returnMap;
-  },
   GetToolBar: function() {
     return findToolbarCommon();
   },
@@ -1994,58 +1636,6 @@ Pages[5 /* Ranking */] = {
   PageTypeString: "RankingPage",
   CheckUrl: function(url) {
     return /^https?:\/\/www.pixiv.net\/ranking.php.*/.test(url);
-  },
-  ProcessPageElements: function() {
-    const returnMap = {
-      loadingComplete: false,
-      controlElements: []
-    };
-    const works = $("._work");
-    DoLog(3 /* Info */, "Found .work, length: " + works.length);
-    DoLog(4 /* Elements */, works);
-    works.each(function(i, e) {
-      const _this = $(e);
-      const ctlAttrs = {
-        illustId: 0,
-        illustType: 0,
-        pageCount: 1
-      };
-      const href = _this.attr("href");
-      if (href == null || href === "") {
-        DoLog("Can not found illust id, skip this.");
-        return;
-      }
-      const matched = href.match(/artworks\/(\d+)/);
-      if (matched) {
-        ctlAttrs.illustId = matched[1];
-      } else {
-        DoLog("Can not found illust id, skip this.");
-        return;
-      }
-      if (_this.hasClass("multiple")) {
-        ctlAttrs.pageCount = _this.find(".page-count").find("span").text();
-      }
-      if (_this.hasClass("ugoku-illust")) {
-        ctlAttrs.illustType = 2;
-      }
-      _this.attr({
-        illustId: ctlAttrs.illustId,
-        illustType: ctlAttrs.illustType,
-        pageCount: ctlAttrs.pageCount
-      });
-      returnMap.controlElements.push(e);
-    });
-    returnMap.loadingComplete = true;
-    DoLog(3 /* Info */, "Process page elements complete.");
-    DoLog(4 /* Elements */, returnMap);
-    this.private.returnMap = returnMap;
-    return returnMap;
-  },
-  GetProcessedPageElements: function() {
-    if (this.private.returnMap == null) {
-      return this.ProcessPageElements();
-    }
-    return this.private.returnMap;
   },
   GetToolBar: function() {
     return findToolbarOld();
@@ -2060,32 +1650,6 @@ Pages[6 /* NewIllust */] = {
   CheckUrl: function(url) {
     return /^https?:\/\/www.pixiv.net\/new_illust.php.*/.test(url);
   },
-  ProcessPageElements: function() {
-    const returnMap = {
-      loadingComplete: false,
-      controlElements: []
-    };
-    const lis = findLiByImgTag();
-    processElementListCommon(lis);
-    returnMap.controlElements = $(".pp-control");
-    returnMap.loadingComplete = true;
-    DoLog(3 /* Info */, "Process page elements complete.");
-    DoLog(4 /* Elements */, returnMap);
-    this.private.returnMap = returnMap;
-    if (g_settings.fullSizeThumb) {
-      if (!this.private.returnMap.loadingComplete) {
-        return;
-      }
-      replaceThumbCommon(this.private.returnMap.controlElements);
-    }
-    return returnMap;
-  },
-  GetProcessedPageElements: function() {
-    if (this.private.returnMap == null) {
-      return this.ProcessPageElements();
-    }
-    return this.private.returnMap;
-  },
   GetToolBar: function() {
     return findToolbarCommon();
   },
@@ -2099,8 +1663,6 @@ Pages[7 /* R18 */] = {
   CheckUrl: function(url) {
     return /^https?:\/\/www.pixiv.net\/cate_r18.php.*/.test(url);
   },
-  ProcessPageElements: function() {
-  },
   GetToolBar: function() {
   },
   HasAutoLoad: false
@@ -2109,64 +1671,6 @@ Pages[8 /* BookMark */] = {
   PageTypeString: "BookMarkPage",
   CheckUrl: function(url) {
     return /^https:\/\/www.pixiv.net\/bookmark.php\/?$/.test(url);
-  },
-  ProcessPageElements: function() {
-    const returnMap = {
-      loadingComplete: false,
-      controlElements: []
-    };
-    const images = $(".image-item");
-    DoLog(3 /* Info */, "Found images, length: " + images.length);
-    DoLog(4 /* Elements */, images);
-    images.each(function(i, e) {
-      const _this = $(e);
-      const work = _this.find("._work");
-      if (work.length === 0) {
-        DoLog(2 /* Warning */, "Can not found ._work, skip this.");
-        return;
-      }
-      const ctlAttrs = {
-        illustId: 0,
-        illustType: 0,
-        pageCount: 1
-      };
-      const href = work.attr("href");
-      if (href == null || href === "") {
-        DoLog(2 /* Warning */, "Can not found illust id, skip this.");
-        return;
-      }
-      const matched = href.match(/artworks\/(\d+)/);
-      if (matched) {
-        ctlAttrs.illustId = matched[1];
-      } else {
-        DoLog(2 /* Warning */, "Can not found illust id, skip this.");
-        return;
-      }
-      if (work.hasClass("multiple")) {
-        ctlAttrs.pageCount = _this.find(".page-count").find("span").text();
-      }
-      if (work.hasClass("ugoku-illust")) {
-        ctlAttrs.illustType = 2;
-      }
-      const control = _this.children("a:first");
-      control.attr({
-        illustId: ctlAttrs.illustId,
-        illustType: ctlAttrs.illustType,
-        pageCount: ctlAttrs.pageCount
-      });
-      returnMap.controlElements.push(control.get(0));
-    });
-    returnMap.loadingComplete = true;
-    DoLog(3 /* Info */, "Process page elements complete.");
-    DoLog(4 /* Elements */, returnMap);
-    this.private.returnMap = returnMap;
-    return returnMap;
-  },
-  GetProcessedPageElements: function() {
-    if (this.private.returnMap == null) {
-      return this.ProcessPageElements();
-    }
-    return this.private.returnMap;
   },
   GetToolBar: function() {
     return findToolbarOld();
@@ -2181,58 +1685,6 @@ Pages[9 /* Stacc */] = {
   CheckUrl: function(url) {
     return /^https:\/\/www.pixiv.net\/stacc.*/.test(url);
   },
-  ProcessPageElements: function() {
-    const returnMap = {
-      loadingComplete: false,
-      controlElements: []
-    };
-    const works = $("._work");
-    DoLog(3 /* Info */, "Found .work, length: " + works.length);
-    DoLog(4 /* Elements */, works);
-    works.each(function(i, e) {
-      const _this = $(e);
-      const ctlAttrs = {
-        illustId: 0,
-        illustType: 0,
-        pageCount: 1
-      };
-      const href = _this.attr("href");
-      if (href == null || href === "") {
-        DoLog("Can not found illust id, skip this.");
-        return;
-      }
-      const matched = href.match(/illust_id=(\d+)/);
-      if (matched) {
-        ctlAttrs.illustId = matched[1];
-      } else {
-        DoLog("Can not found illust id, skip this.");
-        return;
-      }
-      if (_this.hasClass("multiple")) {
-        ctlAttrs.pageCount = _this.find(".page-count").find("span").text();
-      }
-      if (_this.hasClass("ugoku-illust")) {
-        ctlAttrs.illustType = 2;
-      }
-      _this.attr({
-        illustId: ctlAttrs.illustId,
-        illustType: ctlAttrs.illustType,
-        pageCount: ctlAttrs.pageCount
-      });
-      returnMap.controlElements.push(e);
-    });
-    returnMap.loadingComplete = true;
-    DoLog(3 /* Info */, "Process page elements complete.");
-    DoLog(4 /* Elements */, returnMap);
-    this.private.returnMap = returnMap;
-    return returnMap;
-  },
-  GetProcessedPageElements: function() {
-    if (this.private.returnMap == null) {
-      return this.ProcessPageElements();
-    }
-    return this.private.returnMap;
-  },
   GetToolBar: function() {
     return findToolbarOld();
   },
@@ -2245,37 +1697,6 @@ Pages[10 /* Artwork */] = {
   PageTypeString: "ArtworkPage",
   CheckUrl: function(url) {
     return /^https:\/\/www.pixiv.net\/artworks\/.*/.test(url) || /^https:\/\/www.pixiv.net\/en\/artworks\/.*/.test(url);
-  },
-  ProcessPageElements: function() {
-    const canvas = $("main").find("figure").find("canvas");
-    if ($("main").find("figure").find("canvas").length > 0) {
-      this.private.needProcess = true;
-      canvas.addClass("pp-canvas");
-    }
-    const returnMap = {
-      loadingComplete: false,
-      controlElements: []
-    };
-    const lis = findLiByImgTag();
-    processElementListCommon(lis);
-    returnMap.controlElements = $(".pp-control");
-    returnMap.loadingComplete = true;
-    DoLog(3 /* Info */, "Process page elements complete.");
-    DoLog(4 /* Elements */, returnMap);
-    this.private.returnMap = returnMap;
-    if (g_settings.fullSizeThumb) {
-      if (!this.private.returnMap.loadingComplete) {
-        return;
-      }
-      replaceThumbCommon(this.private.returnMap.controlElements);
-    }
-    return returnMap;
-  },
-  GetProcessedPageElements: function() {
-    if (this.private.returnMap == null) {
-      return this.ProcessPageElements();
-    }
-    return this.private.returnMap;
   },
   GetToolBar: function() {
     return findToolbarCommon();
@@ -2366,24 +1787,6 @@ Pages[11 /* NovelSearch */] = {
   CheckUrl: function(url) {
     return /^https:\/\/www.pixiv.net\/tags\/.*\/novels/.test(url) || /^https:\/\/www.pixiv.net\/en\/tags\/.*\/novels/.test(url);
   },
-  ProcessPageElements: function() {
-    const returnMap = {
-      loadingComplete: false,
-      controlElements: []
-    };
-    const ul = $("section:first").find("ul:first");
-    if (ul.length > 0) {
-      returnMap.loadingComplete = true;
-    }
-    this.private.returnMap = returnMap;
-    return returnMap;
-  },
-  GetProcessedPageElements: function() {
-    if (this.private.returnMap == null) {
-      return this.ProcessPageElements();
-    }
-    return this.private.returnMap;
-  },
   GetToolBar: function() {
     return findToolbarCommon();
   },
@@ -2399,62 +1802,6 @@ Pages[12 /* SearchTop */] = {
   PageTypeString: "SearchTopPage",
   CheckUrl: function(url) {
     return /^https?:\/\/www.pixiv.net(\/en)?\/tags\/[^/*]/.test(url);
-  },
-  ProcessPageElements: function() {
-    const returnMap = {
-      loadingComplete: false,
-      controlElements: []
-    };
-    const sections = $("section");
-    DoLog(3 /* Info */, "Page has " + sections.length + " <section>.");
-    DoLog(4 /* Elements */, sections);
-    let premiumSectionIndex = -1;
-    let resultSectionIndex = 0;
-    if (sections.length == 0) {
-      iLog.e("No suitable <section>!");
-      return returnMap;
-    }
-    if (sections.length > 1) {
-      premiumSectionIndex = 0;
-      resultSectionIndex = 1;
-    }
-    iLog.v("premium: " + premiumSectionIndex);
-    iLog.v("result: " + resultSectionIndex);
-    const ul = $(sections[resultSectionIndex]).find("ul");
-    let lis = ul.find("li").toArray();
-    if (premiumSectionIndex != -1) {
-      const lis2 = $(sections[premiumSectionIndex]).find("ul").find("li");
-      lis = lis.concat(lis2.toArray());
-    }
-    if (premiumSectionIndex != -1) {
-      const aside = $(sections[premiumSectionIndex]).find("aside");
-      $.each(aside.children(), (i, e) => {
-        if (e.tagName.toLowerCase() != "ul") {
-          e.remove();
-        } else {
-          $(e).css("-webkit-mask", "0");
-        }
-      });
-      aside.next().remove();
-    }
-    processElementListCommon(lis);
-    returnMap.controlElements = $(".pp-control");
-    this.private.pageSelector = ul.next().get(0);
-    if (this.private.pageSelector == null) {
-      this.private.pageSelector = ul.parent().next().get(0);
-    }
-    returnMap.loadingComplete = true;
-    this.private.imageListConrainer = ul.get(0);
-    DoLog(3 /* Info */, "Process page elements complete.");
-    DoLog(4 /* Elements */, returnMap);
-    this.private.returnMap = returnMap;
-    return returnMap;
-  },
-  GetProcessedPageElements: function() {
-    if (this.private.returnMap == null) {
-      return this.ProcessPageElements();
-    }
-    return this.private.returnMap;
   },
   GetToolBar: function() {
     return findToolbarCommon();
@@ -2826,7 +2173,7 @@ function PixivSK(callback) {
         json = JSON.parse(event.responseText);
       } catch (e) {
         DoLog(1 /* Error */, "Parse json failed!");
-        DoLog(LogLevel.Element, e);
+        DoLog(4 /* Elements */, e);
         return;
       }
       if (json) {
@@ -2906,7 +2253,7 @@ function PixivSK(callback) {
         }
       }
       if (indexOfThisRequest == -1) {
-        DoLog("This url not match any request!");
+        DoLog(1 /* Error */, "This url not match any request!");
         return;
       }
       works[currentRequestGroupMinimumIndex + indexOfThisRequest].bookmarkCount = 0;
@@ -3236,7 +2583,6 @@ function PixivSK(callback) {
       }
       $("#loading").remove();
       $(container).show();
-      Pages[0 /* Search */].ProcessPageElements();
       $(document).keydown(function(e) {
         if (g_settings.pageByKey != 1) {
           return;
@@ -3791,6 +3137,12 @@ function ShowSetting() {
   }
   ul.empty();
   addItem(getSelectAction("pps-lang"), i18n_default[g_language].setting_language);
+  addItem("", "&nbsp");
+  addItem(getImageAction("pps-preview"), i18n_default[g_language].setting_preview);
+  addItem(
+    getImageAction("pps-animePreview"),
+    i18n_default[g_language].setting_animePreview
+  );
   addItem(
     getInputAction("pps-previewDelay"),
     i18n_default[g_language].setting_previewDelay
@@ -3820,10 +3172,7 @@ function ShowSetting() {
   $("#pps-preview").attr("src", settings.enablePreview ? imgOn : imgOff).addClass(settings.enablePreview ? "on" : "off").css("cursor: pointer");
   $("#pps-animePreview").attr("src", settings.enableAnimePreview ? imgOn : imgOff).addClass(settings.enableAnimePreview ? "on" : "off").css("cursor: pointer");
   $("#pps-sort").attr("src", settings.enableSort ? imgOn : imgOff).addClass(settings.enableSort ? "on" : "off").css("cursor: pointer");
-  $("#pps-anime").attr("src", settings.enableAnimeDownload ? imgOn : imgOff).addClass(settings.enableAnimeDownload ? "on" : "off").css("cursor: pointer");
-  $("#pps-original").attr("src", settings.original ? imgOn : imgOff).addClass(settings.original ? "on" : "off").css("cursor: pointer");
   $("#pps-previewDelay").val(settings.previewDelay);
-  $("#pps-previewByKey").attr("src", settings.previewByKey ? imgOn : imgOff).addClass(settings.original ? "on" : "off").css("cursor: pointer");
   $("#pps-maxPage").val(settings.pageCount);
   $("#pps-hideLess").val(settings.favFilter);
   $("#pps-hideAi").attr("src", settings.aiFilter ? imgOn : imgOff).addClass(settings.aiFilter ? "on" : "off").css("cursor: pointer");
@@ -3833,11 +3182,6 @@ function ShowSetting() {
   $("#pps-hideByTagList").val(settings.hideByTagList);
   $("#pps-newTab").attr("src", settings.linkBlank ? imgOn : imgOff).addClass(settings.linkBlank ? "on" : "off").css("cursor: pointer");
   $("#pps-pageKey").attr("src", settings.pageByKey ? imgOn : imgOff).addClass(settings.pageByKey ? "on" : "off").css("cursor: pointer");
-  $("#pps-fullSizeThumb").attr("src", settings.fullSizeThumb ? imgOn : imgOff).addClass(settings.fullSizeThumb ? "on" : "off").css("cursor: pointer");
-  $("#pps-novelSort").attr("src", settings.enableNovelSort ? imgOn : imgOff).addClass(settings.enableNovelSort ? "on" : "off").css("cursor: pointer");
-  $("#pps-novelMaxPage").val(settings.novelPageCount);
-  $("#pps-novelHideWork").val(settings.novelFavFilter);
-  $("#pps-novelHideBookmarked").attr("src", settings.novelHideFavorite ? imgOn : imgOff).addClass(settings.novelHideFavorite ? "on" : "off").css("cursor: pointer");
   $("#pps-lang").append('<option value="-1">Auto</option>').append('<option value="' + 0 /* zh_CN */ + '">\u7B80\u4F53\u4E2D\u6587</option>').append('<option value="' + 1 /* en_US */ + '">English</option>').append('<option value="' + 2 /* ru_RU */ + '">\u0420\u0443\u0441\u0441\u043A\u0438\u0439 \u044F\u0437\u044B\u043A</option>').append('<option value="' + 3 /* ja_JP */ + '">\u65E5\u672C\u8A9E</option>').val(g_settings.lang == void 0 ? -1 /* auto */ : g_settings.lang);
   $("#pps-ul").find("img").click(function() {
     const _this = $(this);
@@ -3860,28 +3204,20 @@ function ShowSetting() {
       $("#pps-hideLess").val(g_defaultSettings.favFilter);
     }
     const settings2 = {
-      lang: $("#pps-lang").val(),
+      lang: Number($("#pps-lang").val()),
       enablePreview: $("#pps-preview").hasClass("on") ? 1 : 0,
       enableAnimePreview: $("#pps-animePreview").hasClass("on") ? 1 : 0,
+      previewDelay: parseInt(String($("#pps-previewDelay").val())),
       enableSort: $("#pps-sort").hasClass("on") ? 1 : 0,
-      enableAnimeDownload: $("#pps-anime").hasClass("on") ? 1 : 0,
-      original: $("#pps-original").hasClass("on") ? 1 : 0,
-      previewDelay: parseInt($("#pps-previewDelay").val()),
-      previewByKey: $("#pps-previewByKey").hasClass("on") ? 1 : 0,
-      pageCount: parseInt($("#pps-maxPage").val()),
-      favFilter: parseInt($("#pps-hideLess").val()),
+      pageCount: parseInt(String($("#pps-maxPage").val())),
+      favFilter: parseInt(String($("#pps-hideLess").val())),
       aiFilter: $("#pps-hideAi").hasClass("on") ? 1 : 0,
       hideFavorite: $("#pps-hideBookmarked").hasClass("on") ? 1 : 0,
       hideFollowed: $("#pps-hideFollowed").hasClass("on") ? 1 : 0,
       hideByTag: $("#pps-hideByTag").hasClass("on") ? 1 : 0,
-      hideByTagList: $("#pps-hideByTagList").val(),
+      hideByTagList: String($("#pps-hideByTagList").val()),
       linkBlank: $("#pps-newTab").hasClass("on") ? 1 : 0,
       pageByKey: $("#pps-pageKey").hasClass("on") ? 1 : 0,
-      fullSizeThumb: $("#pps-fullSizeThumb").hasClass("on") ? 1 : 0,
-      enableNovelSort: $("#pps-novelSort").hasClass("on") ? 1 : 0,
-      novelPageCount: parseInt($("#pps-novelMaxPage").val()),
-      novelFavFilter: parseInt($("#pps-novelHideWork").val()),
-      novelHideFavorite: $("#pps-novelHideBookmarked").hasClass("on") ? 1 : 0,
       version: g_version
     };
     SetLocalStorage("PixivPreview", settings2);
@@ -3898,29 +3234,7 @@ function ShowSetting() {
     $("#pp-bg").remove();
   });
 }
-function SetTargetBlank(returnMap) {
-  if (g_settings.linkBlank) {
-    const target = [];
-    $.each(returnMap.controlElements, function(i, e) {
-      if (e.tagName == "A") {
-        target.push(e);
-      }
-    });
-    $.each($(returnMap.controlElements).find("a"), function(i, e) {
-      target.push(e);
-    });
-    $.each(target, function(i, e) {
-      $(e).attr({ target: "_blank", rel: "external" });
-      if (g_pageType == 4 /* Home */ || g_pageType == 3 /* Member */ || g_pageType == 10 /* Artwork */ || g_pageType == 1 /* BookMarkNew */) {
-        e.addEventListener("click", function(ev) {
-          ev.stopPropagation();
-        });
-      }
-    });
-  }
-}
 var loadInterval;
-var itv;
 function AutoDetectLanguage() {
   g_language = -1 /* auto */;
   if (g_settings && g_settings.lang) {
@@ -4016,18 +3330,8 @@ function Load() {
       }
     });
   }
-  itv = setInterval(function() {
-    const returnMap = Pages[g_pageType].ProcessPageElements();
-    if (!returnMap.loadingComplete) {
-      return;
-    }
-    DoLog(3 /* Info */, "Process page comlete, sorting and prevewing begin.");
-    DoLog(4 /* Elements */, returnMap);
-    clearInterval(itv);
-    SetTargetBlank(returnMap);
-    runPixivPreview();
-  }, 500);
   function runPixivPreview(eventFromButton = false) {
+    iLog.i("Global settings", g_settings);
     try {
       if (g_settings.enablePreview) {
         try {
@@ -4054,6 +3358,7 @@ function Load() {
       DoLog(1 /* Error */, "Unknown error: " + e);
     }
   }
+  runPixivPreview();
 }
 var startLoad = () => {
   loadInterval = setInterval(Load, 1e3);
@@ -4063,28 +3368,11 @@ var startLoad = () => {
         location.reload();
         return;
       }
-      if ($(".pp-main").length > 0) {
-        $(".pp-main").remove();
-      }
       initialUrl = location.href;
       clearInterval(loadInterval);
-      clearInterval(itv);
       g_pageType = -1;
       loadInterval = setInterval(Load, 300);
     }
   }, 1e3);
 };
-var inChecking = false;
-var jqItv = setInterval(function() {
-  if (inChecking) {
-    return;
-  }
-  inChecking = true;
-  checkJQuery().then(function(isLoad) {
-    if (isLoad) {
-      clearInterval(jqItv);
-      startLoad();
-    }
-    inChecking = false;
-  });
-}, 1e3);
+startLoad();
