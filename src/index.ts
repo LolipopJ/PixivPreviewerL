@@ -10,7 +10,7 @@ import { Lang, LogLevel, PageType } from "./enums";
 import { loadIllustPreview } from "./features/preview";
 import Texts from "./i18n";
 import { request } from "./services";
-import { checkJQuery } from "./utils/jquery";
+import { GlobalSettings } from "./types";
 import { DoLog, iLog } from "./utils/logger";
 
 // 语言
@@ -2892,30 +2892,16 @@ function ShowSetting() {
   }
   ul.empty();
   addItem(getSelectAction("pps-lang"), Texts[g_language].setting_language);
-  // addItem(
-  //   getImageAction("pps-fullSizeThumb"),
-  //   Texts[g_language].sort_fullSizeThumb
-  // );
-  // addItem("", "&nbsp");
-  // addItem(getImageAction("pps-preview"), Texts[g_language].setting_preview);
-  // addItem(
-  //   getImageAction("pps-animePreview"),
-  //   Texts[g_language].setting_animePreview
-  // );
-  // addItem(getImageAction("pps-anime"), Texts[g_language].setting_anime);
-  // addItem(getImageAction("pps-original"), Texts[g_language].setting_origin);
+  addItem("", "&nbsp");
+  addItem(getImageAction("pps-preview"), Texts[g_language].setting_preview);
+  addItem(
+    getImageAction("pps-animePreview"),
+    Texts[g_language].setting_animePreview
+  );
   addItem(
     getInputAction("pps-previewDelay"),
     Texts[g_language].setting_previewDelay
   );
-  // addItem(
-  //   getImageAction("pps-previewByKey"),
-  //   Texts[g_language].setting_previewByKey
-  // );
-  // $("#pps-previewByKey").attr(
-  //   "title",
-  //   Texts[g_language].setting_previewByKeyHelp
-  // );
   addItem("", "&nbsp");
   addItem(getImageAction("pps-sort"), Texts[g_language].setting_sort);
   addItem(getInputAction("pps-maxPage"), Texts[g_language].setting_maxPage);
@@ -2943,20 +2929,6 @@ function ShowSetting() {
   );
   addItem(getImageAction("pps-newTab"), Texts[g_language].setting_blank);
   addItem(getImageAction("pps-pageKey"), Texts[g_language].setting_turnPage);
-  // addItem("", "&nbsp");
-  // addItem(getImageAction("pps-novelSort"), Texts[g_language].setting_novelSort);
-  // addItem(
-  //   getInputAction("pps-novelMaxPage"),
-  //   Texts[g_language].setting_novelMaxPage
-  // );
-  // addItem(
-  //   getInputAction("pps-novelHideWork"),
-  //   Texts[g_language].setting_novelHideWork
-  // );
-  // addItem(
-  //   getImageAction("pps-novelHideBookmarked"),
-  //   Texts[g_language].setting_novelHideFav
-  // );
 
   const imgOn = "https://pp-1252089172.cos.ap-chengdu.myqcloud.com/On.png";
   const imgOff = "https://pp-1252089172.cos.ap-chengdu.myqcloud.com/Off.png";
@@ -2972,19 +2944,7 @@ function ShowSetting() {
     .attr("src", settings.enableSort ? imgOn : imgOff)
     .addClass(settings.enableSort ? "on" : "off")
     .css("cursor: pointer");
-  $("#pps-anime")
-    .attr("src", settings.enableAnimeDownload ? imgOn : imgOff)
-    .addClass(settings.enableAnimeDownload ? "on" : "off")
-    .css("cursor: pointer");
-  $("#pps-original")
-    .attr("src", settings.original ? imgOn : imgOff)
-    .addClass(settings.original ? "on" : "off")
-    .css("cursor: pointer");
   $("#pps-previewDelay").val(settings.previewDelay);
-  $("#pps-previewByKey")
-    .attr("src", settings.previewByKey ? imgOn : imgOff)
-    .addClass(settings.original ? "on" : "off")
-    .css("cursor: pointer");
   $("#pps-maxPage").val(settings.pageCount);
   $("#pps-hideLess").val(settings.favFilter);
   $("#pps-hideAi")
@@ -3011,20 +2971,6 @@ function ShowSetting() {
   $("#pps-pageKey")
     .attr("src", settings.pageByKey ? imgOn : imgOff)
     .addClass(settings.pageByKey ? "on" : "off")
-    .css("cursor: pointer");
-  $("#pps-fullSizeThumb")
-    .attr("src", settings.fullSizeThumb ? imgOn : imgOff)
-    .addClass(settings.fullSizeThumb ? "on" : "off")
-    .css("cursor: pointer");
-  $("#pps-novelSort")
-    .attr("src", settings.enableNovelSort ? imgOn : imgOff)
-    .addClass(settings.enableNovelSort ? "on" : "off")
-    .css("cursor: pointer");
-  $("#pps-novelMaxPage").val(settings.novelPageCount);
-  $("#pps-novelHideWork").val(settings.novelFavFilter);
-  $("#pps-novelHideBookmarked")
-    .attr("src", settings.novelHideFavorite ? imgOn : imgOff)
-    .addClass(settings.novelHideFavorite ? "on" : "off")
     .css("cursor: pointer");
 
   $("#pps-lang")
@@ -3060,29 +3006,25 @@ function ShowSetting() {
       $("#pps-hideLess").val(g_defaultSettings.favFilter);
     }
 
-    const settings = {
-      lang: $("#pps-lang").val(),
+    const settings: GlobalSettings = {
+      lang: Number($("#pps-lang").val()) as Lang,
+
       enablePreview: $("#pps-preview").hasClass("on") ? 1 : 0,
       enableAnimePreview: $("#pps-animePreview").hasClass("on") ? 1 : 0,
+      previewDelay: parseInt(String($("#pps-previewDelay").val())),
+
       enableSort: $("#pps-sort").hasClass("on") ? 1 : 0,
-      enableAnimeDownload: $("#pps-anime").hasClass("on") ? 1 : 0,
-      original: $("#pps-original").hasClass("on") ? 1 : 0,
-      previewDelay: parseInt($("#pps-previewDelay").val()),
-      previewByKey: $("#pps-previewByKey").hasClass("on") ? 1 : 0,
-      pageCount: parseInt($("#pps-maxPage").val()),
-      favFilter: parseInt($("#pps-hideLess").val()),
+      pageCount: parseInt(String($("#pps-maxPage").val())),
+      favFilter: parseInt(String($("#pps-hideLess").val())),
       aiFilter: $("#pps-hideAi").hasClass("on") ? 1 : 0,
       hideFavorite: $("#pps-hideBookmarked").hasClass("on") ? 1 : 0,
       hideFollowed: $("#pps-hideFollowed").hasClass("on") ? 1 : 0,
       hideByTag: $("#pps-hideByTag").hasClass("on") ? 1 : 0,
-      hideByTagList: $("#pps-hideByTagList").val(),
+      hideByTagList: String($("#pps-hideByTagList").val()),
+
       linkBlank: $("#pps-newTab").hasClass("on") ? 1 : 0,
       pageByKey: $("#pps-pageKey").hasClass("on") ? 1 : 0,
-      fullSizeThumb: $("#pps-fullSizeThumb").hasClass("on") ? 1 : 0,
-      enableNovelSort: $("#pps-novelSort").hasClass("on") ? 1 : 0,
-      novelPageCount: parseInt($("#pps-novelMaxPage").val()),
-      novelFavFilter: parseInt($("#pps-novelHideWork").val()),
-      novelHideFavorite: $("#pps-novelHideBookmarked").hasClass("on") ? 1 : 0,
+
       version: g_version,
     };
 
@@ -3102,38 +3044,9 @@ function ShowSetting() {
     $("#pp-bg").remove();
   });
 }
-function SetTargetBlank(returnMap) {
-  if (g_settings.linkBlank) {
-    const target = [];
-    $.each(returnMap.controlElements, function (i, e) {
-      if (e.tagName == "A") {
-        target.push(e);
-      }
-    });
 
-    $.each($(returnMap.controlElements).find("a"), function (i, e) {
-      target.push(e);
-    });
-
-    $.each(target, function (i, e) {
-      $(e).attr({ target: "_blank", rel: "external" });
-      // js监听跳转，特殊处理
-      if (
-        g_pageType == PageType.Home ||
-        g_pageType == PageType.Member ||
-        g_pageType == PageType.Artwork ||
-        g_pageType == PageType.BookMarkNew
-      ) {
-        e.addEventListener("click", function (ev) {
-          ev.stopPropagation();
-        });
-      }
-    });
-  }
-}
 /* --------------------------------------- 主函数 --------------------------------------- */
 let loadInterval;
-let itv;
 function AutoDetectLanguage() {
   g_language = Lang.auto;
   if (g_settings && g_settings.lang) {
@@ -3152,6 +3065,7 @@ function AutoDetectLanguage() {
     }
   }
 }
+
 function Load() {
   // 匹配当前页面
   for (let i = 0; i < PageType.PageTypeCount; i++) {
@@ -3160,6 +3074,7 @@ function Load() {
       break;
     }
   }
+
   if (g_pageType >= 0) {
     DoLog(LogLevel.Info, "Current page is " + Pages[g_pageType].PageTypeString);
   } else {
@@ -3197,6 +3112,7 @@ function Load() {
 
   // 自动检测语言
   AutoDetectLanguage();
+
   if ($("#pp-sort").length === 0 && !g_settings?.enableSort) {
     const newListItem = toolBar.firstChild.cloneNode(true);
     newListItem.innerHTML = "";
@@ -3250,22 +3166,8 @@ function Load() {
     });
   }
 
-  // 排序、预览
-  itv = setInterval(function () {
-    const returnMap = Pages[g_pageType].ProcessPageElements();
-    if (!returnMap.loadingComplete) {
-      return;
-    }
-
-    DoLog(LogLevel.Info, "Process page comlete, sorting and prevewing begin.");
-    DoLog(LogLevel.Elements, returnMap);
-
-    clearInterval(itv);
-
-    SetTargetBlank(returnMap);
-    runPixivPreview();
-  }, 500);
   function runPixivPreview(eventFromButton = false) {
+    iLog.i("Global settings", g_settings);
     try {
       if (g_settings.enablePreview) {
         try {
@@ -3293,6 +3195,9 @@ function Load() {
       DoLog(LogLevel.Error, "Unknown error: " + e);
     }
   }
+
+  // 排序、预览
+  runPixivPreview();
 }
 
 const startLoad = () => {
@@ -3304,30 +3209,12 @@ const startLoad = () => {
         location.reload();
         return;
       }
-      // fix 主页预览图出现后点击图片，进到详情页，预览图不消失的问题
-      if ($(".pp-main").length > 0) {
-        $(".pp-main").remove();
-      }
       initialUrl = location.href;
       clearInterval(loadInterval);
-      clearInterval(itv);
       g_pageType = -1;
       loadInterval = setInterval(Load, 300);
     }
   }, 1000);
 };
 
-let inChecking = false;
-const jqItv = setInterval(function () {
-  if (inChecking) {
-    return;
-  }
-  inChecking = true;
-  checkJQuery().then(function (isLoad) {
-    if (isLoad) {
-      clearInterval(jqItv);
-      startLoad();
-    }
-    inChecking = false;
-  });
-}, 1000);
+startLoad();

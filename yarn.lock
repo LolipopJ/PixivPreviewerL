@@ -435,6 +435,11 @@
   resolved "https://registry.npmjs.org/@types/sizzle/-/sizzle-2.3.9.tgz#d4597dbd4618264c414d7429363e3f50acb66ea2"
   integrity sha512-xzLEyKB50yqCUPUJkIsrVvoWNfFUbIZI+RspLWt8u+tIW/BetMBZtgV2LY/2o+tYH8dRvQ+eoPf3NdhQCcLE2w==
 
+"@types/tampermonkey@^5.0.4":
+  version "5.0.4"
+  resolved "https://registry.npmjs.org/@types/tampermonkey/-/tampermonkey-5.0.4.tgz#02f0110919a2afb245eb8d22d3f4201fb0fa9fbd"
+  integrity sha512-HEJ0O5CkDZSwIgd9Zip4xM8o7gZC8zBmJuH1YEXNINIC+aCWEXD10pnpo3NQG5IWHx+Xr4fMSGq1jqeKXH2lpA==
+
 "@typescript-eslint/eslint-plugin@8.27.0":
   version "8.27.0"
   resolved "https://registry.npmjs.org/@typescript-eslint/eslint-plugin/-/eslint-plugin-8.27.0.tgz#fbef10802365832ee1d1bd5d2117dcec82727a72"

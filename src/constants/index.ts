@@ -1,3 +1,4 @@
+import { Lang } from "../enums";
 import { GlobalSettings } from "../types";
 
 /** 版本号，发生改变时将会弹窗 */
@@ -17,16 +18,13 @@ export const g_loadingImage =
 export const g_maxXhr = 64;
 /** 默认设置，仅用于首次脚本初始化 */
 export const g_defaultSettings: GlobalSettings = {
-  lang: -1,
+  lang: Lang.zh_CN,
+
   enablePreview: 1,
   enableAnimePreview: 1,
-  enableSort: 1,
-  enableAnimeDownload: 1,
-  original: 0,
   previewDelay: 500,
-  previewByKey: 0,
-  previewKey: 17,
-  previewFullScreen: 0,
+
+  enableSort: 1,
   pageCount: 3,
   favFilter: 0,
   aiFilter: 0,
@@ -34,15 +32,10 @@ export const g_defaultSettings: GlobalSettings = {
   hideFollowed: 0,
   hideByTag: 0,
   hideByTagList: "",
+
   linkBlank: 1,
   pageByKey: 0,
-  fullSizeThumb: 0,
-  enableNovelSort: 1,
-  novelPageCount: 3,
-  novelFavFilter: 0,
-  novelHideFavorite: 0,
-  novelHideFollowed: 0,
-  logLevel: 1,
+
   version: g_version,
 };
 /** 作品预览容器的背景图片链接 */

@@ -1,74 +1,64 @@
 import { LogLevel } from "../enums";
 
 class ILog {
-  prefix = "Pixiv Preview: ";
-  LogLevel = {
-    Verbose: 0,
-    Info: 1,
-    Warning: 2,
-    Error: 3,
-  };
-  level = this.LogLevel.Warning;
+  prefix = "%c Pixiv Preview";
 
-  v(value: string) {
-    if (this.level <= this.LogLevel.Verbose) {
-      console.log(this.prefix + value);
-    }
+  v(...values: unknown[]) {
+    console.log(
+      this.prefix + " [VERBOSE] ",
+      "color:#333 ;background-color: #fff",
+      ...values
+    );
   }
 
-  i(info: string) {
-    if (this.level <= this.LogLevel.Info) {
-      console.info(this.prefix + info);
-    }
+  i(...infos: unknown[]) {
+    console.info(
+      this.prefix + " [INFO] ",
+      "color:#333 ;background-color: #fff;",
+      ...infos
+    );
   }
 
-  w(warning: string) {
-    if (this.level <= this.LogLevel.Warning) {
-      console.warn(this.prefix + warning);
-    }
+  w(...warnings: unknown[]) {
+    console.warn(
+      this.prefix + " [WARNING] ",
+      "color:#111 ;background-color:#ffa500;",
+      ...warnings
+    );
   }
 
-  e(error: string) {
-    if (this.level <= this.LogLevel.Error) {
-      console.error(this.prefix + error);
-    }
+  e(...errors: unknown[]) {
+    console.error(
+      this.prefix + " [ERROR] ",
+      "color:#111 ;background-color:#ff0000;",
+      ...errors
+    );
   }
 
-  d(data: unknown) {
-    if (this.level <= this.LogLevel.Verbose) {
-      console.log(String(data));
-    }
-  }
-
-  setLogLevel(logLevel) {
-    this.level = logLevel;
+  d(...data: unknown[]) {
+    console.log(
+      this.prefix + " [DATA] ",
+      "color:#333 ;background-color: #fff;",
+      ...data
+    );
   }
 }
 export const iLog = new ILog();
 
-export function DoLog(level, msgOrElement) {
-  if (level <= LogLevel.Error) {
-    let prefix = "%c";
-    let param = "";
-
-    if (level == LogLevel.Error) {
-      prefix += "[Error]";
-      param = "color:#ff0000";
-    } else if (level == LogLevel.Warning) {
-      prefix += "[Warning]";
-      param = "color:#ffa500";
-    } else if (level == LogLevel.Info) {
-      prefix += "[Info]";
-      param = "color:#000000";
-    } else if (level == LogLevel.Elements) {
-      prefix += "Elements";
-      param = "color:#000000";
-    }
-
-    if (level != LogLevel.Elements) {
-      console.log(prefix + msgOrElement, param);
-    } else {
-      console.log(msgOrElement);
-    }
+export function DoLog(level = LogLevel.Info, ...msgOrElement: unknown[]) {
+  switch (level) {
+    case LogLevel.Error:
+      iLog.e(...msgOrElement);
+      break;
+    case LogLevel.Warning:
+      iLog.w(...msgOrElement);
+      break;
+    case LogLevel.Info:
+      iLog.i(...msgOrElement);
+      break;
+    case LogLevel.Elements:
+    case LogLevel.None:
+    default:
+      iLog.v(...msgOrElement);
   }
 }

@@ -18,17 +18,21 @@ import {
 } from "../services";
 import { GlobalSettings } from "../types";
 import debounce from "../utils/debounce";
+import { stopEventPropagation } from "../utils/event";
 import { iLog } from "../utils/logger";
 import mouseMonitor from "../utils/mouse-monitor";
 import ZipImagePlayer from "../utils/ugoira-player";
 
 let isInitialized = false;
 export const loadIllustPreview = (
-  options: Pick<GlobalSettings, "previewDelay" | "enableAnimePreview">
+  options: Pick<
+    GlobalSettings,
+    "previewDelay" | "enableAnimePreview" | "linkBlank"
+  >
 ) => {
   if (isInitialized) return;
 
-  const { previewDelay, enableAnimePreview } = options;
+  const { previewDelay, enableAnimePreview, linkBlank } = options;
   const mouseHoverDebounceWait = previewDelay / 5;
   const mouseHoverPreviewWait = previewDelay - mouseHoverDebounceWait;
 
@@ -43,7 +47,7 @@ export const loadIllustPreview = (
       imgLink = imgLink.parent();
 
       if (!imgLink.length) {
-        iLog.i("未能找到当前作品的链接元素");
+        // iLog.v("未能找到当前作品的链接元素");
         return null;
       }
     }
@@ -51,7 +55,7 @@ export const loadIllustPreview = (
     const illustHref = imgLink.attr("href");
     const illustHrefMatch = illustHref?.match(/\/artworks\/(\d+)(#(\d+))?/);
     if (!illustHrefMatch) {
-      iLog.w("当前链接非作品链接，或当前作品不支持预览，跳过");
+      // iLog.w("当前链接非作品链接，或当前作品不支持预览，跳过");
       return null;
     }
     const illustId = illustHrefMatch[1];
@@ -71,6 +75,8 @@ export const loadIllustPreview = (
       previewPage,
       /** 作品类型 */
       illustType,
+      /** 作品链接 DOM */
+      illustLinkDom: imgLink,
     };
   };
 
@@ -110,7 +116,7 @@ export const loadIllustPreview = (
 
       // 当前鼠标悬浮作品为动图，但是用户禁用了动图预览，跳过
       if (illustType === IllustType.UGOIRA && !enableAnimePreview) {
-        iLog.i("Anime preview disabled.");
+        iLog.i("动图预览已禁用，跳过");
         return;
       }
 
@@ -118,6 +124,7 @@ export const loadIllustPreview = (
         if (getIllustPagesCache[illustId]) {
           // 命中缓存，直接使用缓存中的元数据
           previewedIllust.setImage({
+            illustId,
             illustElement: target,
             previewPage,
             ...getIllustPagesCache[illustId],
@@ -151,6 +158,7 @@ export const loadIllustPreview = (
             if (currentHoveredIllustId !== illustId) return;
 
             previewedIllust.setImage({
+              illustId,
               illustElement: target,
               previewPage,
               regularUrls,
@@ -167,6 +175,7 @@ export const loadIllustPreview = (
         if (getUgoiraMetadataCache[illustId]) {
           // 命中缓存，直接使用缓存中的元数据
           previewedIllust.setUgoira({
+            illustId,
             illustElement: target,
             ...getUgoiraMetadataCache[illustId],
           });
@@ -190,6 +199,7 @@ export const loadIllustPreview = (
 
             const { src, originalSrc, mime_type, frames } = data.body;
             previewedIllust.setUgoira({
+              illustId,
               illustElement: target,
               src,
               originalSrc,
@@ -212,7 +222,7 @@ export const loadIllustPreview = (
 
   //#region 绑定鼠标悬浮图片监听事件
   const onMouseOverIllust = (target: JQuery<HTMLElement>) => {
-    const { illustId, previewPage, illustType } =
+    const { illustId, previewPage, illustType, illustLinkDom } =
       getIllustMetadata(target) || {};
     if (illustId === undefined || illustType === undefined) {
       // 获取当前鼠标悬浮元素的元数据失败，跳过
@@ -223,6 +233,13 @@ export const loadIllustPreview = (
     if (illustId === /^\/artworks\/(\d+)$/.exec(pathname)?.[1]) {
       // 跳过预览作品页当前正查看的作品
       return;
+    }
+
+    if (linkBlank) {
+      // 设置在新标签打开作品详情页
+      illustLinkDom.attr({ target: "_blank", rel: "external" });
+      illustLinkDom.off("click", stopEventPropagation);
+      illustLinkDom.on("click", stopEventPropagation);
     }
 
     const previewIllustTimeout = setTimeout(() => {
@@ -299,6 +316,8 @@ export const loadIllustPreview = (
 };
 
 class PreviewedIllust {
+  /** 当前正在预览的作品的 ID */
+  illustId = "";
   /** 当前正在预览的作品 DOM 元素 */
   illustElement: JQuery<HTMLElement> = $();
   /** 当前预览的作品是否加载完毕 */
@@ -345,6 +364,7 @@ class PreviewedIllust {
 
   /** 初始化预览组件 */
   reset() {
+    this.illustId = "";
     this.illustElement = $();
     this.illustLoaded = false;
 
@@ -456,11 +476,13 @@ class PreviewedIllust {
   //#region 预览图片功能
   /** 初始化预览容器，默认显示第一张图片 */
   setImage({
+    illustId,
     illustElement,
     previewPage = 1,
     regularUrls,
     originalUrls,
   }: {
+    illustId: string;
     illustElement: JQuery<HTMLElement>;
     previewPage?: number;
     regularUrls: string[];
@@ -469,6 +491,7 @@ class PreviewedIllust {
     this.reset();
     this.initPreviewWrapper();
 
+    this.illustId = illustId;
     this.illustElement = illustElement;
     this.regularUrls = regularUrls;
     this.originalUrls = originalUrls;
@@ -635,16 +658,21 @@ class PreviewedIllust {
 
   //#region 预览动图功能
   setUgoira({
+    illustId,
     illustElement,
     src,
     // originalSrc,
     mime_type,
     frames,
-  }: GetUgoiraMetaResponseData & { illustElement: JQuery<HTMLElement> }) {
+  }: GetUgoiraMetaResponseData & {
+    illustId: string;
+    illustElement: JQuery<HTMLElement>;
+  }) {
     this.reset();
 
     this.initPreviewWrapper();
 
+    this.illustId = illustId;
     this.illustElement = illustElement;
 
     // 鼠标悬浮在动图中间播放图标上，不关闭预览窗口
