@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             0.2.4-2025/4/2
+// @version             0.2.4-2025/4/3
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0
@@ -1571,7 +1571,18 @@ Pages[0 /* Search */] = {
     return $(this.private.imageListConrainer).find("li").get(0);
   },
   GetPageSelector: function() {
-    return this.private.pageSelector;
+    const sections = $("section");
+    if (sections.length === 0) {
+      return null;
+    }
+    let resultSectionIndex = 0;
+    $.each(sections, (i, e) => {
+      if ($(e).find("aside").length === 0) {
+        resultSectionIndex = i;
+      }
+    });
+    const ul = $(sections[resultSectionIndex]).find("ul");
+    return ul.next().get(0) ?? ul.parent().next().get(0);
   },
   private: {
     imageListContainer: null,
@@ -1815,7 +1826,18 @@ Pages[12 /* SearchTop */] = {
     return $(this.private.imageListConrainer).find("li").get(0);
   },
   GetPageSelector: function() {
-    return this.private.pageSelector;
+    const sections = $("section");
+    if (sections.length == 0) {
+      return null;
+    }
+    let resultSectionIndex = 0;
+    $.each(sections, (i, e) => {
+      if ($(e).find("aside").length === 0) {
+        resultSectionIndex = i;
+      }
+    });
+    const ul = $(sections[resultSectionIndex]).find("ul");
+    return ul.next().get(0) ?? ul.parent().next().get(0);
   },
   private: {
     imageListContainer: null,
@@ -2048,56 +2070,55 @@ function PixivSK(callback) {
   $(imageContainer).hide().before(
     '<div id="loading" style="width:100%;text-align:center;"><img src="' + g_loadingImage + '" /><p id="progress" style="text-align: center;font-size: large;font-weight: bold;padding-top: 10px;">0%</p></div>'
   );
-  if (true) {
-    const pageSelectorDiv = Pages[0 /* Search */].GetPageSelector();
-    if (pageSelectorDiv == null) {
-      DoLog(1 /* Error */, "Can not found page selector!");
-      return;
+  const pageSelectorDiv = Pages[0 /* Search */].GetPageSelector();
+  console.log("pageSelectorDiv", pageSelectorDiv);
+  if (pageSelectorDiv == null) {
+    DoLog(1 /* Error */, "Can not found page selector!");
+    return;
+  }
+  if ($(pageSelectorDiv).find("a").length > 2) {
+    const pageButton = $(pageSelectorDiv).find("a").get(1);
+    const newPageButtons = [];
+    const pageButtonString = "Previewer";
+    for (let i = 0; i < 9; i++) {
+      const newPageButton = pageButton.cloneNode(true);
+      $(newPageButton).find("span").text(pageButtonString[i]);
+      newPageButtons.push(newPageButton);
     }
-    if ($(pageSelectorDiv).find("a").length > 2) {
-      const pageButton = $(pageSelectorDiv).find("a").get(1);
-      const newPageButtons = [];
-      const pageButtonString = "Previewer";
-      for (let i = 0; i < 9; i++) {
-        const newPageButton = pageButton.cloneNode(true);
-        $(newPageButton).find("span").text(pageButtonString[i]);
-        newPageButtons.push(newPageButton);
-      }
-      $(pageSelectorDiv).find("button").remove();
-      while ($(pageSelectorDiv).find("a").length > 2) {
-        $(pageSelectorDiv).find("a:first").next().remove();
-      }
-      for (let i = 0; i < 9; i++) {
-        $(pageSelectorDiv).find("a:last").before(newPageButtons[i]);
-      }
-      $(pageSelectorDiv).find("a").attr("href", "javascript:;");
-      let pageUrl = location.href;
-      if (pageUrl.indexOf("&p=") == -1 && pageUrl.indexOf("?p=") == -1) {
-        if (pageUrl.indexOf("?") == -1) {
-          pageUrl += "?p=1";
-        } else {
-          pageUrl += "&p=1";
-        }
-      }
-      const prevPageUrl = pageUrl.replace(
-        /p=\d+/,
-        "p=" + (currentPage - g_settings.pageCount > 1 ? currentPage - g_settings.pageCount : 1)
-      );
-      const nextPageUrl = pageUrl.replace(
-        /p=\d+/,
-        "p=" + (currentPage + g_settings.pageCount)
-      );
-      DoLog(3 /* Info */, "Previous page url: " + prevPageUrl);
-      DoLog(3 /* Info */, "Next page url: " + nextPageUrl);
-      const prevButton = $(pageSelectorDiv).find("a:first");
-      prevButton.before(prevButton.clone());
-      prevButton.remove();
-      const nextButton = $(pageSelectorDiv).find("a:last");
-      nextButton.before(nextButton.clone());
-      nextButton.remove();
-      $(pageSelectorDiv).find("a:first").attr("href", prevPageUrl).addClass("pp-prevPage");
-      $(pageSelectorDiv).find("a:last").attr("href", nextPageUrl).addClass("pp-nextPage");
+    $(pageSelectorDiv).find("button").remove();
+    while ($(pageSelectorDiv).find("a").length > 2) {
+      $(pageSelectorDiv).find("a:first").next().remove();
     }
+    for (let i = 0; i < 9; i++) {
+      $(pageSelectorDiv).find("a:last").before(newPageButtons[i]);
+    }
+    $(pageSelectorDiv).find("a").attr("href", "javascript:;");
+    let pageUrl = location.href;
+    if (pageUrl.indexOf("&p=") == -1 && pageUrl.indexOf("?p=") == -1) {
+      if (pageUrl.indexOf("?") == -1) {
+        pageUrl += "?p=1";
+      } else {
+        pageUrl += "&p=1";
+      }
+    }
+    const prevPageUrl = pageUrl.replace(
+      /p=\d+/,
+      "p=" + (currentPage - g_settings.pageCount > 1 ? currentPage - g_settings.pageCount : 1)
+    );
+    const nextPageUrl = pageUrl.replace(
+      /p=\d+/,
+      "p=" + (currentPage + g_settings.pageCount)
+    );
+    DoLog(3 /* Info */, "Previous page url: " + prevPageUrl);
+    DoLog(3 /* Info */, "Next page url: " + nextPageUrl);
+    const prevButton = $(pageSelectorDiv).find("a:first");
+    prevButton.before(prevButton.clone());
+    prevButton.remove();
+    const nextButton = $(pageSelectorDiv).find("a:last");
+    nextButton.before(nextButton.clone());
+    nextButton.remove();
+    $(pageSelectorDiv).find("a:first").attr("href", prevPageUrl).addClass("pp-prevPage");
+    $(pageSelectorDiv).find("a:last").attr("href", nextPageUrl).addClass("pp-nextPage");
     const onloadCallback = function(req) {
       let no_artworks_found = false;
       try {

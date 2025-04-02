@@ -76,7 +76,20 @@ Pages[PageType.Search] = {
     return $(this.private.imageListConrainer).find("li").get(0);
   },
   GetPageSelector: function () {
-    return this.private.pageSelector;
+    const sections = $("section");
+    if (sections.length === 0) {
+      return null;
+    }
+
+    let resultSectionIndex = 0;
+    $.each(sections, (i, e) => {
+      if ($(e).find("aside").length === 0) {
+        resultSectionIndex = i;
+      }
+    });
+
+    const ul = $(sections[resultSectionIndex]).find("ul");
+    return ul.next().get(0) ?? ul.parent().next().get(0);
   },
   private: {
     imageListContainer: null,
@@ -367,7 +380,20 @@ Pages[PageType.SearchTop] = {
     return $(this.private.imageListConrainer).find("li").get(0);
   },
   GetPageSelector: function () {
-    return this.private.pageSelector;
+    const sections = $("section");
+    if (sections.length == 0) {
+      return null;
+    }
+
+    let resultSectionIndex = 0;
+    $.each(sections, (i, e) => {
+      if ($(e).find("aside").length === 0) {
+        resultSectionIndex = i;
+      }
+    });
+
+    const ul = $(sections[resultSectionIndex]).find("ul");
+    return ul.next().get(0) ?? ul.parent().next().get(0);
   },
   private: {
     imageListContainer: null,
@@ -668,71 +694,70 @@ function PixivSK(callback) {
     );
 
   // page
-  if (true) {
-    const pageSelectorDiv = Pages[PageType.Search].GetPageSelector();
-    if (pageSelectorDiv == null) {
-      DoLog(LogLevel.Error, "Can not found page selector!");
-      return;
+  const pageSelectorDiv = Pages[PageType.Search].GetPageSelector();
+  console.log("pageSelectorDiv", pageSelectorDiv);
+  if (pageSelectorDiv == null) {
+    DoLog(LogLevel.Error, "Can not found page selector!");
+    return;
+  }
+
+  if ($(pageSelectorDiv).find("a").length > 2) {
+    const pageButton = $(pageSelectorDiv).find("a").get(1);
+    const newPageButtons = [];
+    const pageButtonString = "Previewer";
+    for (let i = 0; i < 9; i++) {
+      const newPageButton = pageButton.cloneNode(true);
+      $(newPageButton).find("span").text(pageButtonString[i]);
+      newPageButtons.push(newPageButton);
     }
 
-    if ($(pageSelectorDiv).find("a").length > 2) {
-      const pageButton = $(pageSelectorDiv).find("a").get(1);
-      const newPageButtons = [];
-      const pageButtonString = "Previewer";
-      for (let i = 0; i < 9; i++) {
-        const newPageButton = pageButton.cloneNode(true);
-        $(newPageButton).find("span").text(pageButtonString[i]);
-        newPageButtons.push(newPageButton);
-      }
-
-      $(pageSelectorDiv).find("button").remove();
-      while ($(pageSelectorDiv).find("a").length > 2) {
-        $(pageSelectorDiv).find("a:first").next().remove();
-      }
-
-      for (let i = 0; i < 9; i++) {
-        $(pageSelectorDiv).find("a:last").before(newPageButtons[i]);
-      }
-
-      $(pageSelectorDiv).find("a").attr("href", "javascript:;");
-
-      let pageUrl = location.href;
-      if (pageUrl.indexOf("&p=") == -1 && pageUrl.indexOf("?p=") == -1) {
-        if (pageUrl.indexOf("?") == -1) {
-          pageUrl += "?p=1";
-        } else {
-          pageUrl += "&p=1";
-        }
-      }
-      const prevPageUrl = pageUrl.replace(
-        /p=\d+/,
-        "p=" +
-          (currentPage - g_settings.pageCount > 1
-            ? currentPage - g_settings.pageCount
-            : 1)
-      );
-      const nextPageUrl = pageUrl.replace(
-        /p=\d+/,
-        "p=" + (currentPage + g_settings.pageCount)
-      );
-      DoLog(LogLevel.Info, "Previous page url: " + prevPageUrl);
-      DoLog(LogLevel.Info, "Next page url: " + nextPageUrl);
-      // 重新插入一遍清除事件绑定
-      const prevButton = $(pageSelectorDiv).find("a:first");
-      prevButton.before(prevButton.clone());
-      prevButton.remove();
-      const nextButton = $(pageSelectorDiv).find("a:last");
-      nextButton.before(nextButton.clone());
-      nextButton.remove();
-      $(pageSelectorDiv)
-        .find("a:first")
-        .attr("href", prevPageUrl)
-        .addClass("pp-prevPage");
-      $(pageSelectorDiv)
-        .find("a:last")
-        .attr("href", nextPageUrl)
-        .addClass("pp-nextPage");
+    $(pageSelectorDiv).find("button").remove();
+    while ($(pageSelectorDiv).find("a").length > 2) {
+      $(pageSelectorDiv).find("a:first").next().remove();
     }
+
+    for (let i = 0; i < 9; i++) {
+      $(pageSelectorDiv).find("a:last").before(newPageButtons[i]);
+    }
+
+    $(pageSelectorDiv).find("a").attr("href", "javascript:;");
+
+    let pageUrl = location.href;
+    if (pageUrl.indexOf("&p=") == -1 && pageUrl.indexOf("?p=") == -1) {
+      if (pageUrl.indexOf("?") == -1) {
+        pageUrl += "?p=1";
+      } else {
+        pageUrl += "&p=1";
+      }
+    }
+    const prevPageUrl = pageUrl.replace(
+      /p=\d+/,
+      "p=" +
+        (currentPage - g_settings.pageCount > 1
+          ? currentPage - g_settings.pageCount
+          : 1)
+    );
+    const nextPageUrl = pageUrl.replace(
+      /p=\d+/,
+      "p=" + (currentPage + g_settings.pageCount)
+    );
+    DoLog(LogLevel.Info, "Previous page url: " + prevPageUrl);
+    DoLog(LogLevel.Info, "Next page url: " + nextPageUrl);
+    // 重新插入一遍清除事件绑定
+    const prevButton = $(pageSelectorDiv).find("a:first");
+    prevButton.before(prevButton.clone());
+    prevButton.remove();
+    const nextButton = $(pageSelectorDiv).find("a:last");
+    nextButton.before(nextButton.clone());
+    nextButton.remove();
+    $(pageSelectorDiv)
+      .find("a:first")
+      .attr("href", prevPageUrl)
+      .addClass("pp-prevPage");
+    $(pageSelectorDiv)
+      .find("a:last")
+      .attr("href", nextPageUrl)
+      .addClass("pp-nextPage");
 
     const onloadCallback = function (req) {
       let no_artworks_found = false;
