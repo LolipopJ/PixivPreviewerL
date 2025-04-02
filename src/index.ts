@@ -27,40 +27,6 @@ let g_settings;
 let g_sortComplete = true;
 
 const Pages = {};
-/**
- * Pages 必须实现的函数
- * PageTypeString: string，字符串形式的 PageType
- * bool CheckUrl: function(string url)，用于检查一个 url 是否是当前页面的目标 url
- * ReturnMap ProcessPageElements: function()，处理页面（寻找图片元素、添加属性等），返回 ReturnMap
- * ReturnMap GetProcessedPageElements: function(), 返回上一次 ProcessPageElements 的返回值（如果没有上次调用则调用一次）
- * Object GetToolBar: function(), 返回工具栏元素（右下角那个，用来放设置按钮）
- * HasAutoLoad: bool，表示这个页面是否有自动加载功能
- */
-const ReturnMapSample = {
-  // 页面是否加载完成，false 意味着后面的成员无效
-  loadingComplete: false,
-  // 控制元素，每个图片的鼠标响应元素
-  controlElements: [],
-  // 可有可无，如果为 true，强制重新刷新预览功能
-  forceUpdate: false,
-};
-const ControlElementsAttributesSample = {
-  // 图片信息，内容如下：
-  // [必需] 图片 id
-  illustId: 0,
-  // [必需] 图片类型（0：普通图片，2：动图）
-  illustType: 0,
-  // [必需] 页数
-  pageCount: 1,
-  // [可选] 标题
-  title: "",
-  // [可选] 作者 id
-  userId: 0,
-  // [可选] 作者昵称
-  userName: "",
-  // [可选] 收藏数
-  bookmarkCount: 0,
-};
 
 function findToolbarCommon() {
   const rootToolbar = $("#root").find("ul:last").get(0);
@@ -84,142 +50,6 @@ function convertThumbUrlToSmall(thumbUrl) {
     .replace(/c\/.*\/img-master/, replace1)
     .replace("_square", replace2);
 }
-function processElementListCommon(lis) {
-  $.each(lis, function (i, e) {
-    const li = $(e);
-
-    // 只填充必须的几个，其他的目前用不着
-    const ctlAttrs = {
-      illustId: "",
-      illustType: 0,
-      pageCount: 1,
-    };
-
-    const imageLink = li.find("a:first");
-    const animationSvg = imageLink.children("div:first").find("svg:first");
-    const pageCountSpan = imageLink.children("div:last").find("span:last");
-
-    if (imageLink == null) {
-      DoLog(LogLevel.Warning, "Can not found img or imageLink, skip this.");
-      return;
-    }
-
-    const link = imageLink.attr("href");
-    if (link == null) {
-      DoLog(LogLevel.Warning, "Invalid href, skip this.");
-      return;
-    }
-    const linkMatched = link.match(/artworks\/(\d+)/);
-    if (linkMatched) {
-      ctlAttrs.illustId = linkMatched[1];
-    } else {
-      DoLog(LogLevel.Error, "Get illustId failed, skip this list item!");
-      return;
-    }
-    if (animationSvg.length > 0) {
-      ctlAttrs.illustType = 2;
-    }
-    if (pageCountSpan.length > 0) {
-      ctlAttrs.pageCount = parseInt(pageCountSpan.text());
-    }
-
-    // 添加 attr
-    let control = li.children("div:first");
-    if (control.children().length == 0) {
-      if (li.children("div").length > 1) {
-        control = $(li.children("div").get(1));
-      }
-    } else {
-      control = control.children("div:first");
-    }
-    control.attr({
-      illustId: ctlAttrs.illustId,
-      illustType: ctlAttrs.illustType,
-      pageCount: ctlAttrs.pageCount,
-    });
-
-    control.addClass("pp-control");
-  });
-}
-function replaceThumbCommon(elements) {
-  $.each(elements, (i, e) => {
-    e = $(e);
-    const img = e.find("img");
-    if (img.length == 0) {
-      iLog.w("No img in the control element.");
-      return true;
-    }
-    const src = img.attr("src");
-    const fullSizeSrc = convertThumbUrlToSmall(src);
-    if (src != fullSizeSrc) {
-      img.attr("src", fullSizeSrc).css("object-fit", "contain");
-    }
-  });
-}
-function findLiByImgTag() {
-  const lis = [];
-  $.each($("img"), (i, e) => {
-    let el = $(e);
-    const p = el.parent().parent().parent();
-    if (
-      p.attr("data-gtm-value") != "" &&
-      p.attr("href") &&
-      p.attr("href").indexOf("/artwork") != -1
-    ) {
-      for (let i = 0; i < 10; ++i) {
-        el = el.parent();
-        if (el.length == 0) {
-          break;
-        }
-        if (el.get(0).tagName == "LI" || el.parent().get(0).tagName == "UL") {
-          lis.push(el);
-          break;
-        }
-      }
-    }
-  });
-  return lis;
-}
-
-// Replaces deleted artwork indicators with search engine links.
-function showSearchLinksForDeletedArtworks() {
-  // Array of search engines.
-  const searchEngines = [
-    { name: "Google", url: "https://www.google.com/search?q=" },
-    { name: "Bing", url: "https://www.bing.com/search?q=" },
-    { name: "Baidu", url: "https://www.baidu.com/s?wd=" },
-  ];
-  // Find all <span> elements with a "to" attribute.
-  const spans = document.querySelectorAll("span[to]");
-  spans.forEach((span) => {
-    const artworkPath = span.getAttribute("to");
-    // Check if the span indicates that it is a deleted artwork
-    if (
-      span?.textContent?.trim() === "-----" &&
-      artworkPath?.startsWith("/artworks/")
-    ) {
-      // Extract ID from artworkPath by slicing off "/artworks/".
-      const keyword = `pixiv "${artworkPath.slice(10)}"`;
-      // Create a container element to hold the links.
-      const container = document.createElement("span");
-      container.className = span.className;
-      // For each search engine, create an <a> element and append it to the container.
-      searchEngines.forEach((engine, i) => {
-        const link = document.createElement("a");
-        link.href = engine.url + encodeURIComponent(keyword);
-        link.textContent = engine.name; // Display the search engine's name.
-        link.target = "_blank"; // Open in a new tab.
-        container.appendChild(link);
-        // Append a separator between links, except after the last one.
-        if (i < searchEngines.length - 1) {
-          container.appendChild(document.createTextNode(" | "));
-        }
-      });
-      // Replace the original <span> with the container holding the links.
-      span?.parentNode?.replaceChild(container, span);
-    }
-  });
-}
 
 Pages[PageType.Search] = {
   PageTypeString: "SearchPage",
@@ -233,75 +63,6 @@ Pages[PageType.Search] = {
         url
       )
     );
-  },
-  ProcessPageElements: function () {
-    const returnMap = {
-      loadingComplete: false,
-      controlElements: [],
-    };
-
-    const sections = $("section");
-    DoLog(LogLevel.Info, "Page has " + sections.length + " <section>.");
-    DoLog(LogLevel.Elements, sections);
-
-    let premiumSectionIndex = -1;
-    let resultSectionIndex = 0;
-    if (sections.length == 0) {
-      iLog.e("No suitable <section>!");
-      return returnMap;
-    }
-
-    $.each(sections, (i, e) => {
-      if ($(e).find("aside").length > 0) {
-        premiumSectionIndex = i;
-      } else {
-        resultSectionIndex = i;
-      }
-    });
-
-    iLog.v("premium: " + premiumSectionIndex);
-    iLog.v("result: " + resultSectionIndex);
-
-    const ul = $(sections[resultSectionIndex]).find("ul");
-    let lis = ul.find("li").toArray();
-    if (premiumSectionIndex != -1) {
-      const lis2 = $(sections[premiumSectionIndex]).find("ul").find("li");
-      lis = lis.concat(lis2.toArray());
-    }
-
-    if (premiumSectionIndex != -1) {
-      const aside = $(sections[premiumSectionIndex]).find("aside");
-      $.each(aside.children(), (i, e) => {
-        if (e.tagName.toLowerCase() != "ul") {
-          e.remove();
-        } else {
-          $(e).css("-webkit-mask", "0");
-        }
-      });
-      aside.next().remove();
-    }
-
-    processElementListCommon(lis);
-    returnMap.controlElements = $(".pp-control");
-    this.private.pageSelector = ul.next().get(0);
-    // fix: 除了“顶部”，“插画”、“漫画”的页选择器挪到了外面，兼容这种情况
-    if (this.private.pageSelector == null) {
-      this.private.pageSelector = ul.parent().next().get(0);
-    }
-    returnMap.loadingComplete = true;
-    this.private.imageListConrainer = ul.get(0);
-
-    DoLog(LogLevel.Info, "Process page elements complete.");
-    DoLog(LogLevel.Elements, returnMap);
-
-    this.private.returnMap = returnMap;
-    return returnMap;
-  },
-  GetProcessedPageElements: function () {
-    if (this.private.returnMap == null) {
-      return this.ProcessPageElements();
-    }
-    return this.private.returnMap;
   },
   GetToolBar: function () {
     return findToolbarCommon();
@@ -331,42 +92,6 @@ Pages[PageType.BookMarkNew] = {
       /^https:\/\/www.pixiv.net\/bookmark_new_illust_r18.php.*/.test(url)
     );
   },
-  ProcessPageElements: function () {
-    const returnMap = {
-      loadingComplete: false,
-      controlElements: [],
-    };
-
-    const sections = $("section");
-    DoLog(LogLevel.Info, "Page has " + sections.length + " <section>.");
-    DoLog(LogLevel.Elements, sections);
-
-    const lis = sections.find("ul").find("li");
-    processElementListCommon(lis);
-    returnMap.controlElements = $(".pp-control");
-    returnMap.loadingComplete = true;
-
-    DoLog(LogLevel.Info, "Process page elements complete.");
-    DoLog(LogLevel.Elements, returnMap);
-
-    this.private.returnMap = returnMap;
-
-    // 全尺寸缩略图
-    if (g_settings.fullSizeThumb) {
-      if (!this.private.returnMap.loadingComplete) {
-        return;
-      }
-      replaceThumbCommon(this.private.returnMap.controlElements);
-    }
-
-    return returnMap;
-  },
-  GetProcessedPageElements: function () {
-    if (this.private.returnMap == null) {
-      return this.ProcessPageElements();
-    }
-    return this.private.returnMap;
-  },
   GetToolBar: function () {
     return findToolbarCommon();
   },
@@ -380,38 +105,6 @@ Pages[PageType.Discovery] = {
   CheckUrl: function (url) {
     return /^https?:\/\/www.pixiv.net\/discovery.*/.test(url);
   },
-  ProcessPageElements: function () {
-    const returnMap = {
-      loadingComplete: false,
-      controlElements: [],
-    };
-
-    const containerDiv = $(".gtm-illust-recommend-zone");
-    if (containerDiv.length > 0) {
-      DoLog(LogLevel.Info, "Found container div.");
-      DoLog(LogLevel.Elements, containerDiv);
-    } else {
-      DoLog(LogLevel.Error, "Can not found container div.");
-      return returnMap;
-    }
-
-    const lis = containerDiv.find("ul").children("li");
-    processElementListCommon(lis);
-    returnMap.controlElements = $(".pp-control");
-    returnMap.loadingComplete = true;
-
-    DoLog(LogLevel.Info, "Process page elements complete.");
-    DoLog(LogLevel.Elements, returnMap);
-
-    this.private.returnMap = returnMap;
-    return returnMap;
-  },
-  GetProcessedPageElements: function () {
-    if (this.private.returnMap == null) {
-      return this.ProcessPageElements();
-    }
-    return this.private.returnMap;
-  },
   GetToolBar: function () {
     return findToolbarCommon();
   },
@@ -424,45 +117,6 @@ Pages[PageType.Member] = {
   PageTypeString: "MemberPage/MemberIllustPage/MemberBookMark",
   CheckUrl: function (url) {
     return /^https?:\/\/www.pixiv.net\/(en\/)?users\/\d+/.test(url);
-  },
-  ProcessPageElements: function () {
-    showSearchLinksForDeletedArtworks();
-    const returnMap = {
-      loadingComplete: false,
-      controlElements: [],
-    };
-
-    const lis = findLiByImgTag();
-    DoLog(LogLevel.Elements, lis);
-
-    const sections = $("section");
-    DoLog(LogLevel.Info, "Page has " + sections.length + " <section>.");
-    DoLog(LogLevel.Elements, sections);
-
-    processElementListCommon(lis);
-    returnMap.controlElements = $(".pp-control");
-    returnMap.loadingComplete = true;
-
-    DoLog(LogLevel.Info, "Process page elements complete.");
-    DoLog(LogLevel.Elements, returnMap);
-
-    this.private.returnMap = returnMap;
-
-    // 全尺寸缩略图
-    if (g_settings.fullSizeThumb) {
-      if (!this.private.returnMap.loadingComplete) {
-        return;
-      }
-      replaceThumbCommon(this.private.returnMap.controlElements);
-    }
-
-    return returnMap;
-  },
-  GetProcessedPageElements: function () {
-    if (this.private.returnMap == null) {
-      return this.ProcessPageElements();
-    }
-    return this.private.returnMap;
   },
   GetToolBar: function () {
     return findToolbarCommon();
@@ -485,39 +139,6 @@ Pages[PageType.Home] = {
       /https?:\/\/www.pixiv.net\/en\/cate_r18\.php$/.test(url)
     );
   },
-  ProcessPageElements: function () {
-    const returnMap = {
-      loadingComplete: false,
-      controlElements: [],
-    };
-
-    const lis = findLiByImgTag();
-
-    processElementListCommon(lis);
-    returnMap.controlElements = $(".pp-control");
-    returnMap.loadingComplete = true;
-
-    DoLog(LogLevel.Info, "Process page elements complete.");
-    DoLog(LogLevel.Elements, returnMap);
-
-    this.private.returnMap = returnMap;
-
-    // 全尺寸缩略图
-    if (g_settings.fullSizeThumb) {
-      if (!this.private.returnMap.loadingComplete) {
-        return;
-      }
-      replaceThumbCommon(this.private.returnMap.controlElements);
-    }
-
-    return returnMap;
-  },
-  GetProcessedPageElements: function () {
-    if (this.private.returnMap == null) {
-      return this.ProcessPageElements();
-    }
-    return this.private.returnMap;
-  },
   GetToolBar: function () {
     return findToolbarCommon();
   },
@@ -530,73 +151,6 @@ Pages[PageType.Ranking] = {
   PageTypeString: "RankingPage",
   CheckUrl: function (url) {
     return /^https?:\/\/www.pixiv.net\/ranking.php.*/.test(url);
-  },
-  ProcessPageElements: function () {
-    const returnMap = {
-      loadingComplete: false,
-      controlElements: [],
-    };
-
-    const works = $("._work");
-
-    DoLog(LogLevel.Info, "Found .work, length: " + works.length);
-    DoLog(LogLevel.Elements, works);
-
-    works.each(function (i, e) {
-      const _this = $(e);
-
-      const ctlAttrs = {
-        illustId: 0,
-        illustType: 0,
-        pageCount: 1,
-      };
-
-      const href = _this.attr("href");
-
-      if (href == null || href === "") {
-        DoLog("Can not found illust id, skip this.");
-        return;
-      }
-
-      const matched = href.match(/artworks\/(\d+)/);
-      if (matched) {
-        ctlAttrs.illustId = matched[1];
-      } else {
-        DoLog("Can not found illust id, skip this.");
-        return;
-      }
-
-      if (_this.hasClass("multiple")) {
-        ctlAttrs.pageCount = _this.find(".page-count").find("span").text();
-      }
-
-      if (_this.hasClass("ugoku-illust")) {
-        ctlAttrs.illustType = 2;
-      }
-
-      // 添加 attr
-      _this.attr({
-        illustId: ctlAttrs.illustId,
-        illustType: ctlAttrs.illustType,
-        pageCount: ctlAttrs.pageCount,
-      });
-
-      returnMap.controlElements.push(e);
-    });
-
-    returnMap.loadingComplete = true;
-
-    DoLog(LogLevel.Info, "Process page elements complete.");
-    DoLog(LogLevel.Elements, returnMap);
-
-    this.private.returnMap = returnMap;
-    return returnMap;
-  },
-  GetProcessedPageElements: function () {
-    if (this.private.returnMap == null) {
-      return this.ProcessPageElements();
-    }
-    return this.private.returnMap;
   },
   GetToolBar: function () {
     return findToolbarOld();
@@ -611,39 +165,6 @@ Pages[PageType.NewIllust] = {
   CheckUrl: function (url) {
     return /^https?:\/\/www.pixiv.net\/new_illust.php.*/.test(url);
   },
-  ProcessPageElements: function () {
-    const returnMap = {
-      loadingComplete: false,
-      controlElements: [],
-    };
-
-    const lis = findLiByImgTag();
-
-    processElementListCommon(lis);
-    returnMap.controlElements = $(".pp-control");
-    returnMap.loadingComplete = true;
-
-    DoLog(LogLevel.Info, "Process page elements complete.");
-    DoLog(LogLevel.Elements, returnMap);
-
-    this.private.returnMap = returnMap;
-
-    // 全尺寸缩略图
-    if (g_settings.fullSizeThumb) {
-      if (!this.private.returnMap.loadingComplete) {
-        return;
-      }
-      replaceThumbCommon(this.private.returnMap.controlElements);
-    }
-
-    return returnMap;
-  },
-  GetProcessedPageElements: function () {
-    if (this.private.returnMap == null) {
-      return this.ProcessPageElements();
-    }
-    return this.private.returnMap;
-  },
   GetToolBar: function () {
     return findToolbarCommon();
   },
@@ -657,9 +178,6 @@ Pages[PageType.R18] = {
   CheckUrl: function (url) {
     return /^https?:\/\/www.pixiv.net\/cate_r18.php.*/.test(url);
   },
-  ProcessPageElements: function () {
-    //
-  },
   GetToolBar: function () {
     //
   },
@@ -669,78 +187,6 @@ Pages[PageType.BookMark] = {
   PageTypeString: "BookMarkPage",
   CheckUrl: function (url) {
     return /^https:\/\/www.pixiv.net\/bookmark.php\/?$/.test(url);
-  },
-  ProcessPageElements: function () {
-    const returnMap = {
-      loadingComplete: false,
-      controlElements: [],
-    };
-
-    const images = $(".image-item");
-    DoLog(LogLevel.Info, "Found images, length: " + images.length);
-    DoLog(LogLevel.Elements, images);
-
-    images.each(function (i, e) {
-      const _this = $(e);
-
-      const work = _this.find("._work");
-      if (work.length === 0) {
-        DoLog(LogLevel.Warning, "Can not found ._work, skip this.");
-        return;
-      }
-
-      const ctlAttrs = {
-        illustId: 0,
-        illustType: 0,
-        pageCount: 1,
-      };
-
-      const href = work.attr("href");
-      if (href == null || href === "") {
-        DoLog(LogLevel.Warning, "Can not found illust id, skip this.");
-        return;
-      }
-
-      const matched = href.match(/artworks\/(\d+)/);
-      if (matched) {
-        ctlAttrs.illustId = matched[1];
-      } else {
-        DoLog(LogLevel.Warning, "Can not found illust id, skip this.");
-        return;
-      }
-
-      if (work.hasClass("multiple")) {
-        ctlAttrs.pageCount = _this.find(".page-count").find("span").text();
-      }
-
-      if (work.hasClass("ugoku-illust")) {
-        ctlAttrs.illustType = 2;
-      }
-
-      // 添加 attr
-      const control = _this.children("a:first");
-      control.attr({
-        illustId: ctlAttrs.illustId,
-        illustType: ctlAttrs.illustType,
-        pageCount: ctlAttrs.pageCount,
-      });
-
-      returnMap.controlElements.push(control.get(0));
-    });
-
-    returnMap.loadingComplete = true;
-
-    DoLog(LogLevel.Info, "Process page elements complete.");
-    DoLog(LogLevel.Elements, returnMap);
-
-    this.private.returnMap = returnMap;
-    return returnMap;
-  },
-  GetProcessedPageElements: function () {
-    if (this.private.returnMap == null) {
-      return this.ProcessPageElements();
-    }
-    return this.private.returnMap;
   },
   GetToolBar: function () {
     return findToolbarOld();
@@ -754,73 +200,6 @@ Pages[PageType.Stacc] = {
   PageTypeString: "StaccPage",
   CheckUrl: function (url) {
     return /^https:\/\/www.pixiv.net\/stacc.*/.test(url);
-  },
-  ProcessPageElements: function () {
-    const returnMap = {
-      loadingComplete: false,
-      controlElements: [],
-    };
-
-    const works = $("._work");
-
-    DoLog(LogLevel.Info, "Found .work, length: " + works.length);
-    DoLog(LogLevel.Elements, works);
-
-    works.each(function (i, e) {
-      const _this = $(e);
-
-      const ctlAttrs = {
-        illustId: 0,
-        illustType: 0,
-        pageCount: 1,
-      };
-
-      const href = _this.attr("href");
-
-      if (href == null || href === "") {
-        DoLog("Can not found illust id, skip this.");
-        return;
-      }
-
-      const matched = href.match(/illust_id=(\d+)/);
-      if (matched) {
-        ctlAttrs.illustId = matched[1];
-      } else {
-        DoLog("Can not found illust id, skip this.");
-        return;
-      }
-
-      if (_this.hasClass("multiple")) {
-        ctlAttrs.pageCount = _this.find(".page-count").find("span").text();
-      }
-
-      if (_this.hasClass("ugoku-illust")) {
-        ctlAttrs.illustType = 2;
-      }
-
-      // 添加 attr
-      _this.attr({
-        illustId: ctlAttrs.illustId,
-        illustType: ctlAttrs.illustType,
-        pageCount: ctlAttrs.pageCount,
-      });
-
-      returnMap.controlElements.push(e);
-    });
-
-    returnMap.loadingComplete = true;
-
-    DoLog(LogLevel.Info, "Process page elements complete.");
-    DoLog(LogLevel.Elements, returnMap);
-
-    this.private.returnMap = returnMap;
-    return returnMap;
-  },
-  GetProcessedPageElements: function () {
-    if (this.private.returnMap == null) {
-      return this.ProcessPageElements();
-    }
-    return this.private.returnMap;
   },
   GetToolBar: function () {
     return findToolbarOld();
@@ -837,45 +216,6 @@ Pages[PageType.Artwork] = {
       /^https:\/\/www.pixiv.net\/artworks\/.*/.test(url) ||
       /^https:\/\/www.pixiv.net\/en\/artworks\/.*/.test(url)
     );
-  },
-  ProcessPageElements: function () {
-    const canvas = $("main").find("figure").find("canvas");
-    if ($("main").find("figure").find("canvas").length > 0) {
-      this.private.needProcess = true;
-      canvas.addClass("pp-canvas");
-    }
-
-    const returnMap = {
-      loadingComplete: false,
-      controlElements: [],
-    };
-
-    const lis = findLiByImgTag();
-
-    processElementListCommon(lis);
-    returnMap.controlElements = $(".pp-control");
-    returnMap.loadingComplete = true;
-
-    DoLog(LogLevel.Info, "Process page elements complete.");
-    DoLog(LogLevel.Elements, returnMap);
-
-    this.private.returnMap = returnMap;
-
-    // 全尺寸缩略图
-    if (g_settings.fullSizeThumb) {
-      if (!this.private.returnMap.loadingComplete) {
-        return;
-      }
-      replaceThumbCommon(this.private.returnMap.controlElements);
-    }
-
-    return returnMap;
-  },
-  GetProcessedPageElements: function () {
-    if (this.private.returnMap == null) {
-      return this.ProcessPageElements();
-    }
-    return this.private.returnMap;
   },
   GetToolBar: function () {
     return findToolbarCommon();
@@ -999,24 +339,6 @@ Pages[PageType.NovelSearch] = {
       /^https:\/\/www.pixiv.net\/en\/tags\/.*\/novels/.test(url)
     );
   },
-  ProcessPageElements: function () {
-    const returnMap = {
-      loadingComplete: false,
-      controlElements: [],
-    };
-    const ul = $("section:first").find("ul:first");
-    if (ul.length > 0) {
-      returnMap.loadingComplete = true;
-    }
-    this.private.returnMap = returnMap;
-    return returnMap;
-  },
-  GetProcessedPageElements: function () {
-    if (this.private.returnMap == null) {
-      return this.ProcessPageElements();
-    }
-    return this.private.returnMap;
-  },
   GetToolBar: function () {
     return findToolbarCommon();
   },
@@ -1032,72 +354,6 @@ Pages[PageType.SearchTop] = {
   PageTypeString: "SearchTopPage",
   CheckUrl: function (url) {
     return /^https?:\/\/www.pixiv.net(\/en)?\/tags\/[^/*]/.test(url);
-  },
-  ProcessPageElements: function () {
-    const returnMap = {
-      loadingComplete: false,
-      controlElements: [],
-    };
-
-    const sections = $("section");
-    DoLog(LogLevel.Info, "Page has " + sections.length + " <section>.");
-    DoLog(LogLevel.Elements, sections);
-
-    let premiumSectionIndex = -1;
-    let resultSectionIndex = 0;
-    if (sections.length == 0) {
-      iLog.e("No suitable <section>!");
-      return returnMap;
-    }
-
-    if (sections.length > 1) {
-      premiumSectionIndex = 0;
-      resultSectionIndex = 1;
-    }
-
-    iLog.v("premium: " + premiumSectionIndex);
-    iLog.v("result: " + resultSectionIndex);
-
-    const ul = $(sections[resultSectionIndex]).find("ul");
-    let lis = ul.find("li").toArray();
-    if (premiumSectionIndex != -1) {
-      const lis2 = $(sections[premiumSectionIndex]).find("ul").find("li");
-      lis = lis.concat(lis2.toArray());
-    }
-
-    if (premiumSectionIndex != -1) {
-      const aside = $(sections[premiumSectionIndex]).find("aside");
-      $.each(aside.children(), (i, e) => {
-        if (e.tagName.toLowerCase() != "ul") {
-          e.remove();
-        } else {
-          $(e).css("-webkit-mask", "0");
-        }
-      });
-      aside.next().remove();
-    }
-
-    processElementListCommon(lis);
-    returnMap.controlElements = $(".pp-control");
-    this.private.pageSelector = ul.next().get(0);
-    // fix: 除了“顶部”，“插画”、“漫画”的页选择器挪到了外面，兼容这种情况
-    if (this.private.pageSelector == null) {
-      this.private.pageSelector = ul.parent().next().get(0);
-    }
-    returnMap.loadingComplete = true;
-    this.private.imageListConrainer = ul.get(0);
-
-    DoLog(LogLevel.Info, "Process page elements complete.");
-    DoLog(LogLevel.Elements, returnMap);
-
-    this.private.returnMap = returnMap;
-    return returnMap;
-  },
-  GetProcessedPageElements: function () {
-    if (this.private.returnMap == null) {
-      return this.ProcessPageElements();
-    }
-    return this.private.returnMap;
   },
   GetToolBar: function () {
     return findToolbarCommon();
@@ -1119,44 +375,6 @@ Pages[PageType.SearchTop] = {
     returnMap: null,
   },
 };
-
-function CheckUrlTest() {
-  const urls = [
-    "http://www.pixiv.net",
-    "http://www.pixiv.net",
-    "https://www.pixiv.net",
-    "https://www.pixiv.net/",
-    "https://www.pixiv.net/?lang=en",
-    "https://www.pixiv.net/search.php?s_mode=s_tag&word=miku",
-    "https://www.pixiv.net/search.php?word=VOCALOID&s_mode=s_tag_full",
-    "https://www.pixiv.net/discovery",
-    "https://www.pixiv.net/discovery?x=1",
-    "https://www.pixiv.net/member.php?id=3207350",
-    "https://www.pixiv.net/member_illust.php?id=3207350&type=illust",
-    "https://www.pixiv.net/bookmark.php?id=3207350&rest=show",
-    "https://www.pixiv.net/ranking.php?mode=daily&content=ugoira",
-    "https://www.pixiv.net/ranking.php?mode=daily",
-    "https://www.pixiv.net/new_illust.php",
-    "https://www.pixiv.net/new_illust.php?x=1",
-    "https://www.pixiv.net/cate_r18.php",
-    "https://www.pixiv.net/cate_r18.php?x=1",
-    "https://www.pixiv.net/bookmark.php",
-    "https://www.pixiv.net/bookmark.php?x=1",
-    "https://www.pixiv.net/stacc?mode=unify",
-    "https://www.pixiv.net/artworks/77996773",
-    "https://www.pixiv.net/artworks/77996773#preview",
-    "https://www.pixiv.net/tags/miku/novels",
-  ];
-
-  for (let j = 0; j < urls.length; j++) {
-    for (let i = 0; i < PageType.PageTypeCount; i++) {
-      if (Pages[i].CheckUrl(urls[j])) {
-        console.log(urls[j]);
-        console.log("[" + j + "] is " + Pages[i].PageTypeString);
-      }
-    }
-  }
-}
 
 /* ---------------------------------------- 排序 ---------------------------------------- */
 let imageElementTemplate = null;
@@ -1603,7 +821,7 @@ function PixivSK(callback) {
         json = JSON.parse(event.responseText);
       } catch (e) {
         DoLog(LogLevel.Error, "Parse json failed!");
-        DoLog(LogLevel.Element, e);
+        DoLog(LogLevel.Elements, e);
         return;
       }
 
@@ -1697,7 +915,7 @@ function PixivSK(callback) {
         }
       }
       if (indexOfThisRequest == -1) {
-        DoLog("This url not match any request!");
+        DoLog(LogLevel.Error, "This url not match any request!");
         return;
       }
       works[
@@ -2136,8 +1354,6 @@ function PixivSK(callback) {
       // 恢复显示
       $("#loading").remove();
       $(container).show();
-
-      Pages[PageType.Search].ProcessPageElements();
 
       // 监听键盘的左右键，用来翻页
       $(document).keydown(function (e) {
