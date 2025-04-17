@@ -2475,7 +2475,7 @@ function Load() {
   // g_csrfToken
   if (g_pageType == PageType.Search || g_pageType == PageType.NovelSearch) {
     $.get(location.href, function (data) {
-      const matched = data.match(/token":"([a-z0-9]{32})/);
+      const matched = data.match(/token\\":\\"([a-z0-9]{32})/);
       if (matched.length > 0) {
         g_csrfToken = matched[1];
         DoLog(LogLevel.Info, "Got g_csrfToken: " + g_csrfToken);
