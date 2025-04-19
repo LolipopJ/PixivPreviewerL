@@ -1,6 +1,6 @@
 {
   "name": "pixiv-previewer-l",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "Original project: https://github.com/Ocrosoft/PixivPreviewer.",
   "private": true,
   "main": "dist/index.js",

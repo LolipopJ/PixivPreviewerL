@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             0.2.4-2025/4/3
+// @version             0.2.5-2025/4/19
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0
@@ -19,7 +19,7 @@
 // ==/UserScript==
 
 // src/constants/index.ts
-var g_version = "0.2.4";
+var g_version = "0.2.5";
 var g_getUgoiraUrl = "/ajax/illust/#id#/ugoira_meta";
 var g_getNovelUrl = "/ajax/search/novels/#key#?word=#key#&p=#page#";
 var g_loadingImage = "https://pp-1252089172.cos.ap-chengdu.myqcloud.com/loading.gif";
@@ -1549,6 +1549,33 @@ function convertThumbUrlToSmall(thumbUrl) {
   const replace1 = "c/540x540_70/img-master";
   const replace2 = "_master";
   return thumbUrl.replace(/c\/.*\/custom-thumb/, replace1).replace("_custom", replace2).replace(/c\/.*\/img-master/, replace1).replace("_square", replace2);
+}
+function showSearchLinksForDeletedArtworks() {
+  const searchEngines = [
+    { name: "Google", url: "https://www.google.com/search?q=" },
+    { name: "Bing", url: "https://www.bing.com/search?q=" },
+    { name: "Baidu", url: "https://www.baidu.com/s?wd=" }
+  ];
+  const spans = document.querySelectorAll("span[to]");
+  spans.forEach((span) => {
+    const artworkPath = span.getAttribute("to");
+    if (span.textContent.trim() === "-----" && artworkPath.startsWith("/artworks/")) {
+      const keyword = `pixiv "${artworkPath.slice(10)}"`;
+      const container = document.createElement("span");
+      container.className = span.className;
+      searchEngines.forEach((engine, i) => {
+        const link = document.createElement("a");
+        link.href = engine.url + encodeURIComponent(keyword);
+        link.textContent = engine.name;
+        link.target = "_blank";
+        container.appendChild(link);
+        if (i < searchEngines.length - 1) {
+          container.appendChild(document.createTextNode(" | "));
+        }
+      });
+      span.parentNode.replaceChild(container, span);
+    }
+  });
 }
 Pages[0 /* Search */] = {
   PageTypeString: "SearchPage",
@@ -3324,6 +3351,30 @@ function Load() {
       }, 7e3);
     });
   }
+  if ($("#pp-nextPage-fixed").length === 0) {
+    const newListItem = toolBar.firstChild.cloneNode(true);
+    newListItem.innerHTML = "";
+    const newButton = document.createElement("button");
+    newButton.id = "pp-nextPage-fixed";
+    newButton.style.cssText = "background-color: rgb(0, 0, 0); margin-top: 5px; opacity: 0.8; cursor: pointer; border: none; padding: 12px; border-radius: 24px; width: 48px; height: 48px;";
+    newButton.innerHTML = '<svg viewBox="0 0 120 120" width="24" height="24" stroke="white" fill="none" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" style="transform: rotate(90deg);"> <polyline points="60,105 60,8"></polyline> <polyline points="10,57 60,8 110,57"></polyline> </svg>';
+    newListItem.appendChild(newButton);
+    toolBar.appendChild(newListItem);
+    $(newButton).click(function() {
+      let nextPageHref = null;
+      const nextPageAnchor = $(".pp-nextPage");
+      if (nextPageAnchor.length > 0 && nextPageAnchor.attr("hidden") !== "hidden") {
+        nextPageHref = nextPageAnchor.attr("href");
+      } else {
+        nextPageHref = Array.from(document.querySelectorAll("nav")).find(
+          (nav) => Array.from(nav.children).filter((el) => el.tagName === "A").every((el) => /\?p=\d+$/.test(el.href))
+        )?.lastElementChild?.href ?? null;
+      }
+      if (nextPageHref != null) {
+        location.href = nextPageHref;
+      }
+    });
+  }
   if ($("#pp-settings").length === 0) {
     const newListItem = toolBar.firstChild.cloneNode(true);
     newListItem.innerHTML = "";
@@ -3339,7 +3390,7 @@ function Load() {
   }
   if (g_pageType == 0 /* Search */ || g_pageType == 11 /* NovelSearch */) {
     $.get(location.href, function(data) {
-      const matched = data.match(/token":"([a-z0-9]{32})/);
+      const matched = data.match(/token\\":\\"([a-z0-9]{32})/);
       if (matched.length > 0) {
         g_csrfToken = matched[1];
         DoLog(3 /* Info */, "Got g_csrfToken: " + g_csrfToken);
@@ -3350,6 +3401,9 @@ function Load() {
         );
       }
     });
+  }
+  if (g_pageType === 3 /* Member */) {
+    showSearchLinksForDeletedArtworks();
   }
   function runPixivPreview(eventFromButton = false) {
     iLog.i("Global settings", g_settings);
