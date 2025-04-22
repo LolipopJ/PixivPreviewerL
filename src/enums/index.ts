@@ -68,3 +68,19 @@ export enum PageType {
   // 搜索顶部 tab
   SearchTop,
 }
+
+/** 插画（漫画）作品排序类型 */
+export enum IllustSortType {
+  TAG_ARTWORK,
+  TAG_ILLUST,
+  TAG_MANGA,
+  BOOKMARK_NEW,
+  BOOKMARK_NEW_R18,
+  USER_ARTWORK,
+  USER_ILLUST,
+  USER_MANGA,
+  USER_BOOKMARK_NEW,
+  DISCOVERY,
+  NEW,
+  NEW_R18,
+}

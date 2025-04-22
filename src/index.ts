@@ -3,9 +3,11 @@ import {
   g_loadingImage,
   g_maxXhr,
   g_version,
+  SORT_EVENT_NAME,
 } from "./constants";
 import { Lang, LogLevel, PageType } from "./enums";
 import { loadIllustPreview } from "./features/preview";
+import { loadIllustSort } from "./features/sort";
 import Texts from "./i18n";
 import { request } from "./services";
 import { GlobalSettings } from "./types";
@@ -1549,10 +1551,26 @@ const initializePixivPreviewer = () => {
       }
     };
 
-    // 初始化图片预览功能
+    // 初始化作品预览功能
     if (g_settings.enablePreview) {
       loadIllustPreview(g_settings);
     }
+
+    // 初始化作品排序功能
+    $.get(location.href, function (data) {
+      const matched = data.match(/token\\":\\"([a-z0-9]{32})/);
+      if (matched.length > 0) {
+        g_csrfToken = matched[1];
+        DoLog(LogLevel.Info, "Got g_csrfToken: " + g_csrfToken);
+
+        loadIllustSort({ ...g_settings, csrfToken: g_csrfToken });
+      } else {
+        DoLog(
+          LogLevel.Error,
+          "Can not get g_csrfToken, sort function is disabled."
+        );
+      }
+    });
 
     // 匹配当前页面
     for (let i = 0; i < Object.keys(Pages).length; i++) {
@@ -1581,6 +1599,25 @@ const initializePixivPreviewer = () => {
       return;
     }
 
+    // 添加排序按钮
+    if (!$("#pp-sort").length) {
+      const newListItem = toolBar.firstChild.cloneNode(true) as HTMLElement;
+      newListItem.title = "Sort artworks";
+      newListItem.innerHTML = "";
+      const newButton = document.createElement("button");
+      newButton.id = "pp-sort";
+      newButton.style.cssText =
+        "box-sizing: border-box; background-color: rgba(0,0,0,0.32); margin-top: 5px; opacity: 0.8; cursor: pointer; border: none; padding: 0px; border-radius: 24px; width: 48px; height: 48px;";
+      newButton.innerHTML = `<span style="color: #fff; font-size: 12px;">${Texts[g_language].text_sort}</span>`;
+      newListItem.appendChild(newButton);
+      toolBar.appendChild(newListItem);
+
+      $(newButton).on("click", () => {
+        const sortEvent = new Event(SORT_EVENT_NAME);
+        window.dispatchEvent(sortEvent);
+      });
+    }
+
     // 添加设置按钮
     if (!$("#pp-settings").length) {
       const newListItem = toolBar.firstChild.cloneNode(true) as HTMLElement;
@@ -1589,7 +1626,7 @@ const initializePixivPreviewer = () => {
       const newButton = document.createElement("button");
       newButton.id = "pp-settings";
       newButton.style.cssText =
-        "box-sizing: border-box; background-color: rgb(0, 0, 0); margin-top: 5px; opacity: 0.8; cursor: pointer; border: none; padding: 12px; border-radius: 24px; width: 48px; height: 48px;";
+        "box-sizing: border-box; background-color: rgba(0,0,0,0.32); margin-top: 5px; opacity: 0.8; cursor: pointer; border: none; padding: 12px; border-radius: 24px; width: 48px; height: 48px;";
       newButton.innerHTML =
         '<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px" viewBox="0 0 1000 1000" enable-background="new 0 0 1000 1000" xml:space="preserve" style="fill: white;"><metadata> Svg Vector Icons : http://www.sfont.cn </metadata><g><path d="M377.5,500c0,67.7,54.8,122.5,122.5,122.5S622.5,567.7,622.5,500S567.7,377.5,500,377.5S377.5,432.3,377.5,500z"></path><path d="M990,546v-94.8L856.2,411c-8.9-35.8-23-69.4-41.6-100.2L879,186L812,119L689,185.2c-30.8-18.5-64.4-32.6-100.2-41.5L545.9,10h-94.8L411,143.8c-35.8,8.9-69.5,23-100.2,41.5L186.1,121l-67,66.9L185.2,311c-18.6,30.8-32.6,64.4-41.5,100.3L10,454v94.8L143.8,589c8.9,35.8,23,69.4,41.6,100.2L121,814l67,67l123-66.2c30.8,18.6,64.5,32.6,100.3,41.5L454,990h94.8L589,856.2c35.8-8.9,69.4-23,100.2-41.6L814,879l67-67l-66.2-123.1c18.6-30.7,32.6-64.4,41.5-100.2L990,546z M500,745c-135.3,0-245-109.7-245-245c0-135.3,109.7-245,245-245s245,109.7,245,245C745,635.3,635.3,745,500,745z"></path></g></svg>';
       newListItem.appendChild(newButton);
@@ -1597,22 +1634,6 @@ const initializePixivPreviewer = () => {
 
       $(newButton).on("click", () => {
         ShowSetting();
-      });
-    }
-
-    // g_csrfToken
-    if (g_pageType == PageType.Search) {
-      $.get(location.href, function (data) {
-        const matched = data.match(/token\\":\\"([a-z0-9]{32})/);
-        if (matched.length > 0) {
-          g_csrfToken = matched[1];
-          DoLog(LogLevel.Info, "Got g_csrfToken: " + g_csrfToken);
-        } else {
-          DoLog(
-            LogLevel.Error,
-            "Can not get g_csrfToken, so you can not add works to bookmark when sorting has enabled."
-          );
-        }
       });
     }
 

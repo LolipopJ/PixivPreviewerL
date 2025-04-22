@@ -1,7 +1,8 @@
-import { g_loadingImage } from "../constants";
+import { g_loadingImage, SORT_EVENT_NAME } from "../constants";
 import { Lang } from "../enums";
 import Texts from "../i18n";
 import { GlobalSettings } from "../types";
+import { iLog } from "../utils/logger";
 
 type LoadIllustSortOptions = Pick<
   GlobalSettings,
@@ -13,7 +14,7 @@ type LoadIllustSortOptions = Pick<
   | "hideByTagList"
   | "aiFilter"
   | "lang"
->;
+> & { csrfToken: string };
 
 const ILLUST_PER_PAGE = 60;
 
@@ -28,6 +29,7 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
     hideByTagList = [],
     aiFilter = false,
     lang = Lang.zh_CN,
+    csrfToken,
   } = options;
   let { pageCount, favFilter } = options;
   if (pageCount <= 0) {
@@ -99,6 +101,10 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
       this.progressElement.show();
     }
   }
+
+  window.addEventListener(SORT_EVENT_NAME, () => {
+    iLog.i("Sorting artworks...");
+  });
 
   isInitialized = true;
 };
