@@ -21,6 +21,32 @@
 
 [Pixiv Plus](https://greasyfork.org/en/scripts/34153) 是另一个我在浏览器上的必备插件，在兼容它的同时，对此插件的维护开发也将避免做与它重复的工作。您可以放心地同时启用这两个插件。
 
+## 开发中的功能
+
+- [ ] 作品排序功能
+  - [ ] Feature：功能覆盖页面
+    - [ ] 标签搜索
+      - [ ] 顶部：<https://www.pixiv.net/tags/%E5%A4%A9%E7%AB%A5%E3%82%A2%E3%83%AA%E3%82%B9/artworks>
+      - [ ] 插画：<https://www.pixiv.net/tags/%E5%A4%A9%E7%AB%A5%E3%82%A2%E3%83%AA%E3%82%B9/illustrations>
+      - [ ] 漫画：<https://www.pixiv.net/tags/%E5%A4%A9%E7%AB%A5%E3%82%A2%E3%83%AA%E3%82%B9/manga>
+    - [ ] 关注用户的新作品
+      - [ ] 全年龄：<https://www.pixiv.net/bookmark_new_illust.php>
+      - [ ] 限制级：<https://www.pixiv.net/bookmark_new_illust_r18.php>
+    - [ ] 用户主页
+      - [ ] 发表的插画 / 漫画：<https://www.pixiv.net/users/333556/artworks>
+      - [ ] 发表的插画：<https://www.pixiv.net/users/333556/illustrations>
+      - [ ] 发表的漫画：<https://www.pixiv.net/users/49906039/manga>
+      - [ ] 收藏的插画 / 漫画：<https://www.pixiv.net/users/17435436/bookmarks/artworks>
+    - [ ] 发现作品：<https://www.pixiv.net/discovery>
+    - [ ] 新作品：
+      - [ ] 全年龄：<https://www.pixiv.net/new_illust.php>
+      - [ ] 限制级：<https://www.pixiv.net/new_illust_r18.php>
+  - [ ] Feature：支持按发布日期排序（过滤收藏数小于指定的作品）
+  - [ ] Feature：对 AI 生成作品和 AI 加笔作品显示特殊标记
+  - [ ] Feature：支持过滤 AI 加笔作品
+  - [ ] Feature：对收藏快速增长的作品显示特殊标记
+  - [ ] Perf：排序的结果分批展示，滚动到底部时渲染后续内容
+
 ## 开发
 
 安装项目依赖：
