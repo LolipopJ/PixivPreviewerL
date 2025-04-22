@@ -1,7 +1,5 @@
 import {
   g_defaultSettings,
-  g_getNovelUrl,
-  g_getUgoiraUrl,
   g_loadingImage,
   g_maxXhr,
   g_version,
@@ -18,15 +16,147 @@ let g_language = Lang.zh_CN;
 // 添加收藏需要这个
 let g_csrfToken = "";
 // 当前页面类型
-let g_pageType = -1;
-// 页面打开时的 url
-let initialUrl = location.href;
+let g_pageType: PageType;
 // 设置
-let g_settings;
-// 排序是否完成（如果排序时页面出现了非刷新切换，强制刷新）
-let g_sortComplete = true;
+let g_settings: GlobalSettings;
 
-const Pages = {};
+//#region 页面
+const Pages: Record<
+  PageType,
+  {
+    PageTypeString: string;
+    CheckUrl: (url: string) => boolean;
+    GetToolBar: () => HTMLElement;
+  }
+> = {
+  [PageType.Search]: {
+    PageTypeString: "SearchPage",
+    CheckUrl: function (url) {
+      // 没有 /artworks 的页面不支持
+      return /^https?:\/\/www.pixiv.net(\/en)?\/tags\/.+\/(artworks|illustrations|manga)/.test(
+        url
+      );
+    },
+    GetToolBar: function () {
+      return findToolbarCommon();
+    },
+  },
+  [PageType.BookMarkNew]: {
+    PageTypeString: "BookMarkNewPage",
+    CheckUrl: function (url) {
+      return /^https:\/\/www.pixiv.net(\/en)?\/bookmark_new_illust(_r18)?.php.*/.test(
+        url
+      );
+    },
+    GetToolBar: function () {
+      return findToolbarCommon();
+    },
+  },
+  [PageType.Discovery]: {
+    PageTypeString: "DiscoveryPage",
+    CheckUrl: function (url) {
+      return /^https?:\/\/www.pixiv.net(\/en)?\/discovery.*/.test(url);
+    },
+    GetToolBar: function () {
+      return findToolbarCommon();
+    },
+  },
+  [PageType.Member]: {
+    PageTypeString: "MemberPage/MemberIllustPage/MemberBookMark",
+    CheckUrl: function (url) {
+      return /^https?:\/\/www.pixiv.net(\/en)?\/users\/\d+/.test(url);
+    },
+    GetToolBar: function () {
+      return findToolbarCommon();
+    },
+  },
+  [PageType.Home]: {
+    PageTypeString: "HomePage",
+    CheckUrl: function (url) {
+      return (
+        /https?:\/\/www.pixiv.net(\/en)?\/?$/.test(url) ||
+        /https?:\/\/www.pixiv.net(\/en)?\/illustration\/?$/.test(url) ||
+        /https?:\/\/www.pixiv.net(\/en)?\/manga\/?$/.test(url) ||
+        /https?:\/\/www.pixiv.net(\/en)?\/cate_r18\.php$/.test(url)
+      );
+    },
+    GetToolBar: function () {
+      return findToolbarCommon();
+    },
+  },
+  [PageType.Ranking]: {
+    PageTypeString: "RankingPage",
+    CheckUrl: function (url) {
+      return /^https?:\/\/www.pixiv.net(\/en)?\/ranking.php.*/.test(url);
+    },
+    GetToolBar: function () {
+      return findToolbarOld();
+    },
+  },
+  [PageType.NewIllust]: {
+    PageTypeString: "NewIllustPage",
+    CheckUrl: function (url) {
+      return /^https?:\/\/www.pixiv.net(\/en)?\/new_illust.php.*/.test(url);
+    },
+    GetToolBar: function () {
+      return findToolbarCommon();
+    },
+  },
+  [PageType.R18]: {
+    PageTypeString: "R18Page",
+    CheckUrl: function (url) {
+      return /^https?:\/\/www.pixiv.net(\/en)?\/cate_r18.php.*/.test(url);
+    },
+    GetToolBar: function () {
+      return findToolbarCommon();
+    },
+  },
+  [PageType.BookMark]: {
+    PageTypeString: "BookMarkPage",
+    CheckUrl: function (url) {
+      return /^https:\/\/www.pixiv.net(\/en)?\/bookmark.php\/?$/.test(url);
+    },
+    GetToolBar: function () {
+      return findToolbarOld();
+    },
+  },
+  [PageType.Stacc]: {
+    PageTypeString: "StaccPage",
+    CheckUrl: function (url) {
+      return /^https:\/\/www.pixiv.net(\/en)?\/stacc.*/.test(url);
+    },
+    GetToolBar: function () {
+      return findToolbarOld();
+    },
+  },
+  [PageType.Artwork]: {
+    PageTypeString: "ArtworkPage",
+    CheckUrl: function (url) {
+      return /^https:\/\/www.pixiv.net(\/en)?\/artworks\/.*/.test(url);
+    },
+    GetToolBar: function () {
+      return findToolbarCommon();
+    },
+  },
+  [PageType.NovelSearch]: {
+    PageTypeString: "NovelSearchPage",
+    CheckUrl: function (url) {
+      return /^https:\/\/www.pixiv.net(\/en)?\/tags\/.*\/novels/.test(url);
+    },
+    GetToolBar: function () {
+      return findToolbarCommon();
+    },
+  },
+  [PageType.SearchTop]: {
+    PageTypeString: "SearchTopPage",
+    CheckUrl: function (url) {
+      return /^https?:\/\/www.pixiv.net(\/en)?\/tags\/[^/*]/.test(url);
+    },
+    GetToolBar: function () {
+      return findToolbarCommon();
+    },
+  },
+};
 
 function findToolbarCommon() {
   const rootToolbar = $("#root").find("ul:last").get(0);
@@ -34,21 +164,9 @@ function findToolbarCommon() {
   const nextToolbar = $("#__next").find("ul:last").get(0);
   return nextToolbar;
 }
+
 function findToolbarOld() {
   return $("._toolmenu").get(0);
-}
-function convertThumbUrlToSmall(thumbUrl) {
-  // 目前发现有以下两种格式的缩略图
-  // https://i.pximg.net/c/128x128/custom-thumb/img/2021/01/31/20/35/53/87426718_p0_custom1200.jpg
-  // https://i.pximg.net/c/128x128/img-master/img/2021/01/31/10/57/06/87425082_p0_square1200.jpg
-  const replace1 = "c/540x540_70/img-master";
-  //let replace1 = 'img-master'; // 这个是转到regular的，比small的大多了，会很慢
-  const replace2 = "_master";
-  return thumbUrl
-    .replace(/c\/.*\/custom-thumb/, replace1)
-    .replace("_custom", replace2)
-    .replace(/c\/.*\/img-master/, replace1)
-    .replace("_square", replace2);
 }
 
 // Replaces deleted artwork indicators with search engine links.
@@ -90,367 +208,15 @@ function showSearchLinksForDeletedArtworks() {
     }
   });
 }
+//#endregion
 
-Pages[PageType.Search] = {
-  PageTypeString: "SearchPage",
-  CheckUrl: function (url) {
-    // 没有 /artworks 的页面不支持
-    return (
-      /^https?:\/\/www.pixiv.net\/tags\/.*\/(artworks|illustrations|manga)/.test(
-        url
-      ) ||
-      /^https?:\/\/www.pixiv.net\/en\/tags\/.*\/(artworks|illustrations|manga)/.test(
-        url
-      )
-    );
-  },
-  GetToolBar: function () {
-    return findToolbarCommon();
-  },
-  // 搜索页有 lazyload，不开排序的情况下，最后几张图片可能会无法预览。这里把它当做自动加载处理
-  HasAutoLoad: true,
-  GetImageListContainer: function () {
-    return this.private.imageListConrainer;
-  },
-  GetFirstImageElement: function () {
-    return $(this.private.imageListConrainer).find("li").get(0);
-  },
-  GetPageSelector: function () {
-    const sections = $("section");
-    if (sections.length === 0) {
-      return null;
-    }
-
-    let resultSectionIndex = 0;
-    $.each(sections, (i, e) => {
-      if ($(e).find("aside").length === 0) {
-        resultSectionIndex = i;
-      }
-    });
-
-    const ul = $(sections[resultSectionIndex]).find("ul");
-    return ul.next().get(0) ?? ul.parent().next().get(0);
-  },
-  private: {
-    imageListContainer: null,
-    pageSelector: null,
-    returnMap: null,
-  },
-};
-Pages[PageType.BookMarkNew] = {
-  PageTypeString: "BookMarkNewPage",
-  CheckUrl: function (url) {
-    return (
-      /^https:\/\/www.pixiv.net\/bookmark_new_illust.php.*/.test(url) ||
-      /^https:\/\/www.pixiv.net\/bookmark_new_illust_r18.php.*/.test(url)
-    );
-  },
-  GetToolBar: function () {
-    return findToolbarCommon();
-  },
-  HasAutoLoad: true,
-  private: {
-    returnMap: null,
-  },
-};
-Pages[PageType.Discovery] = {
-  PageTypeString: "DiscoveryPage",
-  CheckUrl: function (url) {
-    return /^https?:\/\/www.pixiv.net\/discovery.*/.test(url);
-  },
-  GetToolBar: function () {
-    return findToolbarCommon();
-  },
-  HasAutoLoad: true,
-  private: {
-    returnMap: null,
-  },
-};
-Pages[PageType.Member] = {
-  PageTypeString: "MemberPage/MemberIllustPage/MemberBookMark",
-  CheckUrl: function (url) {
-    return /^https?:\/\/www.pixiv.net\/(en\/)?users\/\d+/.test(url);
-  },
-  GetToolBar: function () {
-    return findToolbarCommon();
-  },
-  // 跟搜索页一样的情况
-  HasAutoLoad: true,
-  private: {
-    returnMap: null,
-  },
-};
-Pages[PageType.Home] = {
-  PageTypeString: "HomePage",
-  CheckUrl: function (url) {
-    return (
-      /https?:\/\/www.pixiv.net\/?$/.test(url) ||
-      /https?:\/\/www.pixiv.net\/en\/?$/.test(url) ||
-      /https?:\/\/www.pixiv.net\/illustration\/?$/.test(url) ||
-      /https?:\/\/www.pixiv.net\/manga\/?$/.test(url) ||
-      /https?:\/\/www.pixiv.net\/cate_r18\.php$/.test(url) ||
-      /https?:\/\/www.pixiv.net\/en\/cate_r18\.php$/.test(url)
-    );
-  },
-  GetToolBar: function () {
-    return findToolbarCommon();
-  },
-  HasAutoLoad: true,
-  private: {
-    returnMap: null,
-  },
-};
-Pages[PageType.Ranking] = {
-  PageTypeString: "RankingPage",
-  CheckUrl: function (url) {
-    return /^https?:\/\/www.pixiv.net\/ranking.php.*/.test(url);
-  },
-  GetToolBar: function () {
-    return findToolbarOld();
-  },
-  HasAutoLoad: true,
-  private: {
-    returnMap: null,
-  },
-};
-Pages[PageType.NewIllust] = {
-  PageTypeString: "NewIllustPage",
-  CheckUrl: function (url) {
-    return /^https?:\/\/www.pixiv.net\/new_illust.php.*/.test(url);
-  },
-  GetToolBar: function () {
-    return findToolbarCommon();
-  },
-  HasAutoLoad: true,
-  private: {
-    returnMap: null,
-  },
-};
-Pages[PageType.R18] = {
-  PageTypeString: "R18Page",
-  CheckUrl: function (url) {
-    return /^https?:\/\/www.pixiv.net\/cate_r18.php.*/.test(url);
-  },
-  GetToolBar: function () {
-    //
-  },
-  HasAutoLoad: false,
-};
-Pages[PageType.BookMark] = {
-  PageTypeString: "BookMarkPage",
-  CheckUrl: function (url) {
-    return /^https:\/\/www.pixiv.net\/bookmark.php\/?$/.test(url);
-  },
-  GetToolBar: function () {
-    return findToolbarOld();
-  },
-  HasAutoLoad: false,
-  private: {
-    returnMap: null,
-  },
-};
-Pages[PageType.Stacc] = {
-  PageTypeString: "StaccPage",
-  CheckUrl: function (url) {
-    return /^https:\/\/www.pixiv.net\/stacc.*/.test(url);
-  },
-  GetToolBar: function () {
-    return findToolbarOld();
-  },
-  HasAutoLoad: true,
-  private: {
-    returnMap: null,
-  },
-};
-Pages[PageType.Artwork] = {
-  PageTypeString: "ArtworkPage",
-  CheckUrl: function (url) {
-    return (
-      /^https:\/\/www.pixiv.net\/artworks\/.*/.test(url) ||
-      /^https:\/\/www.pixiv.net\/en\/artworks\/.*/.test(url)
-    );
-  },
-  GetToolBar: function () {
-    return findToolbarCommon();
-  },
-  HasAutoLoad: true,
-  Work: function () {
-    function AddDownloadButton(button, offsetToOffsetTop) {
-      if (!g_settings.enableAnimeDownload) {
-        return;
-      }
-
-      const cloneButton = button.clone().css({
-        bottom: "50px",
-        padding: 0,
-        width: "48px",
-        height: "48px",
-        opacity: "0.4",
-        cursor: "pointer",
-      });
-      cloneButton.get(0).innerHTML =
-        '<svg viewBox="0 0 120 120" style="width: 40px; height: 40px; stroke-width: 10; stroke-linecap: round; stroke-linejoin: round; border-radius: 24px; background-color: black; stroke: limegreen; fill: none;" class="_3Fo0Hjg"><polyline points="60,30 60,90"></polyline><polyline points="30,60 60,90 90,60"></polyline></svg></button>';
-
-      function MoveButton() {
-        function getOffset(e) {
-          if (e.offsetParent) {
-            const offset = getOffset(e.offsetParent);
-            return {
-              offsetTop: e.offsetTop + offset.offsetTop,
-              offsetLeft: e.offsetLeft + offset.offsetLeft,
-            };
-          } else {
-            return {
-              offsetTop: e.offsetTop,
-              offsetLeft: e.offsetLeft,
-            };
-          }
-        }
-
-        /*let offset = getOffset(button.get(0));
-                DoLog(LogLevel.Info, 'offset of download button: ' + offset.offsetTop + ', ' + offset.offsetLeft);
-                DoLog(LogLevel.Elements, offset);
-
-                cloneButton.css({ 'position': 'absolute' }).show();*/
-      }
-
-      MoveButton();
-      $(window).on("resize", MoveButton);
-      button.after(cloneButton);
-
-      cloneButton
-        .mouseover(function () {
-          $(this).css("opacity", "0.2");
-        })
-        .mouseleave(function () {
-          $(this).css("opacity", "0.4");
-        })
-        .click(function () {
-          let illustId = "";
-
-          const matched = location.href.match(/artworks\/(\d+)/);
-          if (matched) {
-            illustId = matched[1];
-            DoLog(LogLevel.Info, "IllustId=" + illustId);
-          } else {
-            DoLog(LogLevel.Error, "Can not found illust id!");
-            return;
-          }
-
-          $.ajax(g_getUgoiraUrl.replace("#id#", illustId), {
-            method: "GET",
-            success: function (json) {
-              DoLog(LogLevel.Elements, json);
-
-              if (json.error == true) {
-                DoLog(
-                  LogLevel.Error,
-                  "Server response an error: " + json.message
-                );
-                return;
-              }
-
-              // 因为浏览器会拦截不同域的 open 操作，绕一下
-              const newWindow = window.open("_blank");
-              newWindow.location = json.body.originalSrc;
-            },
-            error: function () {
-              DoLog(LogLevel.Error, "Request zip file failed!");
-            },
-          });
-        });
-    }
-
-    if (this.private.needProcess) {
-      const canvas = $(".pp-canvas");
-      // 普通模式，只需要添加下载按钮到内嵌模式的 div 里
-      const div = $('div[role="presentation"]:last');
-      const button = div.find("button");
-
-      const headerRealHeight =
-        parseInt($("header").css("height")) +
-        parseInt($("header").css("padding-top")) +
-        parseInt($("header").css("padding-bottom")) +
-        parseInt($("header").css("margin-top")) +
-        parseInt($("header").css("margin-bottom")) +
-        parseInt($("header").css("border-bottom-width")) +
-        parseInt($("header").css("border-top-width"));
-
-      AddDownloadButton(button, headerRealHeight);
-    }
-  },
-  private: {
-    needProcess: false,
-    returnMap: null,
-  },
-};
-Pages[PageType.NovelSearch] = {
-  PageTypeString: "NovelSearchPage",
-  CheckUrl: function (url) {
-    return (
-      /^https:\/\/www.pixiv.net\/tags\/.*\/novels/.test(url) ||
-      /^https:\/\/www.pixiv.net\/en\/tags\/.*\/novels/.test(url)
-    );
-  },
-  GetToolBar: function () {
-    return findToolbarCommon();
-  },
-  GetPageSelector: function () {
-    return $("section:first").find("nav:first");
-  },
-  HasAutoLoad: false,
-  private: {
-    returnMap: null,
-  },
-};
-Pages[PageType.SearchTop] = {
-  PageTypeString: "SearchTopPage",
-  CheckUrl: function (url) {
-    return /^https?:\/\/www.pixiv.net(\/en)?\/tags\/[^/*]/.test(url);
-  },
-  GetToolBar: function () {
-    return findToolbarCommon();
-  },
-  // 搜索页有 lazyload，不开排序的情况下，最后几张图片可能会无法预览。这里把它当做自动加载处理
-  HasAutoLoad: false,
-  GetImageListContainer: function () {
-    return this.private.imageListConrainer;
-  },
-  GetFirstImageElement: function () {
-    return $(this.private.imageListConrainer).find("li").get(0);
-  },
-  GetPageSelector: function () {
-    const sections = $("section");
-    if (sections.length == 0) {
-      return null;
-    }
-
-    let resultSectionIndex = 0;
-    $.each(sections, (i, e) => {
-      if ($(e).find("aside").length === 0) {
-        resultSectionIndex = i;
-      }
-    });
-
-    const ul = $(sections[resultSectionIndex]).find("ul");
-    return ul.next().get(0) ?? ul.parent().next().get(0);
-  },
-  private: {
-    imageListContainer: null,
-    pageSelector: null,
-    returnMap: null,
-  },
-};
-
-/* ---------------------------------------- 排序 ---------------------------------------- */
+//#region 排序
 let imageElementTemplate = null;
 
-function PixivSK(callback) {
-  // 不合理的设定
-  if (g_settings.pageCount < 1 || g_settings.favFilter < 0) {
-    g_settings.pageCount = 1;
-    g_settings.favFilter = 0;
-  }
+function PixivSK(callback?: () => void) {
+  // 修正不合理的设定
+  if (g_settings.pageCount < 1) g_settings.pageCount = 1;
+  if (g_settings.favFilter < 0) g_settings.favFilter = 0;
   // 当前已经取得的页面数量
   let currentGettingPageCount = 0;
   // 当前加载的页面 URL
@@ -1161,10 +927,7 @@ function PixivSK(callback) {
       for (let i = 0; i < works.length; i++) {
         const li = $(imageElementTemplate.cloneNode(true));
 
-        let regularUrl = works[i].url;
-        if (g_settings.fullSizeThumb) {
-          regularUrl = convertThumbUrlToSmall(works[i].url);
-        }
+        const regularUrl = works[i].url;
         li.find(".ppImg").attr("src", regularUrl).css("object-fit", "contain");
         li.find(".ppImageLink").attr("href", "/artworks/" + works[i].id);
         li.find(".ppTitleLink")
@@ -1441,606 +1204,23 @@ function PixivSK(callback) {
         }
       });
 
-      if (callback) {
-        callback();
-      }
+      callback?.();
     });
   };
 }
-/* ---------------------------------------- 小说 ---------------------------------------- */
-function PixivNS() {
-  function findNovelSection() {
-    const ul = $("section:first").find("ul:first");
-    if (ul.length == 0) {
-      DoLog(LogLevel.Error, "Can not found novel list.");
-      return null;
-    }
-    return ul;
-  }
+//#endregion
 
-  function getSearchParamsWithoutPage() {
-    return location.search.substr(1).replace(/&?p=\d+/, "");
-  }
-
-  function getNovelTemplate(ul) {
-    if (!ul) {
-      return null;
-    }
-    if (ul.length == 0) {
-      DoLog(LogLevel.Error, "Empty list, can not create template.");
-      return null;
-    }
-    const template = ul.children().eq(0).clone(true);
-    // 左侧图片
-    const picDiv = template.children().eq(0).children().eq(0);
-    picDiv.find("a:first").addClass("pns-link");
-    picDiv.find("img:first").addClass("pns-img");
-    // 右侧详情
-    const detailDiv = template
-      .children()
-      .eq(0)
-      .children()
-      .eq(1)
-      .children()
-      .eq(0);
-    const titleDiv = detailDiv.children().eq(0);
-    if (titleDiv.children().length > 1) {
-      titleDiv.children().eq(0).addClass("pns-series");
-    } else {
-      // 如果作为模板的DIV没有系列，就自己加一个
-      const series = $(
-        '<a class="pns-series" href="/novel/series/000000"></a>'
-      );
-      series.css({
-        display: "inline-block",
-        "white-space": "nowrap",
-        "text-overflow": "ellipsis",
-        overflow: "hidden",
-        "max-width": "100%",
-        "line-height": "22px",
-        "font-size": "14px",
-        "text-decoration": "none",
-      });
-      $("head").append(
-        "<style>.pns-series:visited{color:rgb(173,173,173)}</style>"
-      );
-      titleDiv.prepend(series);
-    }
-    titleDiv
-      .children()
-      .eq(1)
-      .children()
-      .eq(0)
-      .addClass("pns-title")
-      .addClass("pns-link");
-    detailDiv
-      .find(".gtm-novel-searchpage-result-user:first")
-      .addClass("pns-author-img");
-    detailDiv
-      .find(".gtm-novel-searchpage-result-user:last")
-      .addClass("pns-author");
-    const tagDiv = detailDiv.children().eq(2).children().eq(0);
-    const bookmarkDiv = tagDiv.children().eq(2);
-    bookmarkDiv.find("span:first").addClass("pns-text-count");
-    if (bookmarkDiv.find("span").length < 2) {
-      const textSpan = bookmarkDiv.find(".pns-text-count");
-      textSpan.append(
-        '<span class="pns-bookmark-count"><span><div class="sc-eoqmwo-1 grSeZG"><span class="sc-14heosd-0 gbNjEj"><svg viewBox="0 0 12 12" size="12" class="sc-14heosd-1 YtZop"><path fill-rule="evenodd" clip-rule="evenodd" d="M9 0.75C10.6569 0.75 12 2.09315 12 3.75C12 7.71703 7.33709 10.7126 6.23256 11.3666C6.08717 11.4526 5.91283 11.4526 5.76744 11.3666C4.6629 10.7126 0 7.71703 0 3.75C0 2.09315 1.34315 0.75 3 0.75C4.1265 0.75 5.33911 1.60202 6 2.66823C6.66089 1.60202 7.8735 0.75 9 0.75Z"></path></svg></span><span class="sc-eoqmwo-2 dfUmJJ">2,441</span></div></span></span>'
-      );
-      bookmarkDiv
-        .find(".pns-bookmark-count")
-        .addClass(textSpan.get(0).className);
-    } else {
-      bookmarkDiv
-        .find("span:last")
-        .addClass("pns-bookmark-count")
-        .parent()
-        .addClass("pns-bookmark-div");
-    }
-    tagDiv.children().eq(0).empty().addClass("pns-tag-list");
-    const descDiv = tagDiv.children().eq(1);
-    descDiv.children().eq(0).addClass("pns-desc");
-    // 右下角爱心
-    const likeDiv = detailDiv.children().eq(2).children().eq(1);
-    const svg = likeDiv.find("svg");
-    svg.attr("class", svg.attr("class") + " pns-like");
-    likeDiv.find("path:first").css("color", "rgb(31, 31, 31)");
-    likeDiv.find("path:last").css("fill", "rgb(255, 255, 255)");
-
-    return template;
-  }
-
-  function fillTemplate(template, novel) {
-    if (template == null || novel == null) {
-      return null;
-    }
-    const link = template
-      .find(".pns-link:first")
-      .attr("href")
-      .replace(/id=\d+/g, "id=" + novel.id);
-    template.find(".pns-link").attr("href", link);
-    template.find(".pns-img").attr("src", novel.url);
-    if (novel.seriesId) {
-      const seriesLink = template
-        .find(".pns-series")
-        .attr("href")
-        .replace(/\d+$/, novel.seriesId);
-      template
-        .find(".pns-series")
-        .text(novel.seriesTitle)
-        .attr("title", novel.seriesTitle)
-        .attr("href", seriesLink);
-    } else {
-      template.find(".pns-series").hide();
-    }
-    template.find(".pns-title").text(novel.title).attr("title", novel.title);
-    template.find(".pns-title").parent().attr("title", novel.title);
-    const authorLink = template
-      .find(".pns-author")
-      .attr("href")
-      .replace(/\d+$/, novel.userId);
-    template.find(".pns-author").text(novel.userName).attr("href", authorLink);
-    template
-      .find(".pns-author-img")
-      .attr("href", authorLink)
-      .find("img")
-      .attr("src", novel.profileImageUrl);
-    template.find(".pns-text-count").text(novel.textCount + "文字");
-    if (novel.bookmarkCount == 0) {
-      template.find(".pns-bookmark-div").hide();
-    } else {
-      template.find(".pns-bookmark-count").text(novel.bookmarkCount);
-    }
-    const tagList = template.find(".pns-tag-list");
-    let search = getSearchParamsWithoutPage();
-    if (search.length > 0) {
-      search = "?" + search;
-    }
-    $.each(novel.tags, function (i, tag) {
-      const tagItem = $(
-        '<span"><a style="color: rgb(61, 118, 153);" href="/tags/' +
-          encodeURIComponent(tag) +
-          "/novels" +
-          search +
-          '">' +
-          tag +
-          "</a></span>"
-      );
-      if (tag == "R-18" || tag == "R-18G") {
-        tagItem
-          .find("a")
-          .css({ color: "rgb(255, 64, 96)", "font-weight": "bold" })
-          .text(tag);
-      }
-      tagList.append(tagItem);
-    });
-    template
-      .find(".pns-desc")
-      .html(novel.description)
-      .attr("title", template.find(".pns-desc").text());
-    const like = template.find(".pns-like");
-    like.attr("novel-id", novel.id);
-    if (novel.bookmarkData) {
-      like.attr("bookmark-id", novel.bookmarkData.id);
-      like.find("path:first").css("color", "rgb(255, 64, 96)");
-      like.find("path:last").css("fill", "rgb(255, 64, 96)");
-    }
-    like.click(function () {
-      if ($(this).attr("disable")) {
-        return;
-      }
-      const bid = $(this).attr("bookmark-id");
-      const nid = $(this).attr("novel-id");
-      if (bid) {
-        deleteBookmark($(this), bid);
-      } else {
-        addBookmark($(this), nid, 0);
-      }
-      $(this).blur();
-    });
-    if (g_settings.linkBlank) {
-      template.find("a").attr("target", "_blank");
-    }
-    return template;
-  }
-
-  function getNovelByPage(key, from, to, total) {
-    if (total == undefined) {
-      total = to - from;
-    }
-
-    let url =
-      location.origin +
-      g_getNovelUrl.replace(/#key#/g, key).replace(/#page#/g, from);
-    const search = getSearchParamsWithoutPage();
-    if (search.length > 0) {
-      url += "&" + search;
-    }
-
-    updateProgress(
-      Texts[g_language].nsort_getWorks
-        .replace("1%", total - to + from + 1)
-        .replace("2%", total)
-    );
-
-    let novelList = [];
-    function onLoadFinish(data, resolve) {
-      if (data && data.body && data.body.novel && data.body.novel.data) {
-        novelList = novelList.concat(data.body.novel.data);
-      }
-
-      if (from == to - 1) {
-        resolve(novelList);
-      } else {
-        getNovelByPage(key, from + 1, to, total).then(function (list) {
-          if (list && list.length > 0) {
-            novelList = novelList.concat(list);
-          }
-          resolve(novelList);
-        });
-      }
-    }
-
-    return new Promise(function (resolve, reject) {
-      $.ajax({
-        url: url,
-        success: function (data) {
-          onLoadFinish(data, resolve);
-        },
-        error: function () {
-          DoLog(LogLevel.Error, "get novel page " + from + " failed!");
-          onLoadFinish(null, resolve);
-        },
-      });
-    });
-  }
-
-  function sortNovel(list) {
-    updateProgress(Texts[g_language].nsort_sorting);
-    // 排序
-    list.sort(function (a, b) {
-      let bookmarkA = a.bookmarkCount;
-      let bookmarkB = b.bookmarkCount;
-      if (!bookmarkA) {
-        bookmarkA = 0;
-      }
-      if (!bookmarkB) {
-        bookmarkB = 0;
-      }
-      if (bookmarkA > bookmarkB) {
-        return -1;
-      }
-      if (bookmarkA < bookmarkB) {
-        return 1;
-      }
-      return 0;
-    });
-    // 筛选
-    const filteredList = [];
-    $.each(list, function (i, e) {
-      // 收藏量筛选
-      let bookmark = e.bookmarkCount;
-      if (!bookmark) {
-        bookmark = 0;
-      }
-      if (bookmark < g_settings.novelFavFilter) {
-        return true;
-      }
-      // 已收藏筛选
-      if (g_settings.novelHideFavorite && e.bookmarkData) {
-        return true;
-      }
-      filteredList.push(e);
-    });
-    return filteredList;
-  }
-
-  function rearrangeNovel(list) {
-    const ul = findNovelSection();
-    if (ul == null) {
-      return;
-    }
-    const template = getNovelTemplate(ul);
-    if (template == null) {
-      return;
-    }
-    const newList = [];
-    $.each(list, function (i, novel) {
-      const e = fillTemplate(template.clone(true), novel);
-      if (e != null) {
-        newList.push(e);
-      }
-    });
-    ul.empty();
-    $.each(newList, function (i, e) {
-      $(e).css("display", "block");
-      ul.append(e);
-    });
-    hideLoading();
-  }
-
-  function getKeyWord() {
-    const match = location.pathname.match(/\/tags\/(.+)\/novels/);
-    if (!match) {
-      return "";
-    }
-    return match[1];
-  }
-
-  function getCurrentPage() {
-    const match = location.search.match(/p=(\d+)/);
-    if (match) {
-      return parseInt(match[1]);
-    }
-    return 1;
-  }
-
-  function showLoading() {
-    const ul = findNovelSection();
-    if (ul == null) {
-      iLog.e("Can not found novel section!");
-      return;
-    }
-
-    ul.hide().before(
-      '<div id="loading" style="width:100%;text-align:center;"><img src="' +
-        g_loadingImage +
-        '" /><p id="progress" style="text-align: center;font-size: large;font-weight: bold;padding-top: 10px;">0%</p></div>'
-    );
-  }
-
-  function hideLoading() {
-    const ul = findNovelSection();
-    if (ul == null) {
-      iLog.e("Can not found novel section!");
-      return;
-    }
-
-    $("#loading").remove();
-    ul.show();
-  }
-
-  function updateProgress(msg) {
-    const p = $("#progress");
-    p.text(msg);
-  }
-
-  function addBookmark(element, novelId, restrict) {
-    if (g_csrfToken == "") {
-      iLog.e("No g_csrfToken, failed to add bookmark!");
-      alert("获取 Token 失败，无法添加，请到详情页操作。");
-      return;
-    }
-    element.attr("disable", "disable");
-    iLog.i("add bookmark: " + novelId);
-    $.ajax("/ajax/novels/bookmarks/add", {
-      method: "POST",
-      contentType: "application/json;charset=utf-8",
-      headers: { "x-csrf-token": g_csrfToken },
-      data:
-        '{"novel_id":"' +
-        novelId +
-        '","restrict":' +
-        restrict +
-        ',"comment":"","tags":[]}',
-      success: function (data) {
-        iLog.i("add novel bookmark result: ");
-        iLog.d(data);
-        if (data.error) {
-          iLog.e("Server returned an error: " + data.message);
-          return;
-        }
-        const bookmarkId = data.body;
-        iLog.i("Add novel bookmark success, bookmarkId is " + bookmarkId);
-        element.attr("bookmark-id", bookmarkId);
-        element.find("path:first").css("color", "rgb(255, 64, 96)");
-        element.find("path:last").css("fill", "rgb(255, 64, 96)");
-        element.removeAttr("disable");
-      },
-      error: function () {
-        element.removeAttr("disable");
-      },
-    });
-  }
-
-  function deleteBookmark(element, bookmarkId) {
-    if (g_csrfToken == "") {
-      iLog.e("No g_csrfToken, failed to add bookmark!");
-      alert("获取 Token 失败，无法添加，请到详情页操作。");
-      return;
-    }
-    element.attr("disable", "disable");
-    iLog.i("delete bookmark: " + bookmarkId);
-    $.ajax("/ajax/novels/bookmarks/delete", {
-      method: "POST",
-      headers: { "x-csrf-token": g_csrfToken },
-      data: { del: 1, book_id: bookmarkId },
-      success: function (data) {
-        iLog.i("delete novel bookmark result: ");
-        iLog.d(data);
-        if (data.error) {
-          iLog.e("Server returned an error: " + data.message);
-          return;
-        }
-        iLog.i("delete novel bookmark success");
-        element.removeAttr("bookmark-id");
-        element.find("path:first").css("color", "rgb(31, 31, 31)");
-        element.find("path:last").css("fill", "rgb(255, 255, 255)");
-        element.removeAttr("disable");
-      },
-      error: function () {
-        element.removeAttr("disable");
-      },
-    });
-  }
-
-  function changePageSelector() {
-    const pager = Pages[PageType.NovelSearch].GetPageSelector();
-    if (pager.length == 0) {
-      iLog.e("can not found page selector!");
-      return;
-    }
-    const left = pager
-      .find("a:first")
-      .clone()
-      .attr("aria-disabled", "false")
-      .removeAttr("hidden")
-      .addClass("pp-prevPage");
-    const right = pager
-      .find("a:last")
-      .clone()
-      .attr("aria-disabled", "false")
-      .removeAttr("hidden")
-      .addClass("pp-nextPage");
-    const normal = pager.find("a").eq(1).clone().removeAttr("href");
-    let href = location.href;
-    const match = href.match(/[?&]p=(\d+)/);
-    let page = 1;
-    if (match) {
-      page = parseInt(match[1]);
-    } else {
-      if (location.search == "") {
-        href += "?p=1";
-      } else {
-        href += "&p=1";
-      }
-    }
-    if (page == 1) {
-      left.attr("hidden", "hidden");
-    }
-    pager.empty();
-    const lp = page - g_settings.novelPageCount;
-    left.attr(
-      "href",
-      href.replace("?p=" + page, "?p=" + lp).replace("&p=" + page, "&p=" + lp)
-    );
-    pager.append(left);
-    const s = "Previewer";
-    for (let i = 0; i < s.length; ++i) {
-      const n = normal.clone().text(s[i]);
-      pager.append(n);
-    }
-    const rp = page + g_settings.novelPageCount;
-    right.attr(
-      "href",
-      href.replace("?p=" + page, "?p=" + rp).replace("&p=" + page, "&p=" + rp)
-    );
-    pager.append(right);
-  }
-
-  function listnerToKeyBoard() {
-    $(document).keydown(function (e) {
-      if (g_settings.pageByKey != 1) {
-        return;
-      }
-      if (e.keyCode == 39) {
-        const btn = $(".pp-nextPage");
-        if (btn.length < 1 || btn.attr("hidden") == "hidden") {
-          return;
-        }
-        location.href = btn.attr("href");
-      } else if (e.keyCode == 37) {
-        const btn = $(".pp-prevPage");
-        if (btn.length < 1 || btn.attr("hidden") == "hidden") {
-          return;
-        }
-        location.href = btn.attr("href");
-      }
-    });
-  }
-
-  function main() {
-    const keyWord = getKeyWord();
-    if (keyWord.length == 0) {
-      DoLog(LogLevel.Error, "Parse key word error.");
-      return;
-    }
-    const currentPage = getCurrentPage();
-
-    if (
-      $(".gtm-novel-searchpage-gs-toggle-button").attr("data-gtm-label") ==
-      "off"
-    ) {
-      showLoading();
-      $(".gtm-novel-searchpage-gs-toggle-button").parent().next().text();
-      // 不常见，不要多语言了
-      $("#loading")
-        .find("#progress")
-        .text(
-          '由于启用了 "' +
-            $(".gtm-novel-searchpage-gs-toggle-button").parent().next().text() +
-            '"，无法进行排序。'
-        );
-      setTimeout(() => hideLoading(), 3000);
-      return;
-    }
-
-    showLoading();
-    changePageSelector();
-    listnerToKeyBoard();
-    getNovelByPage(
-      keyWord,
-      currentPage,
-      currentPage + g_settings.novelPageCount
-    ).then(function (novelList) {
-      rearrangeNovel(sortNovel(novelList));
-    });
-  }
-
-  main();
-}
-/* ---------------------------------------- 设置 ---------------------------------------- */
+//#region 设置
 function SetLocalStorage(name, value) {
   localStorage.setItem(name, JSON.stringify(value));
 }
+
 function GetLocalStorage(name) {
   const value = localStorage.getItem(name);
   if (!value) return null;
   return value;
 }
-function SetCookie(name, value, days) {
-  let Days = 180;
-  if (days) {
-    Days = days;
-  }
-  const exp = new Date();
-  exp.setTime(exp.getTime() + Days * 24 * 60 * 60 * 1000);
-  const str = JSON.stringify(value);
-  document.cookie =
-    name + "=" + str + ";expires=" + exp.toGMTString() + ";path=/";
-}
-function GetCookie(name) {
-  let arr;
-  const reg = new RegExp("(^| )" + name + "=([^;]*)(;|$)");
-  if ((arr = document.cookie.match(reg))) {
-    return unescape(arr[2]);
-  } else {
-    return null;
-  }
-}
-function ShowInstallMessage() {
-  $("#pp-bg").remove();
-  const bg = $('<div id="pp-bg"></div>').css({
-    width: document.documentElement.clientWidth + "px",
-    height: document.documentElement.clientHeight + "px",
-    position: "fixed",
-    "z-index": 999999,
-    "background-color": "rgba(0,0,0,0.8)",
-    left: "0px",
-    top: "0px",
-  });
-  $("body").append(bg);
 
-  bg.get(0).innerHTML =
-    '<img id="pps-close"src="https://pp-1252089172.cos.ap-chengdu.myqcloud.com/Close.png"style="position: absolute; right: 35px; top: 20px; width: 32px; height: 32px; cursor: pointer;"><div style="position: absolute;width: 40%;left: 30%;top: 25%;font-size: 25px; text-align: center; color: white;">' +
-    Texts[g_language].install_title +
-    g_version +
-    "</div><br>" +
-    Texts[g_language].install_body;
-  $("#pps-close").click(function () {
-    $("#pp-bg").remove();
-  });
-}
 function ShowUpgradeMessage() {
   $("#pp-bg").remove();
   const bg = $('<div id="pp-bg"></div>').css({
@@ -2066,6 +1246,7 @@ function ShowUpgradeMessage() {
     $("#pp-bg").remove();
   });
 }
+
 function FillNewSetting(st) {
   // 升级可能会有部分新加字段在cookie里读不到
   let changed = false;
@@ -2080,16 +1261,34 @@ function FillNewSetting(st) {
     change: changed,
   };
 }
+
+function AutoDetectLanguage() {
+  g_language = Lang.auto;
+  if (g_settings && g_settings.lang) {
+    g_language = g_settings.lang;
+  }
+  if (g_language == Lang.auto) {
+    const lang = $("html").attr("lang");
+    if (lang && lang.indexOf("zh") != -1) {
+      // 简体中文和繁体中文都用简体中文
+      g_language = Lang.zh_CN;
+    } else if (lang && lang.indexOf("ja") != -1) {
+      g_language = Lang.ja_JP;
+    } else {
+      // 其他的统一用英语，其他语言也不知道谷歌翻译得对不对
+      g_language = Lang.en_US;
+    }
+  }
+}
+
 function GetSettings() {
   let settings;
 
-  const settingsData =
-    GetLocalStorage("PixivPreview") || GetCookie("PixivPreview");
+  const settingsData = GetLocalStorage("PixivPreview");
   if (settingsData == null || settingsData == "null") {
     // 新安装
     settings = g_defaultSettings;
     SetLocalStorage("PixivPreview", settings);
-    //ShowInstallMessage();
     ShowUpgradeMessage();
   } else {
     settings = JSON.parse(settingsData);
@@ -2108,6 +1307,7 @@ function GetSettings() {
 
   return settings;
 }
+
 function ShowSetting() {
   const screenWidth = document.documentElement.clientWidth;
   const screenHeight = document.documentElement.clientHeight;
@@ -2184,7 +1384,6 @@ function ShowSetting() {
     Texts[g_language].setting_previewDelay
   );
   addItem("", "&nbsp");
-  addItem(getImageAction("pps-sort"), Texts[g_language].setting_sort);
   addItem(getInputAction("pps-maxPage"), Texts[g_language].setting_maxPage);
   addItem(getInputAction("pps-hideLess"), Texts[g_language].setting_hideWork);
   addItem(getImageAction("pps-hideAi"), Texts[g_language].setting_hideAiWork);
@@ -2220,10 +1419,6 @@ function ShowSetting() {
   $("#pps-animePreview")
     .attr("src", settings.enableAnimePreview ? imgOn : imgOff)
     .addClass(settings.enableAnimePreview ? "on" : "off")
-    .css("cursor: pointer");
-  $("#pps-sort")
-    .attr("src", settings.enableSort ? imgOn : imgOff)
-    .addClass(settings.enableSort ? "on" : "off")
     .css("cursor: pointer");
   $("#pps-previewDelay").val(settings.previewDelay);
   $("#pps-maxPage").val(settings.pageCount);
@@ -2294,7 +1489,6 @@ function ShowSetting() {
       enableAnimePreview: $("#pps-animePreview").hasClass("on") ? 1 : 0,
       previewDelay: parseInt(String($("#pps-previewDelay").val())),
 
-      enableSort: $("#pps-sort").hasClass("on") ? 1 : 0,
       pageCount: parseInt(String($("#pps-maxPage").val())),
       favFilter: parseInt(String($("#pps-hideLess").val())),
       aiFilter: $("#pps-hideAi").hasClass("on") ? 1 : 0,
@@ -2325,222 +1519,110 @@ function ShowSetting() {
     $("#pp-bg").remove();
   });
 }
+//#endregion
 
-/* --------------------------------------- 主函数 --------------------------------------- */
-let loadInterval;
-function AutoDetectLanguage() {
-  g_language = Lang.auto;
-  if (g_settings && g_settings.lang) {
-    g_language = g_settings.lang;
-  }
-  if (g_language == Lang.auto) {
-    const lang = $("html").attr("lang");
-    if (lang && lang.indexOf("zh") != -1) {
-      // 简体中文和繁体中文都用简体中文
-      g_language = Lang.zh_CN;
-    } else if (lang && lang.indexOf("ja") != -1) {
-      g_language = Lang.ja_JP;
+//#region 主函数
+const initializePixivPreviewer = () => {
+  try {
+    // GetSettings 内部需要 g_language，先使用自动探测的语言
+    AutoDetectLanguage();
+
+    // 读取设置
+    g_settings = GetSettings();
+    iLog.i(
+      "Start to initialize Pixiv Previewer with global settings:",
+      g_settings
+    );
+
+    // 自动检测语言
+    AutoDetectLanguage();
+
+    // 监听窗口大小变化
+    window.onresize = function () {
+      if ($("#pp-bg").length > 0) {
+        const screenWidth = document.documentElement.clientWidth;
+        const screenHeight = document.documentElement.clientHeight;
+        $("#pp-bg").css({
+          width: screenWidth + "px",
+          height: screenHeight + "px",
+        });
+      }
+    };
+
+    // 初始化图片预览功能
+    if (g_settings.enablePreview) {
+      loadIllustPreview(g_settings);
+    }
+
+    // 匹配当前页面
+    for (let i = 0; i < Object.keys(Pages).length; i++) {
+      if (Pages[i].CheckUrl(location.href)) {
+        g_pageType = i;
+        break;
+      }
+    }
+
+    if (g_pageType !== undefined) {
+      DoLog(
+        LogLevel.Info,
+        "Current page is " + Pages[g_pageType].PageTypeString
+      );
     } else {
-      // 其他的统一用英语，其他语言也不知道谷歌翻译得对不对
-      g_language = Lang.en_US;
+      DoLog(LogLevel.Info, "Unsupported page.");
+      return;
     }
-  }
-}
 
-function Load() {
-  // 匹配当前页面
-  for (let i = 0; i < PageType.PageTypeCount; i++) {
-    if (Pages[i].CheckUrl(location.href)) {
-      g_pageType = i;
-      break;
+    // 设置按钮
+    const toolBar = Pages[g_pageType].GetToolBar();
+    if (toolBar) {
+      DoLog(LogLevel.Elements, toolBar);
+    } else {
+      DoLog(LogLevel.Warning, "Get toolbar failed.");
+      return;
     }
-  }
 
-  if (g_pageType >= 0) {
-    DoLog(LogLevel.Info, "Current page is " + Pages[g_pageType].PageTypeString);
-  } else {
-    DoLog(LogLevel.Info, "Unsupported page.");
-    clearInterval(loadInterval);
-    return;
-  }
+    // 添加设置按钮
+    if (!$("#pp-settings").length) {
+      const newListItem = toolBar.firstChild.cloneNode(true) as HTMLElement;
+      newListItem.title = "Pixiv Previewer Settings";
+      newListItem.innerHTML = "";
+      const newButton = document.createElement("button");
+      newButton.id = "pp-settings";
+      newButton.style.cssText =
+        "box-sizing: border-box; background-color: rgb(0, 0, 0); margin-top: 5px; opacity: 0.8; cursor: pointer; border: none; padding: 12px; border-radius: 24px; width: 48px; height: 48px;";
+      newButton.innerHTML =
+        '<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px" viewBox="0 0 1000 1000" enable-background="new 0 0 1000 1000" xml:space="preserve" style="fill: white;"><metadata> Svg Vector Icons : http://www.sfont.cn </metadata><g><path d="M377.5,500c0,67.7,54.8,122.5,122.5,122.5S622.5,567.7,622.5,500S567.7,377.5,500,377.5S377.5,432.3,377.5,500z"></path><path d="M990,546v-94.8L856.2,411c-8.9-35.8-23-69.4-41.6-100.2L879,186L812,119L689,185.2c-30.8-18.5-64.4-32.6-100.2-41.5L545.9,10h-94.8L411,143.8c-35.8,8.9-69.5,23-100.2,41.5L186.1,121l-67,66.9L185.2,311c-18.6,30.8-32.6,64.4-41.5,100.3L10,454v94.8L143.8,589c8.9,35.8,23,69.4,41.6,100.2L121,814l67,67l123-66.2c30.8,18.6,64.5,32.6,100.3,41.5L454,990h94.8L589,856.2c35.8-8.9,69.4-23,100.2-41.6L814,879l67-67l-66.2-123.1c18.6-30.7,32.6-64.4,41.5-100.2L990,546z M500,745c-135.3,0-245-109.7-245-245c0-135.3,109.7-245,245-245s245,109.7,245,245C745,635.3,635.3,745,500,745z"></path></g></svg>';
+      newListItem.appendChild(newButton);
+      toolBar.appendChild(newListItem);
 
-  // 设置按钮
-  const toolBar = Pages[g_pageType].GetToolBar();
-  if (toolBar) {
-    DoLog(LogLevel.Elements, toolBar);
-    clearInterval(loadInterval);
-  } else {
-    DoLog(LogLevel.Warning, "Get toolbar failed.");
-    return;
-  }
-
-  window.onresize = function () {
-    if ($("#pp-bg").length > 0) {
-      const screenWidth = document.documentElement.clientWidth;
-      const screenHeight = document.documentElement.clientHeight;
-      $("#pp-bg").css({
-        width: screenWidth + "px",
-        height: screenHeight + "px",
+      $(newButton).on("click", () => {
+        ShowSetting();
       });
     }
-  };
 
-  // GetSettings 内部需要 g_language，先使用自动探测的语言
-  AutoDetectLanguage();
-
-  // 读取设置
-  g_settings = GetSettings();
-
-  // 自动检测语言
-  AutoDetectLanguage();
-
-  if ($("#pp-sort").length === 0 && !g_settings?.enableSort) {
-    const newListItem = toolBar.firstChild.cloneNode(true);
-    newListItem.innerHTML = "";
-    const newButton = document.createElement("button");
-    newButton.id = "pp-sort";
-    newButton.style.cssText =
-      "background-color: rgb(0, 0, 0); margin-top: 5px; opacity: 0.8; cursor: pointer; border: none; padding: 0px; border-radius: 24px; width: 48px; height: 48px;";
-    newButton.innerHTML = `<span style="color: white;vertical-align: text-top;">${Texts[g_language].text_sort}</span>`;
-    newListItem.appendChild(newButton);
-    toolBar.appendChild(newListItem);
-
-    $(newButton).click(function () {
-      this.disabled = true;
-      runPixivPreview(true);
-      setTimeout(() => {
-        this.disabled = false;
-      }, 7000);
-    });
-  }
-
-  // A fixed next page button next to the setting button
-  if ($("#pp-nextPage-fixed").length === 0) {
-    const newListItem = toolBar.firstChild.cloneNode(true);
-    newListItem.innerHTML = "";
-    const newButton = document.createElement("button");
-    newButton.id = "pp-nextPage-fixed";
-    newButton.style.cssText =
-      "background-color: rgb(0, 0, 0); margin-top: 5px; opacity: 0.8; cursor: pointer; border: none; padding: 12px; border-radius: 24px; width: 48px; height: 48px;";
-    newButton.innerHTML =
-      '<svg viewBox="0 0 120 120" width="24" height="24" stroke="white" fill="none" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" style="transform: rotate(90deg);"> <polyline points="60,105 60,8"></polyline> <polyline points="10,57 60,8 110,57"></polyline> </svg>';
-    newListItem.appendChild(newButton);
-    toolBar.appendChild(newListItem);
-
-    $(newButton).click(function () {
-      let nextPageHref = null;
-
-      // Try to reuse .pp-nextPage, otherwise fallback to Pixiv native paginator's last link (>)
-      const nextPageAnchor = $(".pp-nextPage");
-      if (
-        nextPageAnchor.length > 0 &&
-        nextPageAnchor.attr("hidden") !== "hidden"
-      ) {
-        nextPageHref = nextPageAnchor.attr("href");
-      } else {
-        nextPageHref =
-          (
-            Array.from(document.querySelectorAll("nav")).find((nav) =>
-              Array.from(nav.children)
-                .filter((el) => el.tagName === "A")
-                .every((el: HTMLAnchorElement) => /\?p=\d+$/.test(el.href))
-            )?.lastElementChild as HTMLAnchorElement
-          )?.href ?? null;
-      }
-
-      // Open the next page if available
-      if (nextPageHref != null) {
-        location.href = nextPageHref;
-      }
-    });
-  }
-
-  if ($("#pp-settings").length === 0) {
-    const newListItem = toolBar.firstChild.cloneNode(true);
-    newListItem.innerHTML = "";
-    const newButton = document.createElement("button");
-    newButton.id = "pp-settings";
-    newButton.style.cssText =
-      "background-color: rgb(0, 0, 0); margin-top: 5px; opacity: 0.8; cursor: pointer; border: none; padding: 12px; border-radius: 24px; width: 48px; height: 48px;";
-    newButton.innerHTML =
-      '<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px" viewBox="0 0 1000 1000" enable-background="new 0 0 1000 1000" xml:space="preserve" style="fill: white;"><metadata> Svg Vector Icons : http://www.sfont.cn </metadata><g><path d="M377.5,500c0,67.7,54.8,122.5,122.5,122.5S622.5,567.7,622.5,500S567.7,377.5,500,377.5S377.5,432.3,377.5,500z"></path><path d="M990,546v-94.8L856.2,411c-8.9-35.8-23-69.4-41.6-100.2L879,186L812,119L689,185.2c-30.8-18.5-64.4-32.6-100.2-41.5L545.9,10h-94.8L411,143.8c-35.8,8.9-69.5,23-100.2,41.5L186.1,121l-67,66.9L185.2,311c-18.6,30.8-32.6,64.4-41.5,100.3L10,454v94.8L143.8,589c8.9,35.8,23,69.4,41.6,100.2L121,814l67,67l123-66.2c30.8,18.6,64.5,32.6,100.3,41.5L454,990h94.8L589,856.2c35.8-8.9,69.4-23,100.2-41.6L814,879l67-67l-66.2-123.1c18.6-30.7,32.6-64.4,41.5-100.2L990,546z M500,745c-135.3,0-245-109.7-245-245c0-135.3,109.7-245,245-245s245,109.7,245,245C745,635.3,635.3,745,500,745z"></path></g></svg>';
-    newListItem.appendChild(newButton);
-    toolBar.appendChild(newListItem);
-
-    $(newButton).click(function () {
-      ShowSetting();
-    });
-  }
-
-  // g_csrfToken
-  if (g_pageType == PageType.Search || g_pageType == PageType.NovelSearch) {
-    $.get(location.href, function (data) {
-      const matched = data.match(/token\\":\\"([a-z0-9]{32})/);
-      if (matched.length > 0) {
-        g_csrfToken = matched[1];
-        DoLog(LogLevel.Info, "Got g_csrfToken: " + g_csrfToken);
-      } else {
-        DoLog(
-          LogLevel.Error,
-          "Can not get g_csrfToken, so you can not add works to bookmark when sorting has enabled."
-        );
-      }
-    });
-  }
-
-  if (g_pageType === PageType.Member) {
-    showSearchLinksForDeletedArtworks();
-  }
-
-  function runPixivPreview(eventFromButton = false) {
-    iLog.i("Global settings", g_settings);
-    try {
-      if (g_settings.enablePreview) {
-        try {
-          loadIllustPreview(g_settings);
-        } catch (error) {
-          iLog.e(`An error occurred while loading illust preview: ${error}`);
+    // g_csrfToken
+    if (g_pageType == PageType.Search) {
+      $.get(location.href, function (data) {
+        const matched = data.match(/token\\":\\"([a-z0-9]{32})/);
+        if (matched.length > 0) {
+          g_csrfToken = matched[1];
+          DoLog(LogLevel.Info, "Got g_csrfToken: " + g_csrfToken);
+        } else {
+          DoLog(
+            LogLevel.Error,
+            "Can not get g_csrfToken, so you can not add works to bookmark when sorting has enabled."
+          );
         }
-      }
-
-      if (g_pageType == PageType.Artwork) {
-        Pages[g_pageType].Work();
-      } else if (g_pageType == PageType.Search) {
-        if (g_settings.enableSort || eventFromButton) {
-          g_sortComplete = false;
-          PixivSK(function () {
-            g_sortComplete = true;
-          });
-        }
-      } else if (g_pageType == PageType.NovelSearch) {
-        if (g_settings.enableNovelSort || eventFromButton) {
-          PixivNS();
-        }
-      }
-    } catch (e) {
-      DoLog(LogLevel.Error, "Unknown error: " + e);
+      });
     }
-  }
 
-  // 排序、预览
-  runPixivPreview();
-}
-
-const startLoad = () => {
-  loadInterval = setInterval(Load, 1000);
-  setInterval(function () {
-    if (location.href != initialUrl) {
-      // 排序中点击搜索tag，可能导致进行中的排序出现混乱，加取消太麻烦，直接走刷新
-      if (!g_sortComplete) {
-        location.reload();
-        return;
-      }
-      initialUrl = location.href;
-      clearInterval(loadInterval);
-      g_pageType = -1;
-      loadInterval = setInterval(Load, 300);
+    if (g_pageType === PageType.Member) {
+      showSearchLinksForDeletedArtworks();
     }
-  }, 1000);
+  } catch (e) {
+    DoLog(LogLevel.Error, "An error occurred while initializing:", e);
+  }
 };
 
-startLoad();
+initializePixivPreviewer();
+//#endregion

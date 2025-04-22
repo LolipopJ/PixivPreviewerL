@@ -7,7 +7,6 @@ export interface GlobalSettings {
   enableAnimePreview: 0 | 1;
   previewDelay: number;
 
-  enableSort: 0 | 1;
   pageCount: number;
   favFilter: number;
   aiFilter: 0 | 1;

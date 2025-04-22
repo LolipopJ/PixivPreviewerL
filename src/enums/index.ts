@@ -42,31 +42,29 @@ export enum AiType {
 // 页面相关的一些预定义，包括处理页面元素等
 export enum PageType {
   // 搜索（不包含小说搜索）
-  Search = 0,
+  Search,
   // 关注的新作品
-  BookMarkNew = 1,
+  BookMarkNew,
   // 发现
-  Discovery = 2,
+  Discovery,
   // 用户主页
-  Member = 3,
+  Member,
   // 首页
-  Home = 4,
+  Home,
   // 排行榜
-  Ranking = 5,
+  Ranking,
   // 大家的新作品
-  NewIllust = 6,
+  NewIllust,
   // R18
-  R18 = 7,
+  R18,
   // 自己的收藏页
-  BookMark = 8,
+  BookMark,
   // 动态
-  Stacc = 9,
+  Stacc,
   // 作品详情页（处理动图预览及下载）
-  Artwork = 10,
+  Artwork,
   // 小说页
-  NovelSearch = 11,
+  NovelSearch,
   // 搜索顶部 tab
-  SearchTop = 12,
-  // 总数
-  PageTypeCount = 13,
+  SearchTop,
 }

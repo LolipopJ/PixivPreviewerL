@@ -24,7 +24,6 @@ export const g_defaultSettings: GlobalSettings = {
   enableAnimePreview: 1,
   previewDelay: 500,
 
-  enableSort: 0,
   pageCount: 3,
   favFilter: 500,
   aiFilter: 1,

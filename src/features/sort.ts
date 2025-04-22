@@ -17,7 +17,7 @@ type LoadIllustSortOptions = Pick<
 
 const ILLUST_PER_PAGE = 60;
 
-const isInitialized = false;
+let isInitialized = false;
 export const loadIllustSort = (options: LoadIllustSortOptions) => {
   if (isInitialized) return;
 
@@ -99,4 +99,6 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
       this.progressElement.show();
     }
   }
+
+  isInitialized = true;
 };
