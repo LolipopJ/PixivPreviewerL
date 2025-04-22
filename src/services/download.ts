@@ -1,10 +1,10 @@
 import { iLog } from "../utils/logger";
-import request, { RequestOptions } from "./xml-http-request";
+import request from "./request";
 
 export const downloadFile = (
   url: string,
   filename: string,
-  options: Omit<RequestOptions<Blob>, "url" | "method" | "responseType"> = {}
+  options: Omit<Tampermonkey.Request, "url" | "method" | "responseType"> = {}
 ) => {
   const { onload, onerror, ...restOptions } = options;
   request({
@@ -12,10 +12,14 @@ export const downloadFile = (
     url,
     method: "GET",
     responseType: "blob",
-    onload: async (resp) => {
+    onload: (resp) => {
+      // @ts-expect-error: unhandled
       onload?.(resp);
 
-      const blob = new Blob([resp.response], { type: resp.responseType });
+      const blob = new Blob([resp.response], {
+        // @ts-expect-error: specified in request options
+        type: resp.responseType,
+      });
       const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = blobUrl;
@@ -26,6 +30,7 @@ export const downloadFile = (
       URL.revokeObjectURL(blobUrl);
     },
     onerror: (resp) => {
+      // @ts-expect-error: unhandled
       onerror?.(resp);
 
       iLog.e(`Download ${filename} from ${url} failed: ${resp.responseText}`);

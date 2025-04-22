@@ -815,7 +815,6 @@ function PixivSK(callback?: () => void) {
       request({
         method: "GET",
         url: url,
-        synchronous: true,
         onabort: xhrs[i].onerror,
         onerror: xhrs[i].onerror,
         onload: xhrs[i].onload,
@@ -1645,5 +1644,7 @@ const initializePixivPreviewer = () => {
   }
 };
 
-initializePixivPreviewer();
+window.addEventListener("DOMContentLoaded", () => {
+  setTimeout(initializePixivPreviewer, 1000);
+});
 //#endregion

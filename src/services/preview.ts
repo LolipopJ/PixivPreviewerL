@@ -1,6 +1,6 @@
 import { iLog } from "../utils/logger";
 import { downloadFile } from "./download";
-import { PixivStandardResponse } from "./xml-http-request";
+import { PixivStandardResponse } from "./request";
 
 /** 下载作品 */
 export const downloadIllust = ({
@@ -14,9 +14,7 @@ export const downloadIllust = ({
 }) => {
   downloadFile(url, filename, {
     ...options,
-    onerror: (resp) => {
-      options.onerror?.(resp);
-
+    onerror: () => {
       window.open(url, "__blank");
     },
   });
@@ -45,9 +43,7 @@ export const downloadIllustWithProxy = ({
   const proxyUrl = `https://pixiv.cat/${illustId}${pageCount > 1 ? `-${page + 1}` : ""}.${extension}`;
   downloadFile(proxyUrl, filename, {
     ...options,
-    onerror: (resp) => {
-      options.onerror?.(resp);
-
+    onerror: () => {
       window.open(proxyUrl, "__blank");
     },
   });
