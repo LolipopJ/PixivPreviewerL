@@ -1392,15 +1392,6 @@ function ShowSetting() {
     getImageAction("pps-hideBookmarked"),
     Texts[g_language].setting_hideFav
   );
-  addItem(
-    getImageAction("pps-hideFollowed"),
-    Texts[g_language].setting_hideFollowed +
-      '&nbsp<button id="pps-clearFollowingCache" style="cursor:pointer;background-color:gold;border-radius:12px;border:none;font-size:20px;padding:3px 10px;" title="' +
-      Texts[g_language].setting_clearFollowingCacheHelp +
-      '">' +
-      Texts[g_language].setting_clearFollowingCache +
-      "</button>"
-  );
   addItem(getImageAction("pps-hideByTag"), Texts[g_language].setting_hideByTag);
   addItem(
     '<input id="pps-hideByTagList" style="font-size: 18px;padding: 0;border-width: 0px;text-align: center;width: 95%;" placeholder="' +
@@ -1432,13 +1423,9 @@ function ShowSetting() {
     .attr("src", settings.hideFavorite ? imgOn : imgOff)
     .addClass(settings.hideFavorite ? "on" : "off")
     .css("cursor: pointer");
-  $("#pps-hideFollowed")
-    .attr("src", settings.hideFollowed ? imgOn : imgOff)
-    .addClass(settings.hideFollowed ? "on" : "off")
-    .css("cursor: pointer");
   $("#pps-hideByTag")
     .attr("src", settings.hideByTag ? imgOn : imgOff)
-    .addClass(settings.hideFollowed ? "on" : "off")
+    .addClass(settings.hideByTag ? "on" : "off")
     .css("cursor: pointer");
   $("#pps-hideByTagList").val(settings.hideByTagList);
   $("#pps-newTab")
@@ -1494,7 +1481,6 @@ function ShowSetting() {
       favFilter: parseInt(String($("#pps-hideLess").val())),
       aiFilter: $("#pps-hideAi").hasClass("on") ? 1 : 0,
       hideFavorite: $("#pps-hideBookmarked").hasClass("on") ? 1 : 0,
-      hideFollowed: $("#pps-hideFollowed").hasClass("on") ? 1 : 0,
       hideByTag: $("#pps-hideByTag").hasClass("on") ? 1 : 0,
       hideByTagList: String($("#pps-hideByTagList").val()),
 

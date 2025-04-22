@@ -1,4 +1,4 @@
-import { AiType, IllustType, Lang } from "../enums";
+import { AiType, IllustSortOrder, IllustType, Lang } from "../enums";
 
 export interface GlobalSettings {
   lang: Lang;
@@ -9,9 +9,9 @@ export interface GlobalSettings {
 
   pageCount: number;
   favFilter: number;
+  orderType: IllustSortOrder;
   aiFilter: 0 | 1;
   hideFavorite: 0 | 1;
-  hideFollowed: 0 | 1;
   hideByTag: 0 | 1;
   hideByTagList: string;
 
@@ -24,18 +24,26 @@ export interface GlobalSettings {
 export interface Illustration {
   /** AI 生成类型 */
   aiType: AiType;
-  /** 收藏信息 */
+  alt: string;
+  /** 收藏作品日期 */
   bookmarkData: { id: string; private: boolean } | null;
   /** 作品发布时间 */
   createDate: string;
+  description: string;
+  height: number;
   /** 作品 ID */
   id: string;
   /** 作品类型 */
   illustType: IllustType;
+  isBookmarkable: boolean;
+  isMasked: boolean;
+  isUnlisted: boolean;
   /** 作品页数 */
   pageCount: number;
   /** 作者头像链接 */
   profileImageUrl: string;
+  restrict: number;
+  sl: number;
   /** 标签列表。包含 `R-18` 时为 r18 作品 */
   tags: string[];
   /** 作品标题 */
@@ -48,4 +56,12 @@ export interface Illustration {
   userId: string;
   /** 作者用户名 */
   userName: string;
+  visibilityScope: number;
+  width: number;
+  xRestrict: number;
+}
+
+export interface IllustrationDetails extends Illustration {
+  /** 作品收藏数 */
+  bookmark_user_total: number;
 }

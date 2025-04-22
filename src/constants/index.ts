@@ -28,7 +28,6 @@ export const g_defaultSettings: GlobalSettings = {
   favFilter: 500,
   aiFilter: 1,
   hideFavorite: 1,
-  hideFollowed: 0,
   hideByTag: 0,
   hideByTagList: "",
 

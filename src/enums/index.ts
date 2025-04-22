@@ -84,3 +84,11 @@ export enum IllustSortType {
   NEW,
   NEW_R18,
 }
+
+/** 作品排序顺序 */
+export enum IllustSortOrder {
+  /** 按收藏数 */
+  BY_BOOKMARK_COUNT,
+  /** 按发布日期 */
+  BY_DATE,
+}
