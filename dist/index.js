@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             0.3.0-2025/4/23
+// @version             0.3.1-2025/4/23
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0
@@ -9,8 +9,6 @@
 // @match               *://www.pixiv.net/*
 // @grant               unsafeWindow
 // @grant               GM.xmlHttpRequest
-// @grant               GM_xmlhttpRequest
-// @grant               GM_registerMenuCommand
 // @icon                https://t0.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&size=32&url=https://www.pixiv.net
 // @icon64              https://t0.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&size=64&url=https://www.pixiv.net
 // @require             https://raw.githubusercontent.com/Tampermonkey/utils/refs/heads/main/requires/gh_2215_make_GM_xhr_more_parallel_again.js
@@ -19,10 +17,9 @@
 // ==/UserScript==
 
 // src/constants/index.ts
-var g_version = "0.3.0";
+var g_version = "0.3.1";
 var g_loadingImage = "https://pp-1252089172.cos.ap-chengdu.myqcloud.com/loading.gif";
 var g_defaultSettings = {
-  lang: 0 /* zh_CN */,
   enablePreview: 1,
   enableAnimePreview: 1,
   previewDelay: 500,
@@ -1343,6 +1340,81 @@ var PreviewedIllust = class {
   }
 };
 
+// src/i18n/index.ts
+var Texts = {
+  install_title: "\u6B22\u8FCE\u4F7F\u7528 Pixiv Previewer by Lolipop v",
+  install_body: '<div style="position: absolute;left: 50%;top: 30%;font-size: 20px; color: white;transform:translate(-50%,0);"><p>\u6B22\u8FCE\u53CD\u9988\u95EE\u9898\u548C\u63D0\u51FA\u5EFA\u8BAE\uFF01><a style="color: skyblue;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer/feedback" target="_blank">\u53CD\u9988\u9875\u9762</a><</p><br><p>\u5982\u679C\u60A8\u662F\u7B2C\u4E00\u6B21\u4F7F\u7528\uFF0C\u63A8\u8350\u5230<a style="color: skyblue;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer" target="_blank"> \u8BE6\u60C5\u9875 </a>\u67E5\u770B\u811A\u672C\u4ECB\u7ECD\u3002</p></div>',
+  upgrade_body: `<div>
+  <p>
+    \u672C\u811A\u672C\u57FA\u4E8E
+    <a
+      style="color: skyblue"
+      href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer"
+      target="_blank"
+      >Pixiv Previewer</a
+    >
+    \u4E8C\u6B21\u5F00\u53D1\uFF0C\u65E8\u5728\u6EE1\u8DB3\u5F00\u53D1\u8005\u81EA\u5DF1\u9700\u8981\u7684\u80FD\u529B\u3002
+  </p>
+  <br />
+  <p>
+    \u5982\u679C\u60A8\u6709\u4E0D\u9519\u7684\u60F3\u6CD5\u6216\u5EFA\u8BAE\uFF0C\u8BF7\u524D\u5F80\u539F\u811A\u672C\u7684<a
+      style="color: skyblue"
+      href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer/feedback"
+      target="_blank"
+      >\u53CD\u9988\u9875\u9762</a
+    >\u6216\u5F00\u542F\u4E00\u4E2A\u65B0\u7684
+    <a
+      style="color: skyblue"
+      href="https://github.com/Ocrosoft/PixivPreviewer/issues"
+      target="_blank"
+      >Github \u8BAE\u9898</a
+    >\uFF01
+  </p>
+</div>`,
+  setting_language: "\u8BED\u8A00",
+  setting_preview: "\u9884\u89C8",
+  setting_animePreview: "\u52A8\u56FE\u9884\u89C8",
+  setting_sort: "\u641C\u7D22\u9875\u81EA\u52A8\u6392\u5E8F",
+  setting_anime: "\u52A8\u56FE\u4E0B\u8F7D\uFF08\u52A8\u56FE\u9884\u89C8\u53CA\u8BE6\u60C5\u9875\u751F\u6548\uFF09",
+  setting_origin: "\u9884\u89C8\u65F6\u4F18\u5148\u663E\u793A\u539F\u56FE\uFF08\u6162\uFF09",
+  setting_previewDelay: "\u5EF6\u8FDF\u663E\u793A\u9884\u89C8\u56FE\uFF08\u6BEB\u79D2\uFF09",
+  setting_previewByKey: "\u4F7F\u7528\u6309\u952E\u63A7\u5236\u9884\u89C8\u56FE\u5C55\u793A\uFF08Ctrl\uFF09",
+  setting_previewByKeyHelp: "\u5F00\u542F\u540E\u9F20\u6807\u79FB\u52A8\u5230\u56FE\u7247\u4E0A\u4E0D\u518D\u5C55\u793A\u9884\u89C8\u56FE\uFF0C\u6309\u4E0BCtrl\u952E\u624D\u5C55\u793A\uFF0C\u540C\u65F6\u201C\u5EF6\u8FDF\u663E\u793A\u9884\u89C8\u201D\u8BBE\u7F6E\u9879\u4E0D\u751F\u6548\u3002",
+  setting_maxPage: "\u6BCF\u6B21\u6392\u5E8F\u65F6\u7EDF\u8BA1\u7684\u6700\u5927\u9875\u6570",
+  setting_hideWork: "\u9690\u85CF\u6536\u85CF\u6570\u5C11\u4E8E\u8BBE\u5B9A\u503C\u7684\u4F5C\u54C1",
+  setting_sortOrderByBookmark: "\u6309\u7167\u6536\u85CF\u6570\u6392\u5E8F\u4F5C\u54C1",
+  setting_hideAiWork: "\u6392\u5E8F\u65F6\u9690\u85CF AI \u751F\u6210\u4F5C\u54C1",
+  setting_hideAiAssistedWork: "\u6392\u5E8F\u65F6\u9690\u85CF AI \u8F85\u52A9\u4F5C\u54C1",
+  setting_hideFav: "\u6392\u5E8F\u65F6\u9690\u85CF\u5DF2\u6536\u85CF\u7684\u4F5C\u54C1",
+  setting_hideFollowed: "\u6392\u5E8F\u65F6\u9690\u85CF\u5DF2\u5173\u6CE8\u753B\u5E08\u4F5C\u54C1",
+  setting_hideByTag: "\u6392\u5E8F\u65F6\u9690\u85CF\u6307\u5B9A\u6807\u7B7E\u7684\u4F5C\u54C1",
+  setting_hideByTagPlaceholder: "\u8F93\u5165\u6807\u7B7E\u540D\uFF0C\u591A\u4E2A\u6807\u7B7E\u7528','\u5206\u9694",
+  setting_clearFollowingCache: "\u6E05\u9664\u7F13\u5B58",
+  setting_clearFollowingCacheHelp: "\u5173\u6CE8\u753B\u5E08\u4FE1\u606F\u4F1A\u5728\u672C\u5730\u4FDD\u5B58\u4E00\u5929\uFF0C\u5982\u679C\u5E0C\u671B\u7ACB\u5373\u66F4\u65B0\uFF0C\u8BF7\u70B9\u51FB\u6E05\u9664\u7F13\u5B58",
+  setting_followingCacheCleared: "\u5DF2\u6E05\u9664\u7F13\u5B58\uFF0C\u8BF7\u5237\u65B0\u9875\u9762\u3002",
+  setting_blank: "\u4F7F\u7528\u65B0\u6807\u7B7E\u9875\u6253\u5F00\u4F5C\u54C1\u8BE6\u60C5\u9875",
+  setting_turnPage: "\u4F7F\u7528\u952E\u76D8\u2190\u2192\u8FDB\u884C\u7FFB\u9875\uFF08\u6392\u5E8F\u540E\u7684\u641C\u7D22\u9875\uFF09",
+  setting_save: "\u4FDD\u5B58\u8BBE\u7F6E",
+  setting_reset: "\u91CD\u7F6E\u811A\u672C",
+  setting_resetHint: "\u8FD9\u4F1A\u5220\u9664\u6240\u6709\u8BBE\u7F6E\uFF0C\u76F8\u5F53\u4E8E\u91CD\u65B0\u5B89\u88C5\u811A\u672C\uFF0C\u786E\u5B9A\u8981\u91CD\u7F6E\u5417\uFF1F",
+  setting_novelSort: "\u5C0F\u8BF4\u6392\u5E8F",
+  setting_novelMaxPage: "\u5C0F\u8BF4\u6392\u5E8F\u65F6\u7EDF\u8BA1\u7684\u6700\u5927\u9875\u6570",
+  setting_novelHideWork: "\u9690\u85CF\u6536\u85CF\u6570\u5C11\u4E8E\u8BBE\u5B9A\u503C\u7684\u4F5C\u54C1",
+  setting_novelHideFav: "\u6392\u5E8F\u65F6\u9690\u85CF\u5DF2\u6536\u85CF\u7684\u4F5C\u54C1",
+  sort_noWork: "\u6CA1\u6709\u53EF\u4EE5\u663E\u793A\u7684\u4F5C\u54C1\uFF08\u9690\u85CF\u4E86 %1 \u4E2A\u4F5C\u54C1\uFF09",
+  sort_getWorks: "\u6B63\u5728\u83B7\u53D6\u7B2C %1/%2 \u9875\u4F5C\u54C1",
+  sort_getBookmarkCount: "\u83B7\u53D6\u6536\u85CF\u6570\uFF1A%1/%2",
+  sort_getPublicFollowing: "\u83B7\u53D6\u516C\u5F00\u5173\u6CE8\u753B\u5E08",
+  sort_getPrivateFollowing: "\u83B7\u53D6\u79C1\u6709\u5173\u6CE8\u753B\u5E08",
+  sort_filtering: "\u8FC7\u6EE4%1\u6536\u85CF\u91CF\u4F4E\u4E8E%2\u7684\u4F5C\u54C1",
+  sort_filteringHideFavorite: "\u5DF2\u6536\u85CF\u548C",
+  sort_fullSizeThumb: "\u5168\u5C3A\u5BF8\u7F29\u7565\u56FE\uFF08\u641C\u7D22\u9875\u3001\u7528\u6237\u9875\uFF09",
+  label_sort: "\u6392\u5E8F",
+  label_sorting: "\u6392\u5E8F\u4E2D",
+  label_nextPage: "\u4E0B\u4E00\u9875"
+};
+var i18n_default = Texts;
+
 // src/icons/heart.svg
 var heart_default = '<svg viewBox="0 0 32 32" width="32" height="32">\n  <path d="\nM21,5.5 C24.8659932,5.5 28,8.63400675 28,12.5 C28,18.2694439 24.2975093,23.1517313 17.2206059,27.1100183\nC16.4622493,27.5342993 15.5379984,27.5343235 14.779626,27.110148 C7.70250208,23.1517462 4,18.2694529 4,12.5\nC4,8.63400691 7.13400681,5.5 11,5.5 C12.829814,5.5 14.6210123,6.4144028 16,7.8282366\nC17.3789877,6.4144028 19.170186,5.5 21,5.5 Z"></path>\n  <path d="M16,11.3317089 C15.0857201,9.28334665 13.0491506,7.5 11,7.5\nC8.23857625,7.5 6,9.73857647 6,12.5 C6,17.4386065 9.2519779,21.7268174 15.7559337,25.3646328\nC15.9076021,25.4494645 16.092439,25.4494644 16.2441073,25.3646326 C22.7480325,21.7268037 26,17.4385986 26,12.5\nC26,9.73857625 23.7614237,7.5 21,7.5 C18.9508494,7.5 16.9142799,9.28334665 16,11.3317089 Z" style="fill: #fafafa;">\n  </path>\n</svg>';
 
@@ -1365,7 +1437,6 @@ var loadIllustSort = (options) => {
     hideByTagList: hideByTagListString,
     aiFilter = false,
     aiAssistedFilter = false,
-    lang = 0 /* zh_CN */,
     csrfToken
   } = options;
   let pageCount = Number(optionPageCount), favFilter = Number(optionFavFilter);
@@ -1430,13 +1501,14 @@ var loadIllustSort = (options) => {
     }) {
       this.sorting = true;
       iLog.i("Start to sort illustrations.");
-      this.sortButtonElement.text("\u6392\u5E8F\u4E2D");
+      this.sortButtonElement.text(i18n_default.label_sorting);
       try {
         let illustrations = [];
-        const startPage = Number(searchParams.get("p")) || 1;
+        const startPage = Number(searchParams.get("p") ?? 1);
         const endPage = startPage + pageCount - 1;
         for (let page = startPage; page < startPage + pageCount; page += 1) {
           this.setProgress(`Getting ${page}/${endPage} page...`);
+          searchParams.set("p", String(page));
           const requestUrl = `${api}?${searchParams}`;
           const getIllustRes = await requestWithRetry({
             url: requestUrl,
@@ -1512,10 +1584,10 @@ var loadIllustSort = (options) => {
         iLog.i("Sort illustrations successfully.");
         this.illustrations = sortedIllustrations;
         this.showIllustrations();
-        this.sortButtonElement.text("\u4E0B\u4E00\u9875");
+        this.sortButtonElement.text(i18n_default.label_nextPage);
       } catch (error) {
         iLog.e("Sort illustrations failed:", error);
-        this.sortButtonElement.text("\u6392\u5E8F");
+        this.sortButtonElement.text(i18n_default.label_sort);
       }
       this.hideProgress();
       this.sorting = false;
@@ -1529,7 +1601,6 @@ var loadIllustSort = (options) => {
       this.progressElement.hide();
     }
     showIllustrations() {
-      this.listElement.find("li").remove();
       const fragment = document.createDocumentFragment();
       for (const {
         aiType,
@@ -1613,6 +1684,7 @@ var loadIllustSort = (options) => {
         listItem.appendChild(container);
         fragment.appendChild(listItem);
       }
+      this.listElement.find("li").remove();
       this.listElement.append(fragment);
     }
   }
@@ -1703,228 +1775,7 @@ function getIllustrationsFromResponse(type, response) {
   return [];
 }
 
-// src/i18n/index.ts
-var Texts = {};
-Texts[0 /* zh_CN */] = {
-  // 安装或更新后弹出的提示
-  install_title: "\u6B22\u8FCE\u4F7F\u7528 Pixiv Previewer by Lolipop v",
-  install_body: '<div style="position: absolute;left: 50%;top: 30%;font-size: 20px; color: white;transform:translate(-50%,0);"><p>\u6B22\u8FCE\u53CD\u9988\u95EE\u9898\u548C\u63D0\u51FA\u5EFA\u8BAE\uFF01><a style="color: skyblue;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer/feedback" target="_blank">\u53CD\u9988\u9875\u9762</a><</p><br><p>\u5982\u679C\u60A8\u662F\u7B2C\u4E00\u6B21\u4F7F\u7528\uFF0C\u63A8\u8350\u5230<a style="color: skyblue;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer" target="_blank"> \u8BE6\u60C5\u9875 </a>\u67E5\u770B\u811A\u672C\u4ECB\u7ECD\u3002</p></div>',
-  upgrade_body: `<div>
-  <p>
-    \u672C\u811A\u672C\u57FA\u4E8E
-    <a
-      style="color: skyblue"
-      href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer"
-      target="_blank"
-      >Pixiv Previewer</a
-    >
-    \u4E8C\u6B21\u5F00\u53D1\uFF0C\u65E8\u5728\u6EE1\u8DB3\u5F00\u53D1\u8005\u81EA\u5DF1\u9700\u8981\u7684\u80FD\u529B\u3002
-  </p>
-  <br />
-  <p>
-    \u5982\u679C\u60F3\u8981\u63D0\u51FA\u5EFA\u8BAE\uFF0C\u8BF7\u524D\u5F80\u539F\u811A\u672C\u7684<a
-      style="color: skyblue"
-      href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer/feedback"
-      target="_blank"
-      >\u53CD\u9988\u9875\u9762</a
-    >\u6216\u5F00\u542F\u4E00\u4E2A\u65B0\u7684
-    <a
-      style="color: skyblue"
-      href="https://github.com/Ocrosoft/PixivPreviewer/issues"
-      target="_blank"
-      >Github \u8BAE\u9898</a
-    >\uFF01
-  </p>
-</div>`,
-  // 设置项
-  setting_language: "\u8BED\u8A00",
-  setting_preview: "\u9884\u89C8",
-  setting_animePreview: "\u52A8\u56FE\u9884\u89C8",
-  setting_sort: "\u641C\u7D22\u9875\u81EA\u52A8\u6392\u5E8F",
-  setting_anime: "\u52A8\u56FE\u4E0B\u8F7D\uFF08\u52A8\u56FE\u9884\u89C8\u53CA\u8BE6\u60C5\u9875\u751F\u6548\uFF09",
-  setting_origin: "\u9884\u89C8\u65F6\u4F18\u5148\u663E\u793A\u539F\u56FE\uFF08\u6162\uFF09",
-  setting_previewDelay: "\u5EF6\u8FDF\u663E\u793A\u9884\u89C8\u56FE\uFF08\u6BEB\u79D2\uFF09",
-  setting_previewByKey: "\u4F7F\u7528\u6309\u952E\u63A7\u5236\u9884\u89C8\u56FE\u5C55\u793A\uFF08Ctrl\uFF09",
-  setting_previewByKeyHelp: "\u5F00\u542F\u540E\u9F20\u6807\u79FB\u52A8\u5230\u56FE\u7247\u4E0A\u4E0D\u518D\u5C55\u793A\u9884\u89C8\u56FE\uFF0C\u6309\u4E0BCtrl\u952E\u624D\u5C55\u793A\uFF0C\u540C\u65F6\u201C\u5EF6\u8FDF\u663E\u793A\u9884\u89C8\u201D\u8BBE\u7F6E\u9879\u4E0D\u751F\u6548\u3002",
-  setting_maxPage: "\u6BCF\u6B21\u6392\u5E8F\u65F6\u7EDF\u8BA1\u7684\u6700\u5927\u9875\u6570",
-  setting_hideWork: "\u9690\u85CF\u6536\u85CF\u6570\u5C11\u4E8E\u8BBE\u5B9A\u503C\u7684\u4F5C\u54C1",
-  setting_sortOrderByBookmark: "\u6309\u7167\u6536\u85CF\u6570\u6392\u5E8F\u4F5C\u54C1",
-  setting_hideAiWork: "\u6392\u5E8F\u65F6\u9690\u85CF AI \u751F\u6210\u4F5C\u54C1",
-  setting_hideAiAssistedWork: "\u6392\u5E8F\u65F6\u9690\u85CF AI \u8F85\u52A9\u4F5C\u54C1",
-  setting_hideFav: "\u6392\u5E8F\u65F6\u9690\u85CF\u5DF2\u6536\u85CF\u7684\u4F5C\u54C1",
-  setting_hideFollowed: "\u6392\u5E8F\u65F6\u9690\u85CF\u5DF2\u5173\u6CE8\u753B\u5E08\u4F5C\u54C1",
-  setting_hideByTag: "\u6392\u5E8F\u65F6\u9690\u85CF\u6307\u5B9A\u6807\u7B7E\u7684\u4F5C\u54C1",
-  setting_hideByTagPlaceholder: "\u8F93\u5165\u6807\u7B7E\u540D\uFF0C\u591A\u4E2A\u6807\u7B7E\u7528','\u5206\u9694",
-  setting_clearFollowingCache: "\u6E05\u9664\u7F13\u5B58",
-  setting_clearFollowingCacheHelp: "\u5173\u6CE8\u753B\u5E08\u4FE1\u606F\u4F1A\u5728\u672C\u5730\u4FDD\u5B58\u4E00\u5929\uFF0C\u5982\u679C\u5E0C\u671B\u7ACB\u5373\u66F4\u65B0\uFF0C\u8BF7\u70B9\u51FB\u6E05\u9664\u7F13\u5B58",
-  setting_followingCacheCleared: "\u5DF2\u6E05\u9664\u7F13\u5B58\uFF0C\u8BF7\u5237\u65B0\u9875\u9762\u3002",
-  setting_blank: "\u4F7F\u7528\u65B0\u6807\u7B7E\u9875\u6253\u5F00\u4F5C\u54C1\u8BE6\u60C5\u9875",
-  setting_turnPage: "\u4F7F\u7528\u952E\u76D8\u2190\u2192\u8FDB\u884C\u7FFB\u9875\uFF08\u6392\u5E8F\u540E\u7684\u641C\u7D22\u9875\uFF09",
-  setting_save: "\u4FDD\u5B58\u8BBE\u7F6E",
-  setting_reset: "\u91CD\u7F6E\u811A\u672C",
-  setting_resetHint: "\u8FD9\u4F1A\u5220\u9664\u6240\u6709\u8BBE\u7F6E\uFF0C\u76F8\u5F53\u4E8E\u91CD\u65B0\u5B89\u88C5\u811A\u672C\uFF0C\u786E\u5B9A\u8981\u91CD\u7F6E\u5417\uFF1F",
-  setting_novelSort: "\u5C0F\u8BF4\u6392\u5E8F",
-  setting_novelMaxPage: "\u5C0F\u8BF4\u6392\u5E8F\u65F6\u7EDF\u8BA1\u7684\u6700\u5927\u9875\u6570",
-  setting_novelHideWork: "\u9690\u85CF\u6536\u85CF\u6570\u5C11\u4E8E\u8BBE\u5B9A\u503C\u7684\u4F5C\u54C1",
-  setting_novelHideFav: "\u6392\u5E8F\u65F6\u9690\u85CF\u5DF2\u6536\u85CF\u7684\u4F5C\u54C1",
-  // 搜索时过滤值太高
-  sort_noWork: "\u6CA1\u6709\u53EF\u4EE5\u663E\u793A\u7684\u4F5C\u54C1\uFF08\u9690\u85CF\u4E86 %1 \u4E2A\u4F5C\u54C1\uFF09",
-  sort_getWorks: "\u6B63\u5728\u83B7\u53D6\u7B2C %1/%2 \u9875\u4F5C\u54C1",
-  sort_getBookmarkCount: "\u83B7\u53D6\u6536\u85CF\u6570\uFF1A%1/%2",
-  sort_getPublicFollowing: "\u83B7\u53D6\u516C\u5F00\u5173\u6CE8\u753B\u5E08",
-  sort_getPrivateFollowing: "\u83B7\u53D6\u79C1\u6709\u5173\u6CE8\u753B\u5E08",
-  sort_filtering: "\u8FC7\u6EE4%1\u6536\u85CF\u91CF\u4F4E\u4E8E%2\u7684\u4F5C\u54C1",
-  sort_filteringHideFavorite: "\u5DF2\u6536\u85CF\u548C",
-  sort_fullSizeThumb: "\u5168\u5C3A\u5BF8\u7F29\u7565\u56FE\uFF08\u641C\u7D22\u9875\u3001\u7528\u6237\u9875\uFF09",
-  // 小说排序
-  nsort_getWorks: "\u6B63\u5728\u83B7\u53D6\u7B2C 1%/2% \u9875\u4F5C\u54C1",
-  nsort_sorting: "\u6B63\u5728\u6309\u6536\u85CF\u91CF\u6392\u5E8F",
-  nsort_hideFav: "\u6392\u5E8F\u65F6\u9690\u85CF\u5DF2\u6536\u85CF\u7684\u4F5C\u54C1",
-  nsort_hideFollowed: "\u6392\u5E8F\u65F6\u9690\u85CF\u5DF2\u5173\u6CE8\u4F5C\u8005\u4F5C\u54C1",
-  text_sort: "\u6392\u5E8F"
-};
-Texts[1 /* en_US */] = {
-  install_title: "Welcome to PixivPreviewerL v",
-  install_body: '<div style="position: absolute;left: 50%;top: 30%;font-size: 20px; color: white;transform:translate(-50%,0);"><p>Feedback questions and suggestions are welcome! ><a style="color: skyblue;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer/feedback" target="_blank">Feedback Page</a><</p><br><p>If you are using it for the first time, it is recommended to go to the<a style="color: skyblue;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer" target="_blank"> Details Page </a>to see the script introduction.</p></div>',
-  upgrade_body: Texts[0 /* zh_CN */].upgrade_body,
-  setting_language: "Language",
-  setting_preview: "Preview",
-  setting_animePreview: "Animation preview",
-  setting_sort: "Sorting (Search page)",
-  setting_anime: "Animation download (Preview and Artwork page)",
-  setting_origin: "Display original image when preview (slow)",
-  setting_previewDelay: "Delay of display preview image(Million seconds)",
-  setting_previewByKey: "Use keys to control the preview image display (Ctrl)",
-  setting_previewByKeyHelp: 'After enabling it, move the mouse to the picture and no longer display the preview image. Press the Ctrl key to display it, and the "Delayed Display Preview" setting item does not take effect.',
-  setting_maxPage: "Maximum number of pages counted per sort",
-  setting_hideWork: "Hide works with bookmark count less than set value",
-  setting_hideAiWork: "Hide AI works",
-  setting_hideFav: "Hide favorites when sorting",
-  setting_hideFollowed: "Hide artworks of followed artists when sorting",
-  setting_hideByTag: "Hide artworks by tag",
-  setting_hideByTagPlaceholder: "Input tag name, multiple tags separated by ','",
-  setting_clearFollowingCache: "Cache",
-  setting_clearFollowingCacheHelp: "The folloing artists info. will be saved locally for one day, if you want to update immediately, please click this to clear cache",
-  setting_followingCacheCleared: "Success, please refresh the page.",
-  setting_blank: "Open works' details page in new tab",
-  setting_turnPage: "Use \u2190 \u2192 to turn pages (Search page)",
-  setting_save: "Save",
-  setting_reset: "Reset",
-  setting_resetHint: "This will delete all settings and set it to default. Are you sure?",
-  setting_novelSort: "Sorting (Novel)",
-  setting_novelMaxPage: "Maximum number of pages counted for novel sorting",
-  setting_novelHideWork: "Hide works with bookmark count less than set value",
-  setting_novelHideFav: "Hide favorites when sorting",
-  sort_noWork: "No works to display (%1 works hideen)",
-  sort_getWorks: "Getting artworks of page: %1 of %2",
-  sort_getBookmarkCount: "Getting bookmark count of artworks\uFF1A%1 of %2",
-  sort_getPublicFollowing: "Getting public following list",
-  sort_getPrivateFollowing: "Getting private following list",
-  sort_filtering: "Filtering%1works with bookmark count less than %2",
-  sort_filteringHideFavorite: " favorited works and ",
-  sort_fullSizeThumb: "Display not cropped images.(Search page and User page only.)",
-  nsort_getWorks: "Getting novels of page: 1% of 2%",
-  nsort_sorting: "Sorting by bookmark cound",
-  nsort_hideFav: "Hide favorites when sorting",
-  nsort_hideFollowed: "Hide artworks of followed authors when sorting",
-  text_sort: "sort"
-};
-Texts[2 /* ru_RU */] = {
-  install_title: "\u0414\u043E\u0431\u0440\u043E \u043F\u043E\u0436\u0430\u043B\u043E\u0432\u0430\u0442\u044C \u0432 PixivPreviewerL v",
-  install_body: '<div style="position: absolute;left: 50%;top: 30%;font-size: 20px; color: white;transform:translate(-50%,0);"><p>\u0412\u043E\u043F\u0440\u043E\u0441\u044B \u0438 \u043F\u0440\u0435\u0434\u043B\u043E\u0436\u0435\u043D\u0438\u044F \u043F\u0440\u0438\u0432\u0435\u0442\u0441\u0442\u0432\u0443\u044E\u0442\u0441\u044F! ><a style="color: skyblue;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer/feedback" target="_blank">\u0421\u0442\u0440\u0430\u043D\u0438\u0446\u0430 \u043E\u0431\u0440\u0430\u0442\u043D\u043E\u0439 \u0441\u0432\u044F\u0437\u0438</a><</p><br><p>\u0415\u0441\u043B\u0438 \u0432\u044B \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0435\u0442\u0435 \u044D\u0442\u043E \u0432\u043F\u0435\u0440\u0432\u044B\u0435, \u0440\u0435\u043A\u043E\u043C\u0435\u043D\u0434\u0443\u0435\u0442\u0441\u044F \u043F\u0435\u0440\u0435\u0439\u0442\u0438 \u043A<a style="color: skyblue;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer" target="_blank"> \u0421\u0442\u0440\u0430\u043D\u0438\u0446\u0435 \u043F\u043E\u0434\u0440\u043E\u0431\u043D\u043E\u0441\u0442\u0435\u0439 </a>, \u0447\u0442\u043E\u0431\u044B \u043F\u043E\u0441\u043C\u043E\u0442\u0440\u0435\u0442\u044C \u0432\u0432\u0435\u0434\u0435\u043D\u0438\u0435 \u0432 \u0441\u043A\u0440\u0438\u043F\u0442.</p></div>',
-  upgrade_body: Texts[0 /* zh_CN */].upgrade_body,
-  setting_language: "\u042F\u0437\u044B\u043A",
-  setting_preview: "\u041F\u0440\u0435\u0434\u043F\u0440\u043E\u0441\u043C\u043E\u0442\u0440",
-  setting_animePreview: Texts[1 /* en_US */].setting_animePreview,
-  setting_sort: "\u0421\u043E\u0440\u0442\u0438\u0440\u043E\u0432\u043A\u0430 (\u0421\u0442\u0440\u0430\u043D\u0438\u0446\u0430 \u043F\u043E\u0438\u0441\u043A\u0430)",
-  setting_anime: "\u0410\u043D\u0438\u043C\u0430\u0446\u0438\u044F \u0441\u043A\u0430\u0447\u0438\u0432\u0430\u043D\u0438\u044F (\u0421\u0442\u0440\u0430\u043D\u0438\u0446\u044B \u043F\u0440\u0435\u0434\u043F\u0440\u043E\u0441\u043C\u043E\u0442\u0440\u0430 \u0438 Artwork)",
-  setting_origin: "\u041F\u0440\u0438 \u043F\u0440\u0435\u0434\u043F\u0440\u043E\u0441\u043C\u043E\u0442\u0440\u0435, \u043F\u043E\u043A\u0430\u0437\u044B\u0432\u0430\u0442\u044C \u0438\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u044F \u0441 \u043E\u0440\u0438\u0433\u0438\u043D\u0430\u043B\u044C\u043D\u044B\u043C \u043A\u0430\u0447\u0435\u0441\u0442\u0432\u043E\u043C (\u043C\u0435\u0434\u043B\u0435\u043D\u043D\u043E)",
-  setting_previewDelay: "\u0417\u0430\u0434\u0435\u0440\u0436\u043A\u0430 \u043E\u0442\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u044F \u043F\u0440\u0435\u0434\u043F\u0440\u043E\u0441\u043C\u043E\u0442\u0440\u0430 \u0438\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u044F (\u041C\u0438\u043B\u043B\u0438\u043E\u043D \u0441\u0435\u043A\u0443\u043D\u0434)",
-  setting_previewByKey: Texts[1 /* en_US */].setting_previewByKey,
-  setting_previewByKeyHelp: Texts[1 /* en_US */].setting_previewByKeyHelp,
-  setting_maxPage: "\u041C\u0430\u043A\u0441\u0438\u043C\u0430\u043B\u044C\u043D\u043E\u0435 \u043A\u043E\u043B\u0438\u0447\u0435\u0441\u0442\u0432\u043E \u0441\u0442\u0440\u0430\u043D\u0438\u0446, \u043F\u043E\u0434\u0441\u0447\u0438\u0442\u0430\u043D\u043D\u044B\u0445 \u0437\u0430 \u0441\u043E\u0440\u0442\u0438\u0440\u043E\u0432\u043A\u0443",
-  setting_hideWork: "\u0421\u043A\u0440\u044B\u0442\u044C \u0440\u0430\u0431\u043E\u0442\u044B \u0441 \u043A\u043E\u043B\u0438\u0447\u0435\u0441\u0442\u0432\u043E\u043C \u0437\u0430\u043A\u043B\u0430\u0434\u043E\u043A \u043C\u0435\u043D\u044C\u0448\u0435 \u0443\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D\u043D\u043E\u0433\u043E \u0437\u043D\u0430\u0447\u0435\u043D\u0438\u044F",
-  setting_hideAiWork: Texts[1 /* en_US */].setting_hideAiWork,
-  setting_hideFav: "\u041F\u0440\u0438 \u0441\u043E\u0440\u0442\u0438\u0440\u043E\u0432\u043A\u0435, \u0441\u043A\u0440\u044B\u0442\u044C \u0438\u0437\u0431\u0440\u0430\u043D\u043D\u043E\u0435",
-  setting_hideFollowed: "\u041F\u0440\u0438 \u0441\u043E\u0440\u0442\u0438\u0440\u043E\u0432\u043A\u0435, \u0441\u043A\u0440\u044B\u0442\u044C \u0440\u0430\u0431\u043E\u0442\u044B \u0445\u0443\u0434\u043E\u0436\u043D\u0438\u043A\u043E\u0432 \u043D\u0430 \u043A\u043E\u0442\u043E\u0440\u044B\u0445 \u043F\u043E\u0434\u043F\u0438\u0441\u0430\u043D\u044B",
-  setting_hideByTag: Texts[1 /* en_US */].setting_hideByTag,
-  setting_hideByTagPlaceholder: Texts[1 /* en_US */].setting_hideByTagPlaceholder,
-  setting_clearFollowingCache: "\u041A\u044D\u0448",
-  setting_clearFollowingCacheHelp: "\u0421\u043B\u0435\u0434\u0443\u044E\u0449\u0430\u044F \u0438\u043D\u0444\u043E\u0440\u043C\u0430\u0446\u0438\u044F \u043E \u0445\u0443\u0434\u043E\u0436\u043D\u0438\u043A\u0430\u0445 \u0431\u0443\u0434\u0435\u0442 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u0430 \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u043E \u0432 \u0442\u0435\u0447\u0435\u043D\u0438\u0435 \u043E\u0434\u043D\u043E\u0433\u043E \u0434\u043D\u044F, \u0435\u0441\u043B\u0438 \u0432\u044B \u0445\u043E\u0442\u0438\u0442\u0435 \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u0435\u0451 \u043D\u0435\u043C\u0435\u0434\u043B\u0435\u043D\u043D\u043E, \u043D\u0430\u0436\u043C\u0438\u0442\u0435 \u043D\u0430 \u044D\u0442\u0443 \u043A\u043D\u043E\u043F\u043A\u0443, \u0447\u0442\u043E\u0431\u044B \u043E\u0447\u0438\u0441\u0442\u0438\u0442\u044C \u043A\u044D\u0448",
-  setting_followingCacheCleared: "\u0413\u043E\u0442\u043E\u0432\u043E, \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u0435 \u0441\u0442\u0440\u0430\u043D\u0438\u0446\u0443.",
-  setting_blank: "\u041E\u0442\u043A\u0440\u044B\u0432\u0430\u0442\u044C \u0441\u0442\u0440\u0430\u043D\u0438\u0446\u0443 \u0441 \u043E\u043F\u0438\u0441\u0430\u043D\u0438\u0435\u043C \u0440\u0430\u0431\u043E\u0442\u044B \u043D\u0430 \u043D\u043E\u0432\u043E\u0439 \u0432\u043A\u043B\u0430\u0434\u043A\u0435",
-  setting_turnPage: "\u0418\u0441\u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u044C \u2190 \u2192 \u0434\u043B\u044F \u043F\u0435\u0440\u0435\u043B\u0438\u0441\u0442\u044B\u0432\u0430\u043D\u0438\u044F \u0441\u0442\u0440\u0430\u043D\u0438\u0446 (\u0421\u0442\u0440\u0430\u043D\u0438\u0446\u0430 \u043F\u043E\u0438\u0441\u043A\u0430)",
-  setting_save: "\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C",
-  setting_reset: "\u0421\u0431\u0440\u043E\u0441\u0438\u0442\u044C",
-  setting_resetHint: "\u042D\u0442\u043E \u0443\u0434\u0430\u043B\u0438\u0442 \u0432\u0441\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 \u0438 \u0443\u0441\u0442\u0430\u043D\u043E\u0432\u0438\u0442 \u0438\u0445 \u043F\u043E \u0443\u043C\u043E\u043B\u0447\u0430\u043D\u0438\u044E. \u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0438\u0442\u044C?",
-  setting_novelSort: Texts[1 /* en_US */].setting_novelSort,
-  setting_novelMaxPage: Texts[1 /* en_US */].setting_novelMaxPage,
-  setting_novelHideWork: "\u0421\u043A\u0440\u044B\u0442\u044C \u0440\u0430\u0431\u043E\u0442\u044B \u0441 \u043A\u043E\u043B\u0438\u0447\u0435\u0441\u0442\u0432\u043E\u043C \u0437\u0430\u043A\u043B\u0430\u0434\u043E\u043A \u043C\u0435\u043D\u044C\u0448\u0435 \u0443\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D\u043D\u043E\u0433\u043E \u0437\u043D\u0430\u0447\u0435\u043D\u0438\u044F",
-  setting_novelHideFav: "\u041F\u0440\u0438 \u0441\u043E\u0440\u0442\u0438\u0440\u043E\u0432\u043A\u0435, \u0441\u043A\u0440\u044B\u0442\u044C \u0438\u0437\u0431\u0440\u0430\u043D\u043D\u043E\u0435",
-  sort_noWork: "\u041D\u0435\u0442 \u0440\u0430\u0431\u043E\u0442 \u0434\u043B\u044F \u043E\u0442\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u044F (%1 works hidden)",
-  sort_getWorks: "\u041F\u043E\u043B\u0443\u0447\u0435\u043D\u0438\u0435 \u0438\u043B\u043B\u044E\u0441\u0442\u0440\u0430\u0446\u0438\u0439 \u0441\u0442\u0440\u0430\u043D\u0438\u0446\u044B: %1 \u0438\u0437 %2",
-  sort_getBookmarkCount: "\u041F\u043E\u043B\u0443\u0447\u0435\u043D\u0438\u0435 \u043A\u043E\u043B\u0438\u0447\u0435\u0441\u0442\u0432\u0430 \u0437\u0430\u043A\u043B\u0430\u0434\u043E\u043A artworks\uFF1A%1 \u0438\u0437 %2",
-  sort_getPublicFollowing: "\u041F\u043E\u043B\u0443\u0447\u0435\u043D\u0438\u0435 \u043F\u0443\u0431\u043B\u0438\u0447\u043D\u043E\u0433\u043E \u0441\u043F\u0438\u0441\u043A\u0430 \u043F\u043E\u0434\u043F\u0438\u0441\u043E\u043A",
-  sort_getPrivateFollowing: "\u041F\u043E\u043B\u0443\u0447\u0435\u043D\u0438\u0435 \u043F\u0440\u0438\u0432\u0430\u0442\u043D\u043E\u0433\u043E \u0441\u043F\u0438\u0441\u043A\u0430 \u043F\u043E\u0434\u043F\u0438\u0441\u043E\u043A",
-  sort_filtering: "\u0424\u0438\u043B\u044C\u0442\u0440\u0430\u0446\u0438\u044F %1 \u0440\u0430\u0431\u043E\u0442 \u0441 \u043A\u043E\u043B\u0438\u0447\u0435\u0441\u0442\u0432\u043E\u043C \u0437\u0430\u043A\u043B\u0430\u0434\u043E\u043A \u043C\u0435\u043D\u044C\u0448\u0435 \u0447\u0435\u043C %2",
-  sort_filteringHideFavorite: " \u0438\u0437\u0431\u0440\u0430\u043D\u043D\u044B\u0435 \u0440\u0430\u0431\u043E\u0442\u044B \u0438 ",
-  sort_fullSizeThumb: "\u041F\u043E\u043A\u0430\u0437\u0430\u0442\u044C \u043D\u0435\u043E\u0442\u0440\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u043D\u043D\u043E\u0435 \u0438\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u0435 (\u0421\u0442\u0440\u0430\u043D\u0438\u0446\u044B \u043F\u043E\u0438\u0441\u043A\u0430 \u0438 Artwork)",
-  nsort_getWorks: Texts[1 /* en_US */].nsort_getWorks,
-  nsort_sorting: Texts[1 /* en_US */].nsort_sorting,
-  nsort_hideFav: Texts[1 /* en_US */].nsort_hideFav,
-  nsort_hideFollowed: Texts[1 /* en_US */].nsort_hideFollowed,
-  text_sort: Texts[1 /* en_US */].text_sort
-};
-Texts[3 /* ja_JP */] = {
-  install_title: "Welcome to PixivPreviewerL v",
-  install_body: '<div style="position: absolute;left: 50%;top: 30%;font-size: 20px; color: white;transform:translate(-50%,0);"><p\u3054\u610F\u898B\u3084\u63D0\u6848\u306F\u5927\u6B53\u8FCE\u3067\u3059! ><a style="color: skyblue;" href="https://greasyfork.org/ja/scripts/30766-pixiv-previewer/feedback" target="_blank">\u30D5\u30A3\u30FC\u30C9\u30D0\u30C3\u30AF\u30DA\u30FC\u30B8</a><</p><br><p>\u521D\u3081\u3066\u4F7F\u3046\u5834\u5408\u306F\u3001<a style="color: skyblue;" href="https://greasyfork.org/ja/scripts/30766-pixiv-previewer" target="_blank"> \u8A73\u7D30\u30DA\u30FC\u30B8 </a>\u3067\u30B9\u30AF\u30EA\u30D7\u30C8\u306E\u7D39\u4ECB\u3092\u898B\u308B\u3053\u3068\u3092\u304A\u52E7\u3081\u3057\u307E\u3059\u3002</p></div>',
-  upgrade_body: Texts[0 /* zh_CN */].upgrade_body,
-  setting_language: "\u8A00\u8A9E",
-  setting_preview: "\u30D7\u30EC\u30D3\u30E5\u30FC\u6A5F\u80FD",
-  setting_animePreview: "\u3046\u3054\u30A4\u30E9\u30D7\u30EC\u30D3\u30E5\u30FC",
-  setting_sort: "\u30BD\u30FC\u30C8",
-  setting_anime: "\u3046\u3054\u30A4\u30E9\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9",
-  setting_origin: "\u6700\u5927\u30B5\u30A4\u30BA\u306E\u753B\u50CF\u3092\u8868\u793A\u3059\u308B(\u9045\u304F\u306A\u308B\u53EF\u80FD\u6027\u304C\u3042\u308B)",
-  setting_previewDelay: "\u30AB\u30FC\u30BD\u30EB\u3092\u91CD\u306D\u3066\u304B\u3089\u30D7\u30EC\u30D3\u30E5\u30FC\u3059\u308B\u307E\u3067\u306E\u9045\u5EF6(\u30DF\u30EA\u79D2)",
-  setting_previewByKey: "\u30AD\u30FC\u3067\u30D7\u30EC\u30D3\u30E5\u30FC\u753B\u50CF\u306E\u8868\u793A\u3092\u5236\u5FA1\u3059\u308B (Ctrl)",
-  setting_previewByKeyHelp: '\u3053\u308C\u3092\u6709\u52B9\u306B\u3059\u308B\u3068\u3001\u753B\u50CF\u306B\u30DE\u30A6\u30B9\u3092\u79FB\u52D5\u3057\u3066\u3082\u30D7\u30EC\u30D3\u30E5\u30FC\u753B\u50CF\u304C\u8868\u793A\u3055\u308C\u306A\u304F\u306A\u308A\u307E\u3059\u3002Ctrl\u30AD\u30FC\u3092\u62BC\u3059\u3068\u8868\u793A\u3055\u308C\u3001 "\u9045\u5EF6\u8868\u793A\u30D7\u30EC\u30D3\u30E5\u30FC" \u306E\u8A2D\u5B9A\u9805\u76EE\u306F\u7121\u52B9\u306B\u306A\u308A\u307E\u3059\u3002',
-  setting_maxPage: "\u30BD\u30FC\u30C8\u3059\u308B\u3068\u304D\u306B\u53D6\u5F97\u3059\u308B\u6700\u5927\u30DA\u30FC\u30B8\u6570",
-  setting_hideWork: "\u4E00\u5B9A\u4EE5\u4E0B\u306E\u30D6\u30AF\u30DE\u30FC\u30AF\u6570\u306E\u4F5C\u54C1\u3092\u975E\u8868\u793A\u306B\u3059\u308B",
-  setting_hideAiWork: "AI\u306E\u4F5C\u54C1\u3092\u975E\u8868\u793A\u306B\u3059\u308B",
-  setting_hideFav: "\u30D6\u30C3\u30AF\u30DE\u30FC\u30AF\u6570\u3092\u30BD\u30FC\u30C8\u6642\u306B\u975E\u8868\u793A\u306B\u3059\u308B",
-  setting_hideFollowed: "\u30BD\u30FC\u30C8\u6642\u306B\u30D5\u30A9\u30ED\u30FC\u3057\u3066\u3044\u308B\u30A2\u30FC\u30C6\u30A3\u30B9\u30C8\u306E\u4F5C\u54C1\u3092\u975E\u8868\u793A",
-  setting_hideByTag: Texts[1 /* en_US */].setting_hideByTag,
-  setting_hideByTagPlaceholder: Texts[1 /* en_US */].setting_hideByTagPlaceholder,
-  setting_clearFollowingCache: "\u30AD\u30E3\u30C3\u30B7\u30E5",
-  setting_clearFollowingCacheHelp: "\u30D5\u30A9\u30ED\u30FC\u3057\u3066\u3044\u308B\u30A2\u30FC\u30C6\u30A3\u30B9\u30C8\u306E\u60C5\u5831\u304C\u30ED\u30FC\u30AB\u30EB\u306B1\u65E5\u4FDD\u5B58\u3055\u308C\u307E\u3059\u3002\u3059\u3050\u306B\u66F4\u65B0\u3057\u305F\u3044\u5834\u5408\u306F\u3001\u3053\u306E\u30AD\u30E3\u30C3\u30B7\u30E5\u3092\u30AF\u30EA\u30A2\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
-  setting_followingCacheCleared: "\u6210\u529F\u3057\u307E\u3057\u305F\u3002\u30DA\u30FC\u30B8\u3092\u66F4\u65B0\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
-  setting_blank: "\u4F5C\u54C1\u306E\u8A73\u7D30\u30DA\u30FC\u30B8\u3092\u65B0\u3057\u3044\u30BF\u30D6\u3067\u958B\u304F",
-  setting_turnPage: "\u2190 \u2192 \u3092\u4F7F\u7528\u3057\u3066\u30DA\u30FC\u30B8\u3092\u3081\u304F\u308B\uFF08\u691C\u7D22\u30DA\u30FC\u30B8\uFF09",
-  setting_save: "Save",
-  setting_reset: "Reset",
-  setting_resetHint: "\u3053\u308C\u306B\u3088\u308A\u3001\u3059\u3079\u3066\u306E\u8A2D\u5B9A\u304C\u524A\u9664\u3055\u308C\u3001\u30C7\u30D5\u30A9\u30EB\u30C8\u306B\u8A2D\u5B9A\u3055\u308C\u307E\u3059\u3002\u3088\u308D\u3057\u3044\u3067\u3059\u304B\uFF1F",
-  setting_novelSort: "\u30BD\u30FC\u30C8\uFF08\u5C0F\u8AAC\uFF09",
-  setting_novelMaxPage: "\u5C0F\u8AAC\u306E\u30BD\u30FC\u30C8\u306E\u30DA\u30FC\u30B8\u6570\u306E\u6700\u5927\u5024",
-  setting_novelHideWork: "\u8A2D\u5B9A\u5024\u672A\u6E80\u306E\u30D6\u30C3\u30AF\u30DE\u30FC\u30AF\u6570\u306E\u4F5C\u54C1\u3092\u975E\u8868\u793A",
-  setting_novelHideFav: "\u30BD\u30FC\u30C8\u6642\u306B\u304A\u6C17\u306B\u5165\u308A\u3092\u975E\u8868\u793A",
-  sort_noWork: "\u8868\u793A\u3059\u308B\u4F5C\u54C1\u304C\u3042\u308A\u307E\u305B\u3093\uFF08%1 \u4F5C\u54C1\u304C\u975E\u8868\u793A\uFF09",
-  sort_getWorks: "\u30DA\u30FC\u30B8\u306E\u4F5C\u54C1\u3092\u53D6\u5F97\u4E2D\uFF1A%1 / %2",
-  sort_getBookmarkCount: "\u4F5C\u54C1\u306E\u30D6\u30C3\u30AF\u30DE\u30FC\u30AF\u6570\u3092\u53D6\u5F97\u4E2D\uFF1A%1 / %2",
-  sort_getPublicFollowing: "\u516C\u958B\u30D5\u30A9\u30ED\u30FC\u4E00\u89A7\u3092\u53D6\u5F97\u4E2D",
-  sort_getPrivateFollowing: "\u975E\u516C\u958B\u30D5\u30A9\u30ED\u30FC\u4E00\u89A7\u3092\u53D6\u5F97\u4E2D",
-  sort_filtering: "\u30D6\u30C3\u30AF\u30DE\u30FC\u30AF\u6570\u304C%2\u672A\u6E80\u306E\u4F5C\u54C1%1\u4EF6\u3092\u30D5\u30A3\u30EB\u30BF\u30EA\u30F3\u30B0",
-  sort_filteringHideFavorite: " \u304A\u6C17\u306B\u5165\u308A\u767B\u9332\u6E08\u307F\u306E\u4F5C\u54C1\u304A\u3088\u3073  ",
-  sort_fullSizeThumb: "\u30C8\u30EA\u30DF\u30F3\u30B0\u3055\u308C\u3066\u3044\u306A\u3044\u753B\u50CF\u3092\u8868\u793A\uFF08\u691C\u7D22\u30DA\u30FC\u30B8\u304A\u3088\u3073\u30E6\u30FC\u30B6\u30FC\u30DA\u30FC\u30B8\u306E\u307F\uFF09\u3002",
-  nsort_getWorks: "\u5C0F\u8AAC\u306E\u30DA\u30FC\u30B8\u3092\u53D6\u5F97\u4E2D\uFF1A1% / 2%",
-  nsort_sorting: "\u30D6\u30C3\u30AF\u30DE\u30FC\u30AF\u6570\u3067\u4E26\u3079\u66FF\u3048",
-  nsort_hideFav: "\u30BD\u30FC\u30C8\u6642\u306B\u304A\u6C17\u306B\u5165\u308A\u3092\u975E\u8868\u793A",
-  nsort_hideFollowed: "\u30BD\u30FC\u30C8\u6642\u306B\u30D5\u30A9\u30ED\u30FC\u6E08\u307F\u4F5C\u8005\u306E\u4F5C\u54C1\u3092\u975E\u8868\u793A",
-  text_sort: "\u30BD\u30FC\u30C8"
-};
-var i18n_default = Texts;
-
 // src/index.ts
-var g_language = 0 /* zh_CN */;
 var g_csrfToken = "";
 var g_pageType;
 var g_settings;
@@ -2107,15 +1958,15 @@ function ShowUpgradeMessage() {
     top: "0px"
   });
   $("body").append(bg);
-  const body = i18n_default[g_language].upgrade_body;
-  bg.get(0).innerHTML = '<img id="pps-close"src="https://pp-1252089172.cos.ap-chengdu.myqcloud.com/Close.png"style="position: absolute; right: 35px; top: 20px; width: 32px; height: 32px; cursor: pointer;"><div style="position: absolute; width: 40%; left: 30%; top: 25%; font-size: 25px; font-weight: bold; text-align: center; color: white;">' + i18n_default[g_language].install_title + g_version + '</div><br><div style="position: absolute; left: 50%; top: 35%; font-size: 20px; color: white; transform: translate(-50%,0); height: 50%; overflow: auto;">' + body + "</div>";
+  const body = i18n_default.upgrade_body;
+  bg.get(0).innerHTML = '<img id="pps-close"src="https://pp-1252089172.cos.ap-chengdu.myqcloud.com/Close.png"style="position: absolute; right: 35px; top: 20px; width: 32px; height: 32px; cursor: pointer;"><div style="position: absolute; width: 40%; left: 30%; top: 25%; font-size: 25px; font-weight: bold; text-align: center; color: white;">' + i18n_default.install_title + g_version + '</div><br><div style="position: absolute; left: 50%; top: 35%; font-size: 20px; color: white; transform: translate(-50%,0); height: 50%; overflow: auto;">' + body + "</div>";
   $("#pps-close").click(function() {
     $("#pp-bg").remove();
   });
 }
 function FillNewSetting(st) {
   let changed = false;
-  $.each(g_defaultSettings, function(k, v) {
+  $.each(g_defaultSettings, function(k) {
     if (st[k] == void 0) {
       st[k] = g_defaultSettings[k];
       changed = true;
@@ -2125,22 +1976,6 @@ function FillNewSetting(st) {
     st,
     change: changed
   };
-}
-function AutoDetectLanguage() {
-  g_language = -1 /* auto */;
-  if (g_settings && g_settings.lang) {
-    g_language = g_settings.lang;
-  }
-  if (g_language == -1 /* auto */) {
-    const lang = $("html").attr("lang");
-    if (lang && lang.indexOf("zh") != -1) {
-      g_language = 0 /* zh_CN */;
-    } else if (lang && lang.indexOf("ja") != -1) {
-      g_language = 3 /* ja_JP */;
-    } else {
-      g_language = 1 /* en_US */;
-    }
-  }
 }
 function GetSettings() {
   let settings;
@@ -2179,7 +2014,7 @@ function ShowSetting() {
   });
   $("body").append(bg);
   const settings = GetSettings();
-  const settingHTML = '<div style="color: white; font-size: 1em;"><img id="pps-close" src="https://pp-1252089172.cos.ap-chengdu.myqcloud.com/Close.png" style="position: absolute; right: 35px; top: 20px; width: 32px; height: 32px; cursor: pointer;"><div style="position: absolute; height: 60%; left: 50%; top: 10%; overflow-y: auto; transform: translate(-50%, 0%);"><ul id="pps-ul" style="list-style: none; padding: 0; margin: 0;"></ul></div><div style="margin-top: 10px;position: absolute;bottom: 10%;width: 100%;text-align: center;"><button id="pps-save" style="font-size: 25px; border-radius: 12px; height: 48px; min-width: 138px; max-width: 150px; background-color: green; color: white; margin: 0 32px 0 32px; cursor: pointer; border: none;">' + i18n_default[g_language].setting_save + '</button><button id="pps-reset" style="font-size: 25px; border-radius: 12px; height: 48px; min-width: 138px; max-width: 150px; background-color: darkred; color: white; margin: 0 32px 0 32px; cursor: pointer; border: none;">' + i18n_default[g_language].setting_reset + "</button></div></div>";
+  const settingHTML = '<div style="color: white; font-size: 1em;"><img id="pps-close" src="https://pp-1252089172.cos.ap-chengdu.myqcloud.com/Close.png" style="position: absolute; right: 35px; top: 20px; width: 32px; height: 32px; cursor: pointer;"><div style="position: absolute; height: 60%; left: 50%; top: 10%; overflow-y: auto; transform: translate(-50%, 0%);"><ul id="pps-ul" style="list-style: none; padding: 0; margin: 0;"></ul></div><div style="margin-top: 10px;position: absolute;bottom: 10%;width: 100%;text-align: center;"><button id="pps-save" style="font-size: 25px; border-radius: 12px; height: 48px; min-width: 138px; max-width: 150px; background-color: green; color: white; margin: 0 32px 0 32px; cursor: pointer; border: none;">' + i18n_default.setting_save + '</button><button id="pps-reset" style="font-size: 25px; border-radius: 12px; height: 48px; min-width: 138px; max-width: 150px; background-color: darkred; color: white; margin: 0 32px 0 32px; cursor: pointer; border: none;">' + i18n_default.setting_reset + "</button></div></div>";
   bg.get(0).innerHTML = settingHTML;
   const ul = $("#pps-ul");
   function getImageAction(id) {
@@ -2188,49 +2023,35 @@ function ShowSetting() {
   function getInputAction(id) {
     return '<input id="' + id + '" style="font-size: 24px; padding: 0; margin-right: 16px; border-width: 0px; width: 64px; text-align: center;"/>';
   }
-  function getSelectAction(id) {
-    return '<select id="' + id + '" style="font-size: 20px; margin-right: 10px;"></select>';
-  }
   function addItem(action, text) {
     ul.append(
       '<li style="font-size: 25px; padding-bottom: 5px;">' + action + text + "</li>"
     );
   }
   ul.empty();
-  addItem(getSelectAction("pps-lang"), i18n_default[g_language].setting_language);
+  addItem(getImageAction("pps-preview"), i18n_default.setting_preview);
+  addItem(getImageAction("pps-animePreview"), i18n_default.setting_animePreview);
+  addItem(getInputAction("pps-previewDelay"), i18n_default.setting_previewDelay);
   addItem("", "&nbsp");
-  addItem(getImageAction("pps-preview"), i18n_default[g_language].setting_preview);
-  addItem(
-    getImageAction("pps-animePreview"),
-    i18n_default[g_language].setting_animePreview
-  );
-  addItem(
-    getInputAction("pps-previewDelay"),
-    i18n_default[g_language].setting_previewDelay
-  );
-  addItem("", "&nbsp");
-  addItem(getInputAction("pps-maxPage"), i18n_default[g_language].setting_maxPage);
-  addItem(getInputAction("pps-hideLess"), i18n_default[g_language].setting_hideWork);
+  addItem(getInputAction("pps-maxPage"), i18n_default.setting_maxPage);
+  addItem(getInputAction("pps-hideLess"), i18n_default.setting_hideWork);
   addItem(
     getImageAction("pps-orderByBookmark"),
-    i18n_default[g_language].setting_sortOrderByBookmark
+    i18n_default.setting_sortOrderByBookmark
   );
-  addItem(getImageAction("pps-hideAi"), i18n_default[g_language].setting_hideAiWork);
+  addItem(getImageAction("pps-hideAi"), i18n_default.setting_hideAiWork);
   addItem(
     getImageAction("pps-hideAiAssisted"),
-    i18n_default[g_language].setting_hideAiAssistedWork
+    i18n_default.setting_hideAiAssistedWork
   );
+  addItem(getImageAction("pps-hideBookmarked"), i18n_default.setting_hideFav);
+  addItem(getImageAction("pps-hideByTag"), i18n_default.setting_hideByTag);
   addItem(
-    getImageAction("pps-hideBookmarked"),
-    i18n_default[g_language].setting_hideFav
-  );
-  addItem(getImageAction("pps-hideByTag"), i18n_default[g_language].setting_hideByTag);
-  addItem(
-    '<input id="pps-hideByTagList" style="font-size: 18px;padding: 0;border-width: 0px;text-align: center;width: 95%;" placeholder="' + i18n_default[g_language].setting_hideByTagPlaceholder + '">',
+    '<input id="pps-hideByTagList" style="font-size: 18px;padding: 0;border-width: 0px;text-align: center;width: 95%;" placeholder="' + i18n_default.setting_hideByTagPlaceholder + '">',
     ""
   );
-  addItem(getImageAction("pps-newTab"), i18n_default[g_language].setting_blank);
-  addItem(getImageAction("pps-pageKey"), i18n_default[g_language].setting_turnPage);
+  addItem(getImageAction("pps-newTab"), i18n_default.setting_blank);
+  addItem(getImageAction("pps-pageKey"), i18n_default.setting_turnPage);
   const imgOn = "https://pp-1252089172.cos.ap-chengdu.myqcloud.com/On.png";
   const imgOff = "https://pp-1252089172.cos.ap-chengdu.myqcloud.com/Off.png";
   $("#pps-preview").attr("src", settings.enablePreview ? imgOn : imgOff).addClass(settings.enablePreview ? "on" : "off").css("cursor: pointer");
@@ -2251,7 +2072,6 @@ function ShowSetting() {
   $("#pps-hideByTagList").val(settings.hideByTagList);
   $("#pps-newTab").attr("src", settings.linkBlank ? imgOn : imgOff).addClass(settings.linkBlank ? "on" : "off").css("cursor: pointer");
   $("#pps-pageKey").attr("src", settings.pageByKey ? imgOn : imgOff).addClass(settings.pageByKey ? "on" : "off").css("cursor: pointer");
-  $("#pps-lang").append('<option value="-1">Auto</option>').append('<option value="' + 0 /* zh_CN */ + '">\u7B80\u4F53\u4E2D\u6587</option>').append('<option value="' + 1 /* en_US */ + '">English</option>').append('<option value="' + 2 /* ru_RU */ + '">\u0420\u0443\u0441\u0441\u043A\u0438\u0439 \u044F\u0437\u044B\u043A</option>').append('<option value="' + 3 /* ja_JP */ + '">\u65E5\u672C\u8A9E</option>').val(g_settings.lang == void 0 ? -1 /* auto */ : g_settings.lang);
   $("#pps-ul").find("img").click(function() {
     const _this = $(this);
     if (_this.hasClass("on")) {
@@ -2259,11 +2079,6 @@ function ShowSetting() {
     } else {
       _this.attr("src", imgOn).removeClass("off").addClass("on");
     }
-  });
-  $("#pps-clearFollowingCache").click(function() {
-    const user_id = dataLayer[0].user_id;
-    SetLocalStorage("followingOfUid-" + user_id, null, -1);
-    alert(i18n_default[g_language].setting_followingCacheCleared);
   });
   $("#pps-save").click(function() {
     if ($("#pps-maxPage").val() === "") {
@@ -2273,7 +2088,6 @@ function ShowSetting() {
       $("#pps-hideLess").val(g_defaultSettings.favFilter);
     }
     const settings2 = {
-      lang: Number($("#pps-lang").val()),
       enablePreview: $("#pps-preview").hasClass("on") ? 1 : 0,
       enableAnimePreview: $("#pps-animePreview").hasClass("on") ? 1 : 0,
       previewDelay: parseInt(String($("#pps-previewDelay").val())),
@@ -2293,7 +2107,7 @@ function ShowSetting() {
     location.reload();
   });
   $("#pps-reset").click(function() {
-    const comfirmText = i18n_default[g_language].setting_resetHint;
+    const comfirmText = i18n_default.setting_resetHint;
     if (confirm(comfirmText)) {
       SetLocalStorage("PixivPreview", null);
       location.reload();
@@ -2305,13 +2119,11 @@ function ShowSetting() {
 }
 var initializePixivPreviewer = () => {
   try {
-    AutoDetectLanguage();
     g_settings = GetSettings();
     iLog.i(
       "Start to initialize Pixiv Previewer with global settings:",
       g_settings
     );
-    AutoDetectLanguage();
     window.onresize = function() {
       if ($("#pp-bg").length > 0) {
         const screenWidth = document.documentElement.clientWidth;
@@ -2367,7 +2179,7 @@ var initializePixivPreviewer = () => {
       const newButton = document.createElement("button");
       newButton.id = "pp-sort";
       newButton.style.cssText = "box-sizing: border-box; background-color: rgba(0,0,0,0.32); color: #fff; margin-top: 5px; opacity: 0.8; cursor: pointer; border: none; padding: 0px; border-radius: 24px; width: 48px; height: 48px; font-size: 12px; font-weight: bold;";
-      newButton.innerHTML = i18n_default[g_language].text_sort;
+      newButton.innerHTML = i18n_default.label_sort;
       newListItem.appendChild(newButton);
       toolBar.appendChild(newListItem);
       $(newButton).on("click", () => {
