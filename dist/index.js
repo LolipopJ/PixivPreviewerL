@@ -1,13 +1,16 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             0.3.1-2025/4/23
+// @version             0.3.2-2025/4/23
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0
 // @supportURL          https://github.com/LolipopJ/PixivPreviewer
 // @match               *://www.pixiv.net/*
-// @grant               unsafeWindow
+// @grant               GM_getValue
+// @grant               GM_setValue
+// @grant               GM_registerMenuCommand
+// @grant               GM_unregisterMenuCommand
 // @grant               GM.xmlHttpRequest
 // @icon                https://t0.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&size=32&url=https://www.pixiv.net
 // @icon64              https://t0.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&size=64&url=https://www.pixiv.net
@@ -17,24 +20,23 @@
 // ==/UserScript==
 
 // src/constants/index.ts
-var g_version = "0.3.1";
-var g_loadingImage = "https://pp-1252089172.cos.ap-chengdu.myqcloud.com/loading.gif";
+var g_version = "0.3.2";
 var g_defaultSettings = {
-  enablePreview: 1,
-  enableAnimePreview: 1,
+  enablePreview: true,
+  enableAnimePreview: true,
   previewDelay: 500,
   pageCount: 3,
   favFilter: 500,
   orderType: 0 /* BY_BOOKMARK_COUNT */,
-  aiFilter: 1,
-  aiAssistedFilter: 0,
-  hideFavorite: 1,
-  hideByTag: 0,
+  aiFilter: true,
+  aiAssistedFilter: false,
+  hideFavorite: true,
+  hideByTag: false,
   hideByTagList: "",
-  linkBlank: 1,
-  pageByKey: 0,
+  linkBlank: true,
   version: g_version
 };
+var g_loadingImage = "https://pp-1252089172.cos.ap-chengdu.myqcloud.com/loading.gif";
 var PREVIEW_WRAPPER_BORDER_WIDTH = 2;
 var PREVIEW_WRAPPER_BORDER_RADIUS = 8;
 var PREVIEW_WRAPPER_DISTANCE_TO_MOUSE = 20;
@@ -1670,7 +1672,7 @@ var loadIllustSort = (options) => {
         artworkAuthor.rel = "external";
         artworkAuthor.style = "display: flex; align-items: center; margin-top: 4px;";
         artworkAuthor.innerHTML = `
-          <img src="${profileImageUrl}" alt="${userName}" style="object-fit: cover; object-position: center top; width: 24px; height: 24px; border-radius: 50%;">
+          <img src="${profileImageUrl}" alt="${userName}" style="object-fit: cover; object-position: center top; width: 24px; height: 24px; border-radius: 50%; margin-right: 4px;">
           <span style="min-width: 0px; line-height: 22px; font-size: 14px; color: rgb(214, 214, 214); text-decoration: none; text-overflow: ellipsis; white-space: nowrap; overflow: hidden;">${userName}</span>
         `;
         artworkImageWrapper.appendChild(artworkImage);
@@ -1774,6 +1776,39 @@ function getIllustrationsFromResponse(type, response) {
   }
   return [];
 }
+
+// src/utils/setting.ts
+var SETTINGS_KEY = "PIXIV_PREVIEWER_L_SETTINGS";
+var toggleSettingBooleanValue = (key) => {
+  const settings = getSettings();
+  const currentValue = Boolean(settings[key] ?? g_defaultSettings[key]);
+  const newValue = !currentValue;
+  GM_setValue(SETTINGS_KEY, { ...settings, [key]: newValue });
+};
+var setSettingStringValue = (key, label, {
+  parseValue = (v) => v,
+  onSet
+}) => {
+  const settings = getSettings();
+  const currentValue = settings[key] ?? g_defaultSettings[key];
+  const newValue = prompt(label, String(currentValue));
+  if (newValue !== null) {
+    const savedValue = parseValue(newValue);
+    GM_setValue(SETTINGS_KEY, { ...settings, [key]: savedValue });
+    onSet?.(savedValue);
+  }
+};
+var setSettingValue = (key, value) => {
+  const settings = getSettings();
+  const newValue = value ?? g_defaultSettings[key];
+  GM_setValue(SETTINGS_KEY, { ...settings, [key]: newValue });
+};
+var getSettings = () => {
+  return GM_getValue(SETTINGS_KEY) ?? g_defaultSettings;
+};
+var resetSettings = () => {
+  GM_setValue(SETTINGS_KEY, g_defaultSettings);
+};
 
 // src/index.ts
 var g_csrfToken = "";
@@ -1938,202 +1973,142 @@ function showSearchLinksForDeletedArtworks() {
     }
   });
 }
-function SetLocalStorage(name, value) {
-  localStorage.setItem(name, JSON.stringify(value));
-}
-function GetLocalStorage(name) {
-  const value = localStorage.getItem(name);
-  if (!value) return null;
-  return value;
-}
-function ShowUpgradeMessage() {
-  $("#pp-bg").remove();
-  const bg = $('<div id="pp-bg"></div>').css({
-    width: document.documentElement.clientWidth + "px",
-    height: document.documentElement.clientHeight + "px",
-    position: "fixed",
-    "z-index": 999999,
-    "background-color": "rgba(0,0,0,0.8)",
-    left: "0px",
-    top: "0px"
-  });
-  $("body").append(bg);
-  const body = i18n_default.upgrade_body;
-  bg.get(0).innerHTML = '<img id="pps-close"src="https://pp-1252089172.cos.ap-chengdu.myqcloud.com/Close.png"style="position: absolute; right: 35px; top: 20px; width: 32px; height: 32px; cursor: pointer;"><div style="position: absolute; width: 40%; left: 30%; top: 25%; font-size: 25px; font-weight: bold; text-align: center; color: white;">' + i18n_default.install_title + g_version + '</div><br><div style="position: absolute; left: 50%; top: 35%; font-size: 20px; color: white; transform: translate(-50%,0); height: 50%; overflow: auto;">' + body + "</div>";
-  $("#pps-close").click(function() {
-    $("#pp-bg").remove();
-  });
-}
-function FillNewSetting(st) {
-  let changed = false;
-  $.each(g_defaultSettings, function(k) {
-    if (st[k] == void 0) {
-      st[k] = g_defaultSettings[k];
-      changed = true;
-    }
-  });
-  return {
-    st,
-    change: changed
-  };
-}
-function GetSettings() {
-  let settings;
-  const settingsData = GetLocalStorage("PixivPreview");
-  if (settingsData == null || settingsData == "null") {
-    settings = g_defaultSettings;
-    SetLocalStorage("PixivPreview", settings);
-    ShowUpgradeMessage();
-  } else {
-    settings = JSON.parse(settingsData);
-    const mp = FillNewSetting(settings);
-    if (mp.change) {
-      settings = mp.st;
-      SetLocalStorage("PixivPreview", settings);
-    }
-    if (settings.version != g_version) {
-      ShowUpgradeMessage();
-      settings.version = g_version;
-      SetLocalStorage("PixivPreview", settings);
-    }
+var menuIds = [];
+var registerSettingsMenu = () => {
+  const settings = getSettings();
+  for (const menuId of menuIds) {
+    GM_unregisterMenuCommand(menuId);
   }
+  menuIds = [];
+  menuIds.push(
+    GM_registerMenuCommand(
+      `\u{1F5BC}\uFE0F \u63D2\u753B\u4F5C\u54C1\u9884\u89C8 ${settings.enablePreview ? "\u2705" : "\u274C"}`,
+      () => {
+        toggleSettingBooleanValue("enablePreview");
+        registerSettingsMenu();
+      }
+    ),
+    GM_registerMenuCommand(
+      `\u{1F3A6} \u52A8\u56FE\u4F5C\u54C1\u9884\u89C8 ${settings.enableAnimePreview ? "\u2705" : "\u274C"}`,
+      () => {
+        toggleSettingBooleanValue("enableAnimePreview");
+        registerSettingsMenu();
+      }
+    ),
+    GM_registerMenuCommand(
+      `\u{1F557} \u5EF6\u8FDF ${settings.previewDelay} \u6BEB\u79D2\u663E\u793A\u9884\u89C8\u56FE`,
+      () => {
+        setSettingStringValue("previewDelay", "\u5EF6\u8FDF\u663E\u793A\u9884\u89C8\u56FE\u65F6\u95F4\uFF08\u6BEB\u79D2\uFF09", {
+          parseValue: (newValue) => Number(newValue) || g_defaultSettings.previewDelay,
+          onSet: () => registerSettingsMenu()
+        });
+      }
+    ),
+    GM_registerMenuCommand(`\u{1F4DA}\uFE0F \u6BCF\u6B21\u6392\u5E8F ${settings.pageCount} \u9875`, () => {
+      setSettingStringValue("pageCount", "\u6BCF\u6B21\u6392\u5E8F\u7684\u9875\u6570", {
+        parseValue: (newValue) => Number(newValue) || g_defaultSettings.pageCount,
+        onSet: () => registerSettingsMenu()
+      });
+    }),
+    GM_registerMenuCommand(
+      `\u{1F468}\u200D\u{1F469}\u200D\u{1F467} \u6392\u5E8F\u9690\u85CF\u6536\u85CF\u6570\u5C11\u4E8E ${settings.favFilter} \u7684\u4F5C\u54C1`,
+      () => {
+        setSettingStringValue("favFilter", "\u6392\u5E8F\u9690\u85CF\u5C11\u4E8E\u8BBE\u5B9A\u6536\u85CF\u6570\u7684\u4F5C\u54C1", {
+          parseValue: (newValue) => Number(newValue) || g_defaultSettings.favFilter,
+          onSet: () => registerSettingsMenu()
+        });
+      }
+    ),
+    GM_registerMenuCommand(
+      `\u{1F3A8} \u6309\u7167 ${settings.orderType === 0 /* BY_BOOKMARK_COUNT */ ? "\u4F5C\u54C1\u6536\u85CF\u6570" : "\u4F5C\u54C1\u53D1\u5E03\u65F6\u95F4"} \u6392\u5E8F\u4F5C\u54C1`,
+      () => {
+        setSettingValue(
+          "orderType",
+          settings.orderType === 0 /* BY_BOOKMARK_COUNT */ ? 1 /* BY_DATE */ : 0 /* BY_BOOKMARK_COUNT */
+        );
+        registerSettingsMenu();
+      }
+    ),
+    GM_registerMenuCommand(
+      `\u{1F916} \u6392\u5E8F\u8FC7\u6EE4 AI \u751F\u6210\u4F5C\u54C1 ${settings.aiFilter ? "\u2705" : "\u274C"}`,
+      () => {
+        toggleSettingBooleanValue("aiFilter");
+        registerSettingsMenu();
+      }
+    ),
+    GM_registerMenuCommand(
+      `\u{1F9BE} \u6392\u5E8F\u8FC7\u6EE4 AI \u8F85\u52A9\uFF08\u52A0\u7B14\uFF09\u4F5C\u54C1 ${settings.aiAssistedFilter ? "\u2705" : "\u274C"}`,
+      () => {
+        toggleSettingBooleanValue("aiAssistedFilter");
+        registerSettingsMenu();
+      }
+    ),
+    GM_registerMenuCommand(
+      `\u2764\uFE0F \u6392\u5E8F\u8FC7\u6EE4\u5DF2\u6536\u85CF\u4F5C\u54C1 ${settings.hideFavorite ? "\u2705" : "\u274C"}`,
+      () => {
+        toggleSettingBooleanValue("hideFavorite");
+        registerSettingsMenu();
+      }
+    ),
+    GM_registerMenuCommand(
+      `\u{1F516} \u6392\u5E8F\u8FC7\u6EE4\u5305\u542B\u6307\u5B9A\u6807\u7B7E\u7684\u4F5C\u54C1 ${settings.hideByTag ? "\u2705" : "\u274C"}`,
+      () => {
+        toggleSettingBooleanValue("hideByTag");
+        registerSettingsMenu();
+      }
+    ),
+    GM_registerMenuCommand(
+      `\u{1F516} \u6392\u5E8F\u8FC7\u6EE4\u7684\u6807\u7B7E\uFF1A${settings.hideByTagList}`,
+      () => {
+        setSettingStringValue(
+          "hideByTagList",
+          "\u8FC7\u6EE4\u7684\u6807\u7B7E\u5217\u8868\uFF0C\u4F7F\u7528`,`\u5206\u9694\u4E0D\u540C\u6807\u7B7E",
+          {
+            onSet: () => registerSettingsMenu()
+          }
+        );
+      }
+    ),
+    GM_registerMenuCommand(
+      `\u{1F4D1} \u5728\u65B0\u6807\u7B7E\u9875\u6253\u5F00\u4F5C\u54C1 ${settings.linkBlank ? "\u2705" : "\u274C"}`,
+      () => {
+        toggleSettingBooleanValue("linkBlank");
+        registerSettingsMenu();
+      }
+    ),
+    GM_registerMenuCommand(`\u{1F501} \u91CD\u7F6E\u8BBE\u7F6E`, () => {
+      if (confirm("\u60A8\u786E\u5B9A\u8981\u91CD\u7F6E\u6240\u6709\u8BBE\u7F6E\u5230\u811A\u672C\u7684\u9ED8\u8BA4\u503C\u5417\uFF1F")) {
+        resetSettings();
+        location.reload();
+      }
+    })
+  );
   return settings;
-}
-function ShowSetting() {
-  const screenWidth = document.documentElement.clientWidth;
-  const screenHeight = document.documentElement.clientHeight;
+};
+var ShowUpgradeMessage = () => {
   $("#pp-bg").remove();
   const bg = $('<div id="pp-bg"></div>').css({
-    width: screenWidth + "px",
-    height: screenHeight + "px",
     position: "fixed",
-    "z-index": 999999,
-    "background-color": "rgba(0,0,0,0.8)",
-    left: "0px",
-    top: "0px"
+    "z-index": 9999,
+    "background-color": "rgba(0, 0, 0, 0.8)",
+    inset: "0px"
   });
   $("body").append(bg);
-  const settings = GetSettings();
-  const settingHTML = '<div style="color: white; font-size: 1em;"><img id="pps-close" src="https://pp-1252089172.cos.ap-chengdu.myqcloud.com/Close.png" style="position: absolute; right: 35px; top: 20px; width: 32px; height: 32px; cursor: pointer;"><div style="position: absolute; height: 60%; left: 50%; top: 10%; overflow-y: auto; transform: translate(-50%, 0%);"><ul id="pps-ul" style="list-style: none; padding: 0; margin: 0;"></ul></div><div style="margin-top: 10px;position: absolute;bottom: 10%;width: 100%;text-align: center;"><button id="pps-save" style="font-size: 25px; border-radius: 12px; height: 48px; min-width: 138px; max-width: 150px; background-color: green; color: white; margin: 0 32px 0 32px; cursor: pointer; border: none;">' + i18n_default.setting_save + '</button><button id="pps-reset" style="font-size: 25px; border-radius: 12px; height: 48px; min-width: 138px; max-width: 150px; background-color: darkred; color: white; margin: 0 32px 0 32px; cursor: pointer; border: none;">' + i18n_default.setting_reset + "</button></div></div>";
-  bg.get(0).innerHTML = settingHTML;
-  const ul = $("#pps-ul");
-  function getImageAction(id) {
-    return '<img id="' + id + '" src="https://pp-1252089172.cos.ap-chengdu.myqcloud.com/On.png" style="height: 32px; cursor: pointer; margin-right: 20px; vertical-align: middle;"/>';
-  }
-  function getInputAction(id) {
-    return '<input id="' + id + '" style="font-size: 24px; padding: 0; margin-right: 16px; border-width: 0px; width: 64px; text-align: center;"/>';
-  }
-  function addItem(action, text) {
-    ul.append(
-      '<li style="font-size: 25px; padding-bottom: 5px;">' + action + text + "</li>"
-    );
-  }
-  ul.empty();
-  addItem(getImageAction("pps-preview"), i18n_default.setting_preview);
-  addItem(getImageAction("pps-animePreview"), i18n_default.setting_animePreview);
-  addItem(getInputAction("pps-previewDelay"), i18n_default.setting_previewDelay);
-  addItem("", "&nbsp");
-  addItem(getInputAction("pps-maxPage"), i18n_default.setting_maxPage);
-  addItem(getInputAction("pps-hideLess"), i18n_default.setting_hideWork);
-  addItem(
-    getImageAction("pps-orderByBookmark"),
-    i18n_default.setting_sortOrderByBookmark
-  );
-  addItem(getImageAction("pps-hideAi"), i18n_default.setting_hideAiWork);
-  addItem(
-    getImageAction("pps-hideAiAssisted"),
-    i18n_default.setting_hideAiAssistedWork
-  );
-  addItem(getImageAction("pps-hideBookmarked"), i18n_default.setting_hideFav);
-  addItem(getImageAction("pps-hideByTag"), i18n_default.setting_hideByTag);
-  addItem(
-    '<input id="pps-hideByTagList" style="font-size: 18px;padding: 0;border-width: 0px;text-align: center;width: 95%;" placeholder="' + i18n_default.setting_hideByTagPlaceholder + '">',
-    ""
-  );
-  addItem(getImageAction("pps-newTab"), i18n_default.setting_blank);
-  addItem(getImageAction("pps-pageKey"), i18n_default.setting_turnPage);
-  const imgOn = "https://pp-1252089172.cos.ap-chengdu.myqcloud.com/On.png";
-  const imgOff = "https://pp-1252089172.cos.ap-chengdu.myqcloud.com/Off.png";
-  $("#pps-preview").attr("src", settings.enablePreview ? imgOn : imgOff).addClass(settings.enablePreview ? "on" : "off").css("cursor: pointer");
-  $("#pps-animePreview").attr("src", settings.enableAnimePreview ? imgOn : imgOff).addClass(settings.enableAnimePreview ? "on" : "off").css("cursor: pointer");
-  $("#pps-previewDelay").val(settings.previewDelay);
-  $("#pps-maxPage").val(settings.pageCount);
-  $("#pps-hideLess").val(settings.favFilter);
-  $("#pps-orderByBookmark").attr(
-    "src",
-    settings.orderType === 0 /* BY_BOOKMARK_COUNT */ ? imgOn : imgOff
-  ).addClass(
-    settings.orderType === 0 /* BY_BOOKMARK_COUNT */ ? "on" : "off"
-  ).css("cursor: pointer");
-  $("#pps-hideAi").attr("src", settings.aiFilter ? imgOn : imgOff).addClass(settings.aiFilter ? "on" : "off").css("cursor: pointer");
-  $("#pps-hideAiAssisted").attr("src", settings.aiAssistedFilter ? imgOn : imgOff).addClass(settings.aiAssistedFilter ? "on" : "off").css("cursor: pointer");
-  $("#pps-hideBookmarked").attr("src", settings.hideFavorite ? imgOn : imgOff).addClass(settings.hideFavorite ? "on" : "off").css("cursor: pointer");
-  $("#pps-hideByTag").attr("src", settings.hideByTag ? imgOn : imgOff).addClass(settings.hideByTag ? "on" : "off").css("cursor: pointer");
-  $("#pps-hideByTagList").val(settings.hideByTagList);
-  $("#pps-newTab").attr("src", settings.linkBlank ? imgOn : imgOff).addClass(settings.linkBlank ? "on" : "off").css("cursor: pointer");
-  $("#pps-pageKey").attr("src", settings.pageByKey ? imgOn : imgOff).addClass(settings.pageByKey ? "on" : "off").css("cursor: pointer");
-  $("#pps-ul").find("img").click(function() {
-    const _this = $(this);
-    if (_this.hasClass("on")) {
-      _this.attr("src", imgOff).removeClass("on").addClass("off");
-    } else {
-      _this.attr("src", imgOn).removeClass("off").addClass("on");
-    }
-  });
-  $("#pps-save").click(function() {
-    if ($("#pps-maxPage").val() === "") {
-      $("#pps-maxPage").val(g_defaultSettings.pageCount);
-    }
-    if ($("#pps-hideLess").val() == "") {
-      $("#pps-hideLess").val(g_defaultSettings.favFilter);
-    }
-    const settings2 = {
-      enablePreview: $("#pps-preview").hasClass("on") ? 1 : 0,
-      enableAnimePreview: $("#pps-animePreview").hasClass("on") ? 1 : 0,
-      previewDelay: parseInt(String($("#pps-previewDelay").val())),
-      pageCount: parseInt(String($("#pps-maxPage").val())),
-      favFilter: parseInt(String($("#pps-hideLess").val())),
-      orderType: $("#pps-orderByBookmark").hasClass("on") ? 0 /* BY_BOOKMARK_COUNT */ : 1 /* BY_DATE */,
-      aiFilter: $("#pps-hideAi").hasClass("on") ? 1 : 0,
-      aiAssistedFilter: $("#pps-hideAiAssisted").hasClass("on") ? 1 : 0,
-      hideFavorite: $("#pps-hideBookmarked").hasClass("on") ? 1 : 0,
-      hideByTag: $("#pps-hideByTag").hasClass("on") ? 1 : 0,
-      hideByTagList: String($("#pps-hideByTagList").val()),
-      linkBlank: $("#pps-newTab").hasClass("on") ? 1 : 0,
-      pageByKey: $("#pps-pageKey").hasClass("on") ? 1 : 0,
-      version: g_version
-    };
-    SetLocalStorage("PixivPreview", settings2);
-    location.reload();
-  });
-  $("#pps-reset").click(function() {
-    const comfirmText = i18n_default.setting_resetHint;
-    if (confirm(comfirmText)) {
-      SetLocalStorage("PixivPreview", null);
-      location.reload();
-    }
-  });
-  $("#pps-close").click(function() {
+  bg.get(0).innerHTML = '<img id="pps-close"src="https://pp-1252089172.cos.ap-chengdu.myqcloud.com/Close.png"style="position: absolute; right: 35px; top: 20px; width: 32px; height: 32px; cursor: pointer;"><div style="position: absolute; width: 40%; left: 30%; top: 25%; font-size: 25px; font-weight: bold; text-align: center; color: white;">' + i18n_default.install_title + g_version + '</div><br><div style="position: absolute; left: 50%; top: 35%; font-size: 20px; color: white; transform: translate(-50%,0); height: 50%; overflow: auto;">' + i18n_default.upgrade_body + "</div>";
+  $("#pps-close").on("click", () => {
     $("#pp-bg").remove();
   });
-}
+};
 var initializePixivPreviewer = () => {
   try {
-    g_settings = GetSettings();
+    g_settings = registerSettingsMenu();
     iLog.i(
       "Start to initialize Pixiv Previewer with global settings:",
       g_settings
     );
-    window.onresize = function() {
-      if ($("#pp-bg").length > 0) {
-        const screenWidth = document.documentElement.clientWidth;
-        const screenHeight = document.documentElement.clientHeight;
-        $("#pp-bg").css({
-          width: screenWidth + "px",
-          height: screenHeight + "px"
-        });
-      }
-    };
+    if (g_settings.version !== g_version) {
+      ShowUpgradeMessage();
+    }
     if (g_settings.enablePreview) {
       loadIllustPreview(g_settings);
     }
@@ -2185,20 +2160,6 @@ var initializePixivPreviewer = () => {
       $(newButton).on("click", () => {
         const sortEvent = new Event(SORT_EVENT_NAME);
         window.dispatchEvent(sortEvent);
-      });
-    }
-    if (!$("#pp-settings").length) {
-      const newListItem = toolBar.firstChild.cloneNode(true);
-      newListItem.title = "Pixiv Previewer Settings";
-      newListItem.innerHTML = "";
-      const newButton = document.createElement("button");
-      newButton.id = "pp-settings";
-      newButton.style.cssText = "box-sizing: border-box; background-color: rgba(0,0,0,0.32); margin-top: 5px; opacity: 0.8; cursor: pointer; border: none; padding: 12px; border-radius: 24px; width: 48px; height: 48px;";
-      newButton.innerHTML = '<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px" viewBox="0 0 1000 1000" enable-background="new 0 0 1000 1000" xml:space="preserve" style="fill: white;"><metadata> Svg Vector Icons : http://www.sfont.cn </metadata><g><path d="M377.5,500c0,67.7,54.8,122.5,122.5,122.5S622.5,567.7,622.5,500S567.7,377.5,500,377.5S377.5,432.3,377.5,500z"></path><path d="M990,546v-94.8L856.2,411c-8.9-35.8-23-69.4-41.6-100.2L879,186L812,119L689,185.2c-30.8-18.5-64.4-32.6-100.2-41.5L545.9,10h-94.8L411,143.8c-35.8,8.9-69.5,23-100.2,41.5L186.1,121l-67,66.9L185.2,311c-18.6,30.8-32.6,64.4-41.5,100.3L10,454v94.8L143.8,589c8.9,35.8,23,69.4,41.6,100.2L121,814l67,67l123-66.2c30.8,18.6,64.5,32.6,100.3,41.5L454,990h94.8L589,856.2c35.8-8.9,69.4-23,100.2-41.6L814,879l67-67l-66.2-123.1c18.6-30.7,32.6-64.4,41.5-100.2L990,546z M500,745c-135.3,0-245-109.7-245-245c0-135.3,109.7-245,245-245s245,109.7,245,245C745,635.3,635.3,745,500,745z"></path></g></svg>';
-      newListItem.appendChild(newButton);
-      toolBar.appendChild(newListItem);
-      $(newButton).on("click", () => {
-        ShowSetting();
       });
     }
     if (g_pageType === 3 /* Member */) {
