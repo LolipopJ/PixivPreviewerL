@@ -363,7 +363,6 @@ function ShowSetting() {
     ""
   );
   addItem(getImageAction("pps-newTab"), Texts.setting_blank);
-  addItem(getImageAction("pps-pageKey"), Texts.setting_turnPage);
 
   const imgOn = "https://pp-1252089172.cos.ap-chengdu.myqcloud.com/On.png";
   const imgOff = "https://pp-1252089172.cos.ap-chengdu.myqcloud.com/Off.png";
@@ -408,10 +407,6 @@ function ShowSetting() {
     .attr("src", settings.linkBlank ? imgOn : imgOff)
     .addClass(settings.linkBlank ? "on" : "off")
     .css("cursor: pointer");
-  $("#pps-pageKey")
-    .attr("src", settings.pageByKey ? imgOn : imgOff)
-    .addClass(settings.pageByKey ? "on" : "off")
-    .css("cursor: pointer");
 
   $("#pps-ul")
     .find("img")
@@ -450,7 +445,6 @@ function ShowSetting() {
       hideByTagList: String($("#pps-hideByTagList").val()),
 
       linkBlank: $("#pps-newTab").hasClass("on") ? 1 : 0,
-      pageByKey: $("#pps-pageKey").hasClass("on") ? 1 : 0,
 
       version: g_version,
     };

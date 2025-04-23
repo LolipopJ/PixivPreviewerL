@@ -360,7 +360,7 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
         artworkAuthor.style =
           "display: flex; align-items: center; margin-top: 4px;";
         artworkAuthor.innerHTML = `
-          <img src="${profileImageUrl}" alt="${userName}" style="object-fit: cover; object-position: center top; width: 24px; height: 24px; border-radius: 50%;">
+          <img src="${profileImageUrl}" alt="${userName}" style="object-fit: cover; object-position: center top; width: 24px; height: 24px; border-radius: 50%; margin-right: 4px;">
           <span style="min-width: 0px; line-height: 22px; font-size: 14px; color: rgb(214, 214, 214); text-decoration: none; text-overflow: ellipsis; white-space: nowrap; overflow: hidden;">${userName}</span>
         `;
 

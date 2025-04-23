@@ -27,7 +27,6 @@ export interface GlobalSettings {
 
   /** 是否在新标签页打开作品 */
   linkBlank: 0 | 1;
-  pageByKey: 0 | 1;
 
   version: string;
 }
