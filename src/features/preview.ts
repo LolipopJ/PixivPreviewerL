@@ -209,7 +209,7 @@ export const loadIllustPreview = (
           },
           error: (err) => {
             iLog.e(
-              `An error occurred while requesting metadata of ugoira ${illustId}: ${err}`
+              `An error occurred while requesting metadata of ugoira ${illustId}: ${err.responseText}`
             );
           },
         });

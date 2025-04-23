@@ -71,17 +71,29 @@ export enum PageType {
 
 /** 插画（漫画）作品排序类型 */
 export enum IllustSortType {
+  /** @link https://www.pixiv.net/tags/%E5%A4%A9%E7%AB%A5%E3%82%A2%E3%83%AA%E3%82%B9/artworks */
   TAG_ARTWORK,
+  /** @link https://www.pixiv.net/tags/%E5%A4%A9%E7%AB%A5%E3%82%A2%E3%83%AA%E3%82%B9/illustrations */
   TAG_ILLUST,
+  /** @link https://www.pixiv.net/tags/%E5%A4%A9%E7%AB%A5%E3%82%A2%E3%83%AA%E3%82%B9/manga */
   TAG_MANGA,
+  /** @link https://www.pixiv.net/bookmark_new_illust.php */
   BOOKMARK_NEW,
+  /** @link https://www.pixiv.net/bookmark_new_illust_r18.php */
   BOOKMARK_NEW_R18,
+  /** @link https://www.pixiv.net/users/333556/artworks */
   USER_ARTWORK,
+  /** @link https://www.pixiv.net/users/333556/illustrations */
   USER_ILLUST,
+  /** @link https://www.pixiv.net/users/49906039/manga */
   USER_MANGA,
+  /** @link https://www.pixiv.net/users/17435436/bookmarks/artworks */
   USER_BOOKMARK_NEW,
+  /** @link https://www.pixiv.net/discovery */
   DISCOVERY,
+  /** @link https://www.pixiv.net/new_illust.php */
   NEW,
+  /** @link https://www.pixiv.net/new_illust_r18.php */
   NEW_R18,
 }
 

@@ -1,4 +1,4 @@
-import { Lang } from "../enums";
+import { IllustSortOrder, Lang } from "../enums";
 import { GlobalSettings } from "../types";
 
 /** 版本号，发生改变时将会弹窗 */
@@ -26,7 +26,9 @@ export const g_defaultSettings: GlobalSettings = {
 
   pageCount: 3,
   favFilter: 500,
+  orderType: IllustSortOrder.BY_BOOKMARK_COUNT,
   aiFilter: 1,
+  aiAssistedFilter: 0,
   hideFavorite: 1,
   hideByTag: 0,
   hideByTagList: "",

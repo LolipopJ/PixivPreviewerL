@@ -28,12 +28,12 @@
   - [ ] Feature: 预览窗口添加显示当前作品的收藏量等关键信息
 - [ ] 作品排序功能
   - [ ] Feature：功能覆盖页面
-    - [ ] 标签搜索
-      - [ ] 顶部：<https://www.pixiv.net/tags/%E5%A4%A9%E7%AB%A5%E3%82%A2%E3%83%AA%E3%82%B9/artworks>
-      - [ ] 插画：<https://www.pixiv.net/tags/%E5%A4%A9%E7%AB%A5%E3%82%A2%E3%83%AA%E3%82%B9/illustrations>
-      - [ ] 漫画：<https://www.pixiv.net/tags/%E5%A4%A9%E7%AB%A5%E3%82%A2%E3%83%AA%E3%82%B9/manga>
+    - [x] 标签搜索
+      - [x] 顶部：<https://www.pixiv.net/tags/%E5%A4%A9%E7%AB%A5%E3%82%A2%E3%83%AA%E3%82%B9/artworks>
+      - [x] 插画：<https://www.pixiv.net/tags/%E5%A4%A9%E7%AB%A5%E3%82%A2%E3%83%AA%E3%82%B9/illustrations>
+      - [x] 漫画：<https://www.pixiv.net/tags/%E5%A4%A9%E7%AB%A5%E3%82%A2%E3%83%AA%E3%82%B9/manga>
     - [ ] 关注用户的新作品
-      - [ ] 全年龄：<https://www.pixiv.net/bookmark_new_illust.php>
+      - [ ] 全部：<https://www.pixiv.net/bookmark_new_illust.php>
       - [ ] 限制级：<https://www.pixiv.net/bookmark_new_illust_r18.php>
     - [ ] 用户主页
       - [ ] 发表的插画 / 漫画：<https://www.pixiv.net/users/333556/artworks>
@@ -42,12 +42,13 @@
       - [ ] 收藏的插画 / 漫画：<https://www.pixiv.net/users/17435436/bookmarks/artworks>
     - [ ] 发现作品：<https://www.pixiv.net/discovery>
     - [ ] 新作品：
-      - [ ] 全年龄：<https://www.pixiv.net/new_illust.php>
+      - [ ] 全部：<https://www.pixiv.net/new_illust.php>
       - [ ] 限制级：<https://www.pixiv.net/new_illust_r18.php>
-  - [ ] Feature：支持按发布日期排序（过滤收藏数小于指定的作品）
-  - [ ] Feature：对 AI 生成作品和 AI 加笔作品显示特殊标记
-  - [ ] Feature：支持过滤 AI 加笔作品
+  - [x] Feature：支持按发布日期排序（过滤收藏数小于指定的作品）
+  - [x] Feature：对 AI 生成作品和 AI 加笔作品显示特殊标记
+  - [x] Feature：支持过滤 AI 加笔作品
   - [ ] Feature：对收藏快速增长的作品显示特殊标记
+  - [x] Feature：请求失败自动重试
   - [ ] Perf：排序的结果分批展示，滚动到底部时渲染后续内容
 
 ## 开发

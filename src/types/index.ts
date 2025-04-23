@@ -3,18 +3,31 @@ import { AiType, IllustSortOrder, IllustType, Lang } from "../enums";
 export interface GlobalSettings {
   lang: Lang;
 
+  /** 是否启用插画（漫画）作品预览功能 */
   enablePreview: 0 | 1;
+  /** 是否启用动图作品预览功能 */
   enableAnimePreview: 0 | 1;
+  /** 打开预览窗口悬浮时间 */
   previewDelay: number;
 
+  /** 排序作品的页数 */
   pageCount: number;
+  /** 过滤指定收藏数以下的作品 */
   favFilter: number;
+  /** 排序方式 */
   orderType: IllustSortOrder;
+  /** 是否过滤 AI 生成作品 */
   aiFilter: 0 | 1;
+  /** 是否过滤 AI 辅助（加笔）作品 */
+  aiAssistedFilter: 0 | 1;
+  /** 是否过滤已收藏作品 */
   hideFavorite: 0 | 1;
+  /** 是否按标签过滤作品 */
   hideByTag: 0 | 1;
+  /** 过滤作品的标签 */
   hideByTagList: string;
 
+  /** 是否在新标签页打开作品 */
   linkBlank: 0 | 1;
   pageByKey: 0 | 1;
 

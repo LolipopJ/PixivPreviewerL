@@ -5,7 +5,7 @@ import {
   g_version,
   SORT_EVENT_NAME,
 } from "./constants";
-import { Lang, LogLevel, PageType } from "./enums";
+import { IllustSortOrder, Lang, LogLevel, PageType } from "./enums";
 import { loadIllustPreview } from "./features/preview";
 import { loadIllustSort } from "./features/sort";
 import Texts from "./i18n";
@@ -1283,7 +1283,7 @@ function AutoDetectLanguage() {
 }
 
 function GetSettings() {
-  let settings;
+  let settings: GlobalSettings;
 
   const settingsData = GetLocalStorage("PixivPreview");
   if (settingsData == null || settingsData == "null") {
@@ -1387,7 +1387,15 @@ function ShowSetting() {
   addItem("", "&nbsp");
   addItem(getInputAction("pps-maxPage"), Texts[g_language].setting_maxPage);
   addItem(getInputAction("pps-hideLess"), Texts[g_language].setting_hideWork);
+  addItem(
+    getImageAction("pps-orderByBookmark"),
+    Texts[g_language].setting_sortOrderByBookmark
+  );
   addItem(getImageAction("pps-hideAi"), Texts[g_language].setting_hideAiWork);
+  addItem(
+    getImageAction("pps-hideAiAssisted"),
+    Texts[g_language].setting_hideAiAssistedWork
+  );
   addItem(
     getImageAction("pps-hideBookmarked"),
     Texts[g_language].setting_hideFav
@@ -1415,9 +1423,22 @@ function ShowSetting() {
   $("#pps-previewDelay").val(settings.previewDelay);
   $("#pps-maxPage").val(settings.pageCount);
   $("#pps-hideLess").val(settings.favFilter);
+  $("#pps-orderByBookmark")
+    .attr(
+      "src",
+      settings.orderType === IllustSortOrder.BY_BOOKMARK_COUNT ? imgOn : imgOff
+    )
+    .addClass(
+      settings.orderType === IllustSortOrder.BY_BOOKMARK_COUNT ? "on" : "off"
+    )
+    .css("cursor: pointer");
   $("#pps-hideAi")
     .attr("src", settings.aiFilter ? imgOn : imgOff)
     .addClass(settings.aiFilter ? "on" : "off")
+    .css("cursor: pointer");
+  $("#pps-hideAiAssisted")
+    .attr("src", settings.aiAssistedFilter ? imgOn : imgOff)
+    .addClass(settings.aiAssistedFilter ? "on" : "off")
     .css("cursor: pointer");
   $("#pps-hideBookmarked")
     .attr("src", settings.hideFavorite ? imgOn : imgOff)
@@ -1479,7 +1500,11 @@ function ShowSetting() {
 
       pageCount: parseInt(String($("#pps-maxPage").val())),
       favFilter: parseInt(String($("#pps-hideLess").val())),
+      orderType: $("#pps-orderByBookmark").hasClass("on")
+        ? IllustSortOrder.BY_BOOKMARK_COUNT
+        : IllustSortOrder.BY_DATE,
       aiFilter: $("#pps-hideAi").hasClass("on") ? 1 : 0,
+      aiAssistedFilter: $("#pps-hideAiAssisted").hasClass("on") ? 1 : 0,
       hideFavorite: $("#pps-hideBookmarked").hasClass("on") ? 1 : 0,
       hideByTag: $("#pps-hideByTag").hasClass("on") ? 1 : 0,
       hideByTagList: String($("#pps-hideByTagList").val()),
