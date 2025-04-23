@@ -38,7 +38,7 @@ export const requestWithRetry = async <TContext = unknown>(
   }
 ) => {
   const {
-    retryDelay = 5000,
+    retryDelay = 10000,
     maxRetryTimes = Infinity,
     onRetry,
     ...restOptions
