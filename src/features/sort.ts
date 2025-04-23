@@ -138,10 +138,11 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
       try {
         //#region 获取作品分页列表
         let illustrations: Illustration[] = [];
-        const startPage = Number(searchParams.get("p")) || 1;
+        const startPage = Number(searchParams.get("p") ?? 1);
         const endPage = startPage + pageCount - 1;
         for (let page = startPage; page < startPage + pageCount; page += 1) {
           this.setProgress(`Getting ${page}/${endPage} page...`);
+          searchParams.set("p", String(page));
           const requestUrl = `${api}?${searchParams}`;
           const getIllustRes = await requestWithRetry({
             url: requestUrl,
@@ -195,7 +196,8 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
             bookmark_user_total: illustDetails.bookmark_user_total,
           });
 
-          // 主动暂停若干时间，降低被风控的风险
+          // Pixiv 限制了账户在一定时间内对接口请求的数量
+          // 主动暂停若干时间，减少被风控的风险
           await pause(getRandomInt(100, 300));
         }
         iLog.d("Queried detailed illustrations:", detailedIllustrations);
