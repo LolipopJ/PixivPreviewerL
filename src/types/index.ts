@@ -2,9 +2,9 @@ import { AiType, IllustSortOrder, IllustType } from "../enums";
 
 export interface GlobalSettings {
   /** 是否启用插画（漫画）作品预览功能 */
-  enablePreview: 0 | 1;
+  enablePreview: boolean;
   /** 是否启用动图作品预览功能 */
-  enableAnimePreview: 0 | 1;
+  enableAnimePreview: boolean;
   /** 打开预览窗口悬浮时间 */
   previewDelay: number;
 
@@ -15,18 +15,18 @@ export interface GlobalSettings {
   /** 排序方式 */
   orderType: IllustSortOrder;
   /** 是否过滤 AI 生成作品 */
-  aiFilter: 0 | 1;
+  aiFilter: boolean;
   /** 是否过滤 AI 辅助（加笔）作品 */
-  aiAssistedFilter: 0 | 1;
+  aiAssistedFilter: boolean;
   /** 是否过滤已收藏作品 */
-  hideFavorite: 0 | 1;
+  hideFavorite: boolean;
   /** 是否按标签过滤作品 */
-  hideByTag: 0 | 1;
+  hideByTag: boolean;
   /** 过滤作品的标签 */
   hideByTagList: string;
 
   /** 是否在新标签页打开作品 */
-  linkBlank: 0 | 1;
+  linkBlank: boolean;
 
   version: string;
 }

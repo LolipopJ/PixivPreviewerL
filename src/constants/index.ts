@@ -6,20 +6,20 @@ export const g_version = process.env.VERSION;
 
 /** 默认设置 */
 export const g_defaultSettings: GlobalSettings = {
-  enablePreview: 1,
-  enableAnimePreview: 1,
+  enablePreview: true,
+  enableAnimePreview: true,
   previewDelay: 500,
 
   pageCount: 3,
   favFilter: 500,
   orderType: IllustSortOrder.BY_BOOKMARK_COUNT,
-  aiFilter: 1,
-  aiAssistedFilter: 0,
-  hideFavorite: 1,
-  hideByTag: 0,
+  aiFilter: true,
+  aiAssistedFilter: false,
+  hideFavorite: true,
+  hideByTag: false,
   hideByTagList: "",
 
-  linkBlank: 1,
+  linkBlank: true,
 
   version: g_version,
 };

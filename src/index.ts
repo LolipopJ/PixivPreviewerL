@@ -5,6 +5,13 @@ import { loadIllustSort } from "./features/sort";
 import Texts from "./i18n";
 import { GlobalSettings } from "./types";
 import { DoLog, iLog } from "./utils/logger";
+import {
+  getSettings,
+  resetSettings,
+  setSettingStringValue,
+  setSettingValue,
+  toggleSettingBooleanValue,
+} from "./utils/setting";
 
 // 添加收藏需要这个
 let g_csrfToken = "";
@@ -204,290 +211,166 @@ function showSearchLinksForDeletedArtworks() {
 //#endregion
 
 //#region 设置
-function SetLocalStorage(name, value) {
-  localStorage.setItem(name, JSON.stringify(value));
-}
+let menuIds: number[] = [];
 
-function GetLocalStorage(name) {
-  const value = localStorage.getItem(name);
-  if (!value) return null;
-  return value;
-}
+const registerSettingsMenu = () => {
+  const settings = getSettings();
 
-function ShowUpgradeMessage() {
+  for (const menuId of menuIds) {
+    GM_unregisterMenuCommand(menuId);
+  }
+  menuIds = [];
+
+  menuIds.push(
+    GM_registerMenuCommand(
+      `🖼️ 插画作品预览 ${settings.enablePreview ? "✅" : "❌"}`,
+      () => {
+        toggleSettingBooleanValue("enablePreview");
+        registerSettingsMenu();
+      }
+    ),
+    GM_registerMenuCommand(
+      `🎦 动图作品预览 ${settings.enableAnimePreview ? "✅" : "❌"}`,
+      () => {
+        toggleSettingBooleanValue("enableAnimePreview");
+        registerSettingsMenu();
+      }
+    ),
+    GM_registerMenuCommand(
+      `🕗 延迟 ${settings.previewDelay} 毫秒显示预览图`,
+      () => {
+        setSettingStringValue("previewDelay", "延迟显示预览图时间（毫秒）", {
+          parseValue: (newValue) =>
+            Number(newValue) || g_defaultSettings.previewDelay,
+          onSet: () => registerSettingsMenu(),
+        });
+      }
+    ),
+    GM_registerMenuCommand(`📚️ 每次排序 ${settings.pageCount} 页`, () => {
+      setSettingStringValue("pageCount", "每次排序的页数", {
+        parseValue: (newValue) =>
+          Number(newValue) || g_defaultSettings.pageCount,
+        onSet: () => registerSettingsMenu(),
+      });
+    }),
+    GM_registerMenuCommand(
+      `👨‍👩‍👧 排序隐藏收藏数少于 ${settings.favFilter} 的作品`,
+      () => {
+        setSettingStringValue("favFilter", "排序隐藏少于设定收藏数的作品", {
+          parseValue: (newValue) =>
+            Number(newValue) || g_defaultSettings.favFilter,
+          onSet: () => registerSettingsMenu(),
+        });
+      }
+    ),
+    GM_registerMenuCommand(
+      `🎨 按照 ${settings.orderType === IllustSortOrder.BY_BOOKMARK_COUNT ? "作品收藏数" : "作品发布时间"} 排序作品`,
+      () => {
+        setSettingValue(
+          "orderType",
+          settings.orderType === IllustSortOrder.BY_BOOKMARK_COUNT
+            ? IllustSortOrder.BY_DATE
+            : IllustSortOrder.BY_BOOKMARK_COUNT
+        );
+        registerSettingsMenu();
+      }
+    ),
+    GM_registerMenuCommand(
+      `🤖 排序过滤 AI 生成作品 ${settings.aiFilter ? "✅" : "❌"}`,
+      () => {
+        toggleSettingBooleanValue("aiFilter");
+        registerSettingsMenu();
+      }
+    ),
+    GM_registerMenuCommand(
+      `🦾 排序过滤 AI 辅助（加笔）作品 ${settings.aiAssistedFilter ? "✅" : "❌"}`,
+      () => {
+        toggleSettingBooleanValue("aiAssistedFilter");
+        registerSettingsMenu();
+      }
+    ),
+    GM_registerMenuCommand(
+      `❤️ 排序过滤已收藏作品 ${settings.hideFavorite ? "✅" : "❌"}`,
+      () => {
+        toggleSettingBooleanValue("hideFavorite");
+        registerSettingsMenu();
+      }
+    ),
+    GM_registerMenuCommand(
+      `🔖 排序过滤包含指定标签的作品 ${settings.hideByTag ? "✅" : "❌"}`,
+      () => {
+        toggleSettingBooleanValue("hideByTag");
+        registerSettingsMenu();
+      }
+    ),
+    GM_registerMenuCommand(
+      `🔖 排序过滤的标签：${settings.hideByTagList}`,
+      () => {
+        setSettingStringValue(
+          "hideByTagList",
+          "过滤的标签列表，使用`,`分隔不同标签",
+          {
+            onSet: () => registerSettingsMenu(),
+          }
+        );
+      }
+    ),
+    GM_registerMenuCommand(
+      `📑 在新标签页打开作品 ${settings.linkBlank ? "✅" : "❌"}`,
+      () => {
+        toggleSettingBooleanValue("linkBlank");
+        registerSettingsMenu();
+      }
+    ),
+    GM_registerMenuCommand(`🔁 重置设置`, () => {
+      if (confirm("您确定要重置所有设置到脚本的默认值吗？")) {
+        resetSettings();
+        location.reload();
+      }
+    })
+  );
+
+  return settings;
+};
+
+const ShowUpgradeMessage = () => {
   $("#pp-bg").remove();
+
   const bg = $('<div id="pp-bg"></div>').css({
-    width: document.documentElement.clientWidth + "px",
-    height: document.documentElement.clientHeight + "px",
     position: "fixed",
-    "z-index": 999999,
-    "background-color": "rgba(0,0,0,0.8)",
-    left: "0px",
-    top: "0px",
+    "z-index": 9999,
+    "background-color": "rgba(0, 0, 0, 0.8)",
+    inset: "0px",
   });
   $("body").append(bg);
-
-  const body = Texts.upgrade_body;
   bg.get(0).innerHTML =
     '<img id="pps-close"src="https://pp-1252089172.cos.ap-chengdu.myqcloud.com/Close.png"style="position: absolute; right: 35px; top: 20px; width: 32px; height: 32px; cursor: pointer;"><div style="position: absolute; width: 40%; left: 30%; top: 25%; font-size: 25px; font-weight: bold; text-align: center; color: white;">' +
     Texts.install_title +
     g_version +
     '</div><br><div style="position: absolute; left: 50%; top: 35%; font-size: 20px; color: white; transform: translate(-50%,0); height: 50%; overflow: auto;">' +
-    body +
+    Texts.upgrade_body +
     "</div>";
-  $("#pps-close").click(function () {
+
+  $("#pps-close").on("click", () => {
     $("#pp-bg").remove();
   });
-}
-
-function FillNewSetting(st) {
-  // 升级可能会有部分新加字段在cookie里读不到
-  let changed = false;
-  $.each(g_defaultSettings, function (k) {
-    if (st[k] == undefined) {
-      st[k] = g_defaultSettings[k];
-      changed = true;
-    }
-  });
-  return {
-    st: st,
-    change: changed,
-  };
-}
-
-function GetSettings() {
-  let settings: GlobalSettings;
-
-  const settingsData = GetLocalStorage("PixivPreview");
-  if (settingsData == null || settingsData == "null") {
-    // 新安装
-    settings = g_defaultSettings;
-    SetLocalStorage("PixivPreview", settings);
-    ShowUpgradeMessage();
-  } else {
-    settings = JSON.parse(settingsData);
-    const mp = FillNewSetting(settings);
-    if (mp.change) {
-      settings = mp.st;
-      SetLocalStorage("PixivPreview", settings);
-    }
-    // 升级
-    if (settings.version != g_version) {
-      ShowUpgradeMessage();
-      settings.version = g_version;
-      SetLocalStorage("PixivPreview", settings);
-    }
-  }
-
-  return settings;
-}
-
-function ShowSetting() {
-  const screenWidth = document.documentElement.clientWidth;
-  const screenHeight = document.documentElement.clientHeight;
-
-  $("#pp-bg").remove();
-  const bg = $('<div id="pp-bg"></div>').css({
-    width: screenWidth + "px",
-    height: screenHeight + "px",
-    position: "fixed",
-    "z-index": 999999,
-    "background-color": "rgba(0,0,0,0.8)",
-    left: "0px",
-    top: "0px",
-  });
-  $("body").append(bg);
-
-  const settings = GetSettings();
-
-  const settingHTML =
-    '<div style="color: white; font-size: 1em;">' +
-    '<img id="pps-close" src="https://pp-1252089172.cos.ap-chengdu.myqcloud.com/Close.png" style="position: absolute; right: 35px; top: 20px; width: 32px; height: 32px; cursor: pointer;">' +
-    '<div style="position: absolute; height: 60%; left: 50%; top: 10%; overflow-y: auto; transform: translate(-50%, 0%);">' +
-    '<ul id="pps-ul" style="list-style: none; padding: 0; margin: 0;"></ul></div>' +
-    '<div style="margin-top: 10px;position: absolute;bottom: 10%;width: 100%;text-align: center;">' +
-    '<button id="pps-save" style="font-size: 25px; border-radius: 12px; height: 48px; min-width: 138px; max-width: 150px; background-color: green; color: white; margin: 0 32px 0 32px; cursor: pointer; border: none;">' +
-    Texts.setting_save +
-    "</button>" +
-    '<button id="pps-reset" style="font-size: 25px; border-radius: 12px; height: 48px; min-width: 138px; max-width: 150px; background-color: darkred; color: white; margin: 0 32px 0 32px; cursor: pointer; border: none;">' +
-    Texts.setting_reset +
-    "</button>" +
-    "</div></div>";
-
-  bg.get(0).innerHTML = settingHTML;
-  const ul = $("#pps-ul");
-  function getImageAction(id) {
-    return (
-      '<img id="' +
-      id +
-      '" src="https://pp-1252089172.cos.ap-chengdu.myqcloud.com/On.png" style="height: 32px; cursor: pointer; margin-right: 20px; vertical-align: middle;"/>'
-    );
-  }
-  function getInputAction(id) {
-    return (
-      '<input id="' +
-      id +
-      '" style="font-size: 24px; padding: 0; margin-right: 16px; border-width: 0px; width: 64px; text-align: center;"/>'
-    );
-  }
-  function addItem(action, text) {
-    ul.append(
-      '<li style="font-size: 25px; padding-bottom: 5px;">' +
-        action +
-        text +
-        "</li>"
-    );
-  }
-  ul.empty();
-  addItem(getImageAction("pps-preview"), Texts.setting_preview);
-  addItem(getImageAction("pps-animePreview"), Texts.setting_animePreview);
-  addItem(getInputAction("pps-previewDelay"), Texts.setting_previewDelay);
-  addItem("", "&nbsp");
-  addItem(getInputAction("pps-maxPage"), Texts.setting_maxPage);
-  addItem(getInputAction("pps-hideLess"), Texts.setting_hideWork);
-  addItem(
-    getImageAction("pps-orderByBookmark"),
-    Texts.setting_sortOrderByBookmark
-  );
-  addItem(getImageAction("pps-hideAi"), Texts.setting_hideAiWork);
-  addItem(
-    getImageAction("pps-hideAiAssisted"),
-    Texts.setting_hideAiAssistedWork
-  );
-  addItem(getImageAction("pps-hideBookmarked"), Texts.setting_hideFav);
-  addItem(getImageAction("pps-hideByTag"), Texts.setting_hideByTag);
-  addItem(
-    '<input id="pps-hideByTagList" style="font-size: 18px;padding: 0;border-width: 0px;text-align: center;width: 95%;" placeholder="' +
-      Texts.setting_hideByTagPlaceholder +
-      '">',
-    ""
-  );
-  addItem(getImageAction("pps-newTab"), Texts.setting_blank);
-
-  const imgOn = "https://pp-1252089172.cos.ap-chengdu.myqcloud.com/On.png";
-  const imgOff = "https://pp-1252089172.cos.ap-chengdu.myqcloud.com/Off.png";
-  $("#pps-preview")
-    .attr("src", settings.enablePreview ? imgOn : imgOff)
-    .addClass(settings.enablePreview ? "on" : "off")
-    .css("cursor: pointer");
-  $("#pps-animePreview")
-    .attr("src", settings.enableAnimePreview ? imgOn : imgOff)
-    .addClass(settings.enableAnimePreview ? "on" : "off")
-    .css("cursor: pointer");
-  $("#pps-previewDelay").val(settings.previewDelay);
-  $("#pps-maxPage").val(settings.pageCount);
-  $("#pps-hideLess").val(settings.favFilter);
-  $("#pps-orderByBookmark")
-    .attr(
-      "src",
-      settings.orderType === IllustSortOrder.BY_BOOKMARK_COUNT ? imgOn : imgOff
-    )
-    .addClass(
-      settings.orderType === IllustSortOrder.BY_BOOKMARK_COUNT ? "on" : "off"
-    )
-    .css("cursor: pointer");
-  $("#pps-hideAi")
-    .attr("src", settings.aiFilter ? imgOn : imgOff)
-    .addClass(settings.aiFilter ? "on" : "off")
-    .css("cursor: pointer");
-  $("#pps-hideAiAssisted")
-    .attr("src", settings.aiAssistedFilter ? imgOn : imgOff)
-    .addClass(settings.aiAssistedFilter ? "on" : "off")
-    .css("cursor: pointer");
-  $("#pps-hideBookmarked")
-    .attr("src", settings.hideFavorite ? imgOn : imgOff)
-    .addClass(settings.hideFavorite ? "on" : "off")
-    .css("cursor: pointer");
-  $("#pps-hideByTag")
-    .attr("src", settings.hideByTag ? imgOn : imgOff)
-    .addClass(settings.hideByTag ? "on" : "off")
-    .css("cursor: pointer");
-  $("#pps-hideByTagList").val(settings.hideByTagList);
-  $("#pps-newTab")
-    .attr("src", settings.linkBlank ? imgOn : imgOff)
-    .addClass(settings.linkBlank ? "on" : "off")
-    .css("cursor: pointer");
-
-  $("#pps-ul")
-    .find("img")
-    .click(function () {
-      const _this = $(this);
-
-      if (_this.hasClass("on")) {
-        _this.attr("src", imgOff).removeClass("on").addClass("off");
-      } else {
-        _this.attr("src", imgOn).removeClass("off").addClass("on");
-      }
-    });
-
-  $("#pps-save").click(function () {
-    if ($("#pps-maxPage").val() === "") {
-      $("#pps-maxPage").val(g_defaultSettings.pageCount);
-    }
-    if ($("#pps-hideLess").val() == "") {
-      $("#pps-hideLess").val(g_defaultSettings.favFilter);
-    }
-
-    const settings: GlobalSettings = {
-      enablePreview: $("#pps-preview").hasClass("on") ? 1 : 0,
-      enableAnimePreview: $("#pps-animePreview").hasClass("on") ? 1 : 0,
-      previewDelay: parseInt(String($("#pps-previewDelay").val())),
-
-      pageCount: parseInt(String($("#pps-maxPage").val())),
-      favFilter: parseInt(String($("#pps-hideLess").val())),
-      orderType: $("#pps-orderByBookmark").hasClass("on")
-        ? IllustSortOrder.BY_BOOKMARK_COUNT
-        : IllustSortOrder.BY_DATE,
-      aiFilter: $("#pps-hideAi").hasClass("on") ? 1 : 0,
-      aiAssistedFilter: $("#pps-hideAiAssisted").hasClass("on") ? 1 : 0,
-      hideFavorite: $("#pps-hideBookmarked").hasClass("on") ? 1 : 0,
-      hideByTag: $("#pps-hideByTag").hasClass("on") ? 1 : 0,
-      hideByTagList: String($("#pps-hideByTagList").val()),
-
-      linkBlank: $("#pps-newTab").hasClass("on") ? 1 : 0,
-
-      version: g_version,
-    };
-
-    SetLocalStorage("PixivPreview", settings);
-    location.reload();
-  });
-
-  $("#pps-reset").click(function () {
-    const comfirmText = Texts.setting_resetHint;
-    if (confirm(comfirmText)) {
-      SetLocalStorage("PixivPreview", null);
-      location.reload();
-    }
-  });
-
-  $("#pps-close").click(function () {
-    $("#pp-bg").remove();
-  });
-}
+};
 //#endregion
 
 //#region 主函数
 const initializePixivPreviewer = () => {
   try {
-    // 读取设置
-    g_settings = GetSettings();
+    // 注册设置菜单
+    g_settings = registerSettingsMenu();
     iLog.i(
       "Start to initialize Pixiv Previewer with global settings:",
       g_settings
     );
 
-    // 监听窗口大小变化
-    window.onresize = function () {
-      if ($("#pp-bg").length > 0) {
-        const screenWidth = document.documentElement.clientWidth;
-        const screenHeight = document.documentElement.clientHeight;
-        $("#pp-bg").css({
-          width: screenWidth + "px",
-          height: screenHeight + "px",
-        });
-      }
-    };
+    // 显示更新信息窗口
+    if (g_settings.version !== g_version) {
+      ShowUpgradeMessage();
+    }
 
     // 初始化作品预览功能
     if (g_settings.enablePreview) {
@@ -553,25 +436,6 @@ const initializePixivPreviewer = () => {
       $(newButton).on("click", () => {
         const sortEvent = new Event(SORT_EVENT_NAME);
         window.dispatchEvent(sortEvent);
-      });
-    }
-
-    // 添加设置按钮
-    if (!$("#pp-settings").length) {
-      const newListItem = toolBar.firstChild.cloneNode(true) as HTMLElement;
-      newListItem.title = "Pixiv Previewer Settings";
-      newListItem.innerHTML = "";
-      const newButton = document.createElement("button");
-      newButton.id = "pp-settings";
-      newButton.style.cssText =
-        "box-sizing: border-box; background-color: rgba(0,0,0,0.32); margin-top: 5px; opacity: 0.8; cursor: pointer; border: none; padding: 12px; border-radius: 24px; width: 48px; height: 48px;";
-      newButton.innerHTML =
-        '<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px" viewBox="0 0 1000 1000" enable-background="new 0 0 1000 1000" xml:space="preserve" style="fill: white;"><metadata> Svg Vector Icons : http://www.sfont.cn </metadata><g><path d="M377.5,500c0,67.7,54.8,122.5,122.5,122.5S622.5,567.7,622.5,500S567.7,377.5,500,377.5S377.5,432.3,377.5,500z"></path><path d="M990,546v-94.8L856.2,411c-8.9-35.8-23-69.4-41.6-100.2L879,186L812,119L689,185.2c-30.8-18.5-64.4-32.6-100.2-41.5L545.9,10h-94.8L411,143.8c-35.8,8.9-69.5,23-100.2,41.5L186.1,121l-67,66.9L185.2,311c-18.6,30.8-32.6,64.4-41.5,100.3L10,454v94.8L143.8,589c8.9,35.8,23,69.4,41.6,100.2L121,814l67,67l123-66.2c30.8,18.6,64.5,32.6,100.3,41.5L454,990h94.8L589,856.2c35.8-8.9,69.4-23,100.2-41.6L814,879l67-67l-66.2-123.1c18.6-30.7,32.6-64.4,41.5-100.2L990,546z M500,745c-135.3,0-245-109.7-245-245c0-135.3,109.7-245,245-245s245,109.7,245,245C745,635.3,635.3,745,500,745z"></path></g></svg>';
-      newListItem.appendChild(newButton);
-      toolBar.appendChild(newListItem);
-
-      $(newButton).on("click", () => {
-        ShowSetting();
       });
     }
 
