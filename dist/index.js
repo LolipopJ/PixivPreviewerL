@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             0.2.5-2025/4/19
+// @version             0.3.0-2025/4/23
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0
@@ -19,22 +19,19 @@
 // ==/UserScript==
 
 // src/constants/index.ts
-var g_version = "0.2.5";
-var g_getUgoiraUrl = "/ajax/illust/#id#/ugoira_meta";
-var g_getNovelUrl = "/ajax/search/novels/#key#?word=#key#&p=#page#";
+var g_version = "0.3.0";
 var g_loadingImage = "https://pp-1252089172.cos.ap-chengdu.myqcloud.com/loading.gif";
-var g_maxXhr = 64;
 var g_defaultSettings = {
   lang: 0 /* zh_CN */,
   enablePreview: 1,
   enableAnimePreview: 1,
   previewDelay: 500,
-  enableSort: 0,
   pageCount: 3,
   favFilter: 500,
+  orderType: 0 /* BY_BOOKMARK_COUNT */,
   aiFilter: 1,
+  aiAssistedFilter: 0,
   hideFavorite: 1,
-  hideFollowed: 0,
   hideByTag: 0,
   hideByTagList: "",
   linkBlank: 1,
@@ -45,6 +42,7 @@ var PREVIEW_WRAPPER_BORDER_WIDTH = 2;
 var PREVIEW_WRAPPER_BORDER_RADIUS = 8;
 var PREVIEW_WRAPPER_DISTANCE_TO_MOUSE = 20;
 var PREVIEW_PRELOAD_NUM = 5;
+var SORT_EVENT_NAME = "runPixivPreviewerSort";
 
 // src/icons/download.svg
 var download_default = '<svg t="1742281193586" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg"\n  p-id="24408" width="10" height="10">\n  <path\n    d="M1024 896v128H0v-320h128v192h768v-192h128v192zM576 554.688L810.688 320 896 405.312l-384 384-384-384L213.312 320 448 554.688V0h128v554.688z"\n    fill="#ffffff" p-id="24409"></path>\n</svg>';
@@ -113,14 +111,22 @@ function DoLog(level = 3 /* Info */, ...msgOrElement) {
   }
 }
 
-// src/services/xml-http-request.ts
-var xmlHttpRequest = (
-  // @ts-expect-error: auto injected by Tampermonkey
-  window.GM_xmlhttpRequest ?? window.GM.xmlHttpRequest
-);
+// src/utils/utils.ts
+var pause = (ms) => {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+};
+var getRandomInt = (min, max) => {
+  min = Math.ceil(min);
+  max = Math.floor(max);
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+};
+
+// src/services/request.ts
+var xmlHttpRequest = window.GM.xmlHttpRequest;
 var request = (options) => {
   const { headers, ...restOptions } = options;
-  xmlHttpRequest({
+  return xmlHttpRequest({
+    responseType: "json",
     ...restOptions,
     headers: {
       referer: "https://www.pixiv.net/",
@@ -128,19 +134,47 @@ var request = (options) => {
     }
   });
 };
-var xml_http_request_default = request;
+var requestWithRetry = async (options) => {
+  const {
+    retryDelay = 5e3,
+    maxRetryTimes = Infinity,
+    onRetry,
+    ...restOptions
+  } = options;
+  let response;
+  let retryTimes = 0;
+  while (retryTimes < maxRetryTimes) {
+    response = await request(restOptions);
+    if (response.status === 200) {
+      const responseData = response.response;
+      if (!responseData.error) {
+        return response;
+      }
+    }
+    retryTimes += 1;
+    onRetry?.(response, retryTimes);
+    await pause(retryDelay);
+  }
+  throw new Error(
+    `Request for ${restOptions.url} failed: ${response.responseText}`
+  );
+};
+var request_default = request;
 
 // src/services/download.ts
 var downloadFile = (url, filename, options = {}) => {
   const { onload, onerror, ...restOptions } = options;
-  xml_http_request_default({
+  request_default({
     ...restOptions,
     url,
     method: "GET",
     responseType: "blob",
-    onload: async (resp) => {
+    onload: (resp) => {
       onload?.(resp);
-      const blob = new Blob([resp.response], { type: resp.responseType });
+      const blob = new Blob([resp.response], {
+        // @ts-expect-error: specified in request options
+        type: resp.responseType
+      });
       const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = blobUrl;
@@ -165,8 +199,7 @@ var downloadIllust = ({
 }) => {
   downloadFile(url, filename, {
     ...options,
-    onerror: (resp) => {
-      options.onerror?.(resp);
+    onerror: () => {
       window.open(url, "__blank");
     }
   });
@@ -819,7 +852,7 @@ var loadIllustPreview = (options) => {
           },
           error: (err) => {
             iLog.e(
-              `An error occurred while requesting metadata of ugoira ${illustId}: ${err}`
+              `An error occurred while requesting metadata of ugoira ${illustId}: ${err.responseText}`
             );
           }
         });
@@ -1310,6 +1343,366 @@ var PreviewedIllust = class {
   }
 };
 
+// src/icons/heart.svg
+var heart_default = '<svg viewBox="0 0 32 32" width="32" height="32">\n  <path d="\nM21,5.5 C24.8659932,5.5 28,8.63400675 28,12.5 C28,18.2694439 24.2975093,23.1517313 17.2206059,27.1100183\nC16.4622493,27.5342993 15.5379984,27.5343235 14.779626,27.110148 C7.70250208,23.1517462 4,18.2694529 4,12.5\nC4,8.63400691 7.13400681,5.5 11,5.5 C12.829814,5.5 14.6210123,6.4144028 16,7.8282366\nC17.3789877,6.4144028 19.170186,5.5 21,5.5 Z"></path>\n  <path d="M16,11.3317089 C15.0857201,9.28334665 13.0491506,7.5 11,7.5\nC8.23857625,7.5 6,9.73857647 6,12.5 C6,17.4386065 9.2519779,21.7268174 15.7559337,25.3646328\nC15.9076021,25.4494645 16.092439,25.4494644 16.2441073,25.3646326 C22.7480325,21.7268037 26,17.4385986 26,12.5\nC26,9.73857625 23.7614237,7.5 21,7.5 C18.9508494,7.5 16.9142799,9.28334665 16,11.3317089 Z" style="fill: #fafafa;">\n  </path>\n</svg>';
+
+// src/icons/heart-filled.svg
+var heart_filled_default = '<svg viewBox="0 0 32 32" width="32" height="32">\n  <path d="\nM21,5.5 C24.8659932,5.5 28,8.63400675 28,12.5 C28,18.2694439 24.2975093,23.1517313 17.2206059,27.1100183\nC16.4622493,27.5342993 15.5379984,27.5343235 14.779626,27.110148 C7.70250208,23.1517462 4,18.2694529 4,12.5\nC4,8.63400691 7.13400681,5.5 11,5.5 C12.829814,5.5 14.6210123,6.4144028 16,7.8282366\nC17.3789877,6.4144028 19.170186,5.5 21,5.5 Z"></path>\n  <path d="M16,11.3317089 C15.0857201,9.28334665 13.0491506,7.5 11,7.5\nC8.23857625,7.5 6,9.73857647 6,12.5 C6,17.4386065 9.2519779,21.7268174 15.7559337,25.3646328\nC15.9076021,25.4494645 16.092439,25.4494644 16.2441073,25.3646326 C22.7480325,21.7268037 26,17.4385986 26,12.5\nC26,9.73857625 23.7614237,7.5 21,7.5 C18.9508494,7.5 16.9142799,9.28334665 16,11.3317089 Z" style="fill: #dc2626;">\n  </path>\n</svg>';
+
+// src/icons/play.svg
+var play_default = '<svg viewBox="0 0 24 24"\n  style="width: 48px; height: 48px; stroke: none; line-height: 0; font-size: 0px; vertical-align: middle;">\n  <circle cx="12" cy="12" r="10" style="fill: rgba(0, 0, 0, 0.32);"></circle>\n  <path d="M9,8.74841664 L9,15.2515834 C9,15.8038681 9.44771525,16.2515834 10,16.2515834\nC10.1782928,16.2515834 10.3533435,16.2039156 10.5070201,16.1135176 L16.0347118,12.8619342\nC16.510745,12.5819147 16.6696454,11.969013 16.3896259,11.4929799\nC16.3034179,11.3464262 16.1812655,11.2242738 16.0347118,11.1380658 L10.5070201,7.88648243\nC10.030987,7.60646294 9.41808527,7.76536339 9.13806578,8.24139652\nC9.04766776,8.39507316 9,8.57012386 9,8.74841664 Z" style="fill: rgb(245, 245, 245);"></path>\n</svg>';
+
+// src/features/sort.ts
+var isInitialized2 = false;
+var loadIllustSort = (options) => {
+  if (isInitialized2) return;
+  const {
+    pageCount: optionPageCount,
+    favFilter: optionFavFilter,
+    orderType = 0 /* BY_BOOKMARK_COUNT */,
+    hideFavorite = false,
+    hideByTag = false,
+    hideByTagList: hideByTagListString,
+    aiFilter = false,
+    aiAssistedFilter = false,
+    lang = 0 /* zh_CN */,
+    csrfToken
+  } = options;
+  let pageCount = Number(optionPageCount), favFilter = Number(optionFavFilter);
+  if (pageCount <= 0) {
+    pageCount = g_defaultSettings.pageCount;
+  }
+  if (favFilter < 0) {
+    favFilter = g_defaultSettings.favFilter;
+  }
+  const hideByTagList = hideByTagListString.split(",").map((tag) => tag.trim()).filter((tag) => !!tag);
+  if (aiAssistedFilter) {
+    hideByTagList.push("AI-assisted");
+  }
+  class IllustSorter {
+    type;
+    illustrations;
+    sorting = false;
+    listElement = $();
+    progressElement = $();
+    progressText = $();
+    sortButtonElement = $("#pp-sort");
+    reset({ type }) {
+      try {
+        this.type = type;
+        this.illustrations = [];
+        this.sorting = false;
+        this.listElement = getIllustrationsListDom(type);
+        this.progressElement?.remove();
+        this.progressElement = $(document.createElement("div")).attr({
+          id: "pp-sort-progress"
+        }).css({
+          width: "100%",
+          display: "flex",
+          "flex-direction": "column",
+          "align-items": "center",
+          "justify-content": "center",
+          gap: "6px"
+        }).append(
+          $(new Image(96, 96)).attr({
+            id: "sort-progress__loading",
+            src: g_loadingImage
+          }).css({
+            "border-radius": "50%"
+          })
+        ).prependTo(this.listElement).hide();
+        this.progressText = $(document.createElement("div")).attr({
+          id: "pp-sort-progress__text"
+        }).css({
+          "text-align": "center",
+          "font-size": "16px",
+          "font-weight": "bold"
+        }).appendTo(this.progressElement);
+      } catch (error) {
+        iLog.e(`An error occurred while resetting sorter:`, error);
+        throw new Error(error);
+      }
+    }
+    async sort({
+      type,
+      api,
+      searchParams
+    }) {
+      this.sorting = true;
+      iLog.i("Start to sort illustrations.");
+      this.sortButtonElement.text("\u6392\u5E8F\u4E2D");
+      try {
+        let illustrations = [];
+        const startPage = Number(searchParams.get("p")) || 1;
+        const endPage = startPage + pageCount - 1;
+        for (let page = startPage; page < startPage + pageCount; page += 1) {
+          this.setProgress(`Getting ${page}/${endPage} page...`);
+          const requestUrl = `${api}?${searchParams}`;
+          const getIllustRes = await requestWithRetry({
+            url: requestUrl,
+            onRetry: (response, retryTimes) => {
+              iLog.w(
+                `Get illustration list through \`${requestUrl}\` failed:`,
+                response,
+                `${retryTimes} times retrying...`
+              );
+              this.setProgress(
+                `Retry to get ${page}/${endPage} page (${retryTimes} times)...`
+              );
+            }
+          });
+          const extractedIllustrations = getIllustrationsFromResponse(
+            type,
+            getIllustRes.response
+          );
+          illustrations = illustrations.concat(extractedIllustrations);
+        }
+        const detailedIllustrations = [];
+        for (let i = 0; i < illustrations.length; i += 1) {
+          this.setProgress(
+            `Getting details of ${i + 1}/${illustrations.length} illustration...`
+          );
+          const currentIllustration = illustrations[i];
+          const requestUrl = `/touch/ajax/illust/details?illust_id=${currentIllustration.id}`;
+          const getIllustDetailsRes = await requestWithRetry({
+            url: requestUrl,
+            onRetry: (response, retryTimes) => {
+              iLog.w(
+                `Get illustration details through \`${requestUrl}\` failed:`,
+                response,
+                `${retryTimes} times retrying...`
+              );
+              this.setProgress(
+                `Retry to get details of ${i + 1}/${illustrations.length} illustration (${retryTimes} times)...`
+              );
+            }
+          });
+          const illustDetails = getIllustDetailsRes.response.body.illust_details;
+          detailedIllustrations.push({
+            ...currentIllustration,
+            bookmark_user_total: illustDetails.bookmark_user_total
+          });
+          await pause(getRandomInt(100, 300));
+        }
+        iLog.d("Queried detailed illustrations:", detailedIllustrations);
+        this.setProgress("Filtering illustrations...");
+        const filteredIllustrations = detailedIllustrations.filter(
+          (illustration) => {
+            if (hideFavorite && illustration.bookmarkData) {
+              return false;
+            }
+            if (aiFilter && illustration.aiType === 2 /* AI */) {
+              return false;
+            }
+            if ((hideByTag || aiAssistedFilter) && hideByTagList.length) {
+              for (const tag of illustration.tags) {
+                if (hideByTagList.includes(tag)) {
+                  return false;
+                }
+              }
+            }
+            return illustration.bookmark_user_total >= favFilter;
+          }
+        );
+        this.setProgress("Sorting filtered illustrations...");
+        const sortedIllustrations = orderType === 0 /* BY_BOOKMARK_COUNT */ ? filteredIllustrations.sort(
+          (a, b) => b.bookmark_user_total - a.bookmark_user_total
+        ) : filteredIllustrations;
+        iLog.d("Filtered and sorted illustrations:", sortedIllustrations);
+        iLog.i("Sort illustrations successfully.");
+        this.illustrations = sortedIllustrations;
+        this.showIllustrations();
+        this.sortButtonElement.text("\u4E0B\u4E00\u9875");
+      } catch (error) {
+        iLog.e("Sort illustrations failed:", error);
+        this.sortButtonElement.text("\u6392\u5E8F");
+      }
+      this.hideProgress();
+      this.sorting = false;
+    }
+    setProgress(text) {
+      this.progressText.text(text);
+      this.progressElement.show();
+    }
+    hideProgress() {
+      this.progressText.text("");
+      this.progressElement.hide();
+    }
+    showIllustrations() {
+      this.listElement.find("li").remove();
+      const fragment = document.createDocumentFragment();
+      for (const {
+        aiType,
+        alt,
+        bookmarkData,
+        bookmark_user_total,
+        createDate,
+        id,
+        illustType,
+        pageCount: pageCount2,
+        profileImageUrl,
+        tags,
+        title,
+        url,
+        userId,
+        userName
+      } of this.illustrations) {
+        const isR18 = tags.includes("R-18");
+        const isUgoira = illustType === 2 /* UGOIRA */;
+        const isAi = aiType === 2 /* AI */;
+        const isAiAssisted = tags.includes("AI-assisted");
+        const listItem = document.createElement("li");
+        const container = document.createElement("div");
+        container.style = "width: 184px;";
+        const artworkAnchor = document.createElement("a");
+        artworkAnchor.setAttribute("data-gtm-value", id);
+        artworkAnchor.setAttribute("data-gtm-user-id", userId);
+        artworkAnchor.href = `/artworks/${id}`;
+        artworkAnchor.target = "_blank";
+        artworkAnchor.rel = "external";
+        artworkAnchor.style = "display: block; position: relative; width: 184px;";
+        const artworkImageWrapper = document.createElement("div");
+        artworkImageWrapper.style = "position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;";
+        const artworkImage = document.createElement("img");
+        artworkImage.src = url;
+        artworkImage.alt = alt;
+        artworkImage.style = "object-fit: cover; object-position: center center; width: 100%; height: 100%; border-radius: 4px; background-color: rgb(31, 31, 31);";
+        const ugoriaSvg = document.createElement("div");
+        ugoriaSvg.style = "position: absolute;";
+        ugoriaSvg.innerHTML = play_default;
+        const artworkMeta = document.createElement("div");
+        artworkMeta.style = "position: absolute; top: 0px; left: 0px; right: 0px; display: flex; align-items: flex-start; padding: 4px 4px 0; pointer-events: none; font-size: 10px;";
+        artworkMeta.innerHTML = `
+          ${isR18 ? '<div style="padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: rgb(255, 64, 96); font-weight: bold; line-height: 16px; user-select: none;">R-18</div>' : ""}
+          ${isAi ? '<div style="padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: #1d4ed8; font-weight: bold; line-height: 16px; user-select: none;">AI</div>' : isAiAssisted ? '<div style="padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: #6d28d9; font-weight: bold; line-height: 16px; user-select: none;">AI-\u8F85\u52A9</div>' : ""}
+          ${pageCount2 > 1 ? `
+                <div style="margin-left: auto;">
+                  <div style="display: flex; justify-content: center; align-items: center; height: 20px; min-width: 20px; color: rgb(245, 245, 245); font-weight: bold; padding: 0px 6px; background: rgba(0, 0, 0, 0.32); border-radius: 10px; line-height: 10px;">
+                    ${page_default}
+                    <span>${pageCount2}</span>
+                  </div>
+                </div>` : ""}
+        `;
+        const artworkToolbar = document.createElement("div");
+        artworkToolbar.style = "position: absolute; top: 154px; left: 0px; right: 0px; display: flex; align-items: center; padding: 0 4px 4px; pointer-events: none; font-size: 12px;";
+        artworkToolbar.innerHTML = `
+          <div style="padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: ${bookmark_user_total > 5e4 ? "#9f1239" : bookmark_user_total > 1e4 ? "#dc2626" : bookmark_user_total > 5e3 ? "#1d4ed8" : bookmark_user_total > 1e3 ? "#15803d" : "#475569"}; font-weight: bold; line-height: 16px; user-select: none;">\u2764 ${bookmark_user_total}</div>
+          <div style="margin-left: auto;">${bookmarkData ? heart_filled_default : heart_default}</div>
+        `;
+        const artworkTitle = document.createElement("div");
+        artworkTitle.innerHTML = title;
+        artworkTitle.style = "margin-top: 4px; max-width: 100%; overflow: hidden; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; line-height: 22px; font-size: 14px; font-weight: bold; color: rgb(245, 245, 245); transition: color 0.2s;";
+        const artworkAuthor = document.createElement("a");
+        artworkAuthor.setAttribute("data-gtm-value", userId);
+        artworkAuthor.href = `/users/${userId}`;
+        artworkAuthor.target = "_blank";
+        artworkAuthor.rel = "external";
+        artworkAuthor.style = "display: flex; align-items: center; margin-top: 4px;";
+        artworkAuthor.innerHTML = `
+          <img src="${profileImageUrl}" alt="${userName}" style="object-fit: cover; object-position: center top; width: 24px; height: 24px; border-radius: 50%;">
+          <span style="min-width: 0px; line-height: 22px; font-size: 14px; color: rgb(214, 214, 214); text-decoration: none; text-overflow: ellipsis; white-space: nowrap; overflow: hidden;">${userName}</span>
+        `;
+        artworkImageWrapper.appendChild(artworkImage);
+        if (isUgoira) artworkImageWrapper.appendChild(ugoriaSvg);
+        artworkAnchor.appendChild(artworkImageWrapper);
+        artworkAnchor.appendChild(artworkMeta);
+        artworkAnchor.appendChild(artworkToolbar);
+        artworkAnchor.appendChild(artworkTitle);
+        container.appendChild(artworkAnchor);
+        container.appendChild(artworkAuthor);
+        listItem.appendChild(container);
+        fragment.appendChild(listItem);
+      }
+      this.listElement.append(fragment);
+    }
+  }
+  const illustSorter = new IllustSorter();
+  window.addEventListener(SORT_EVENT_NAME, () => {
+    if (illustSorter.sorting) {
+      iLog.w("Current is in sorting progress.");
+      return;
+    }
+    const url = new URL(location.href);
+    const { origin, pathname, searchParams } = url;
+    if (illustSorter.listElement?.length) {
+      iLog.i(
+        "Illustrations in current page are sorted, jump to next available page..."
+      );
+      const currentPage = Number(searchParams.get("p") ?? 1);
+      const nextPage = currentPage + pageCount;
+      searchParams.set("p", String(nextPage));
+      location.href = `${origin}${pathname}?${searchParams}`;
+      return;
+    }
+    const {
+      type,
+      api,
+      searchParams: defaultSearchParams
+    } = getSortOptionsFromPathname(pathname);
+    if (type === void 0) {
+      iLog.w("Current page doesn't support sorting artworks.");
+      return;
+    }
+    const mergedSearchParams = new URLSearchParams([
+      ...defaultSearchParams,
+      ...searchParams
+    ]);
+    illustSorter.reset({
+      type
+    });
+    illustSorter.sort({
+      type,
+      api,
+      searchParams: mergedSearchParams
+    });
+  });
+  isInitialized2 = true;
+};
+function getIllustrationsListDom(type) {
+  if ([
+    0 /* TAG_ARTWORK */,
+    1 /* TAG_ILLUST */,
+    2 /* TAG_MANGA */
+  ].includes(type)) {
+    return $("ul.sc-ad8346e6-1.iwHaa-d");
+  }
+  throw new Error(`Illustrations list DOM not found.`);
+}
+function getSortOptionsFromPathname(pathname) {
+  let type;
+  let api;
+  let defaultSearchParams;
+  let match;
+  if (match = pathname.match(/^\/tags\/(.+)\/(.+)$/)) {
+    const tagName = match[1];
+    const tagFilterType = match[2];
+    if (tagFilterType === "artworks") {
+      type = 0 /* TAG_ARTWORK */;
+      api = `/ajax/search/artworks/${tagName}`;
+      defaultSearchParams = `word=${tagName}&order=date_d&mode=all&p=1&csw=0&s_mode=s_tag_full&type=all&lang=zh`;
+    } else if (tagFilterType === "illustrations") {
+      type = 1 /* TAG_ILLUST */;
+      api = `/ajax/search/illustrations/${tagName}`;
+      defaultSearchParams = `word=${tagName}&order=date_d&mode=all&p=1&csw=0&s_mode=s_tag_full&type=illust_and_ugoira&lang=zh`;
+    } else if (tagFilterType === "manga") {
+      type = 2 /* TAG_MANGA */;
+      api = `/ajax/search/manga/${tagName}`;
+      defaultSearchParams = `word=${tagName}&order=date_d&mode=all&p=1&csw=0&s_mode=s_tag_full&type=manga&lang=zh`;
+    }
+  }
+  return { type, api, searchParams: new URLSearchParams(defaultSearchParams) };
+}
+function getIllustrationsFromResponse(type, response) {
+  if (type === 0 /* TAG_ARTWORK */) {
+    return response.body.illustManga.data ?? [];
+  } else if (type === 1 /* TAG_ILLUST */) {
+    return response.body.illust.data ?? [];
+  } else if (type === 2 /* TAG_MANGA */) {
+    return response.body.manga.data ?? [];
+  }
+  return [];
+}
+
 // src/i18n/index.ts
 var Texts = {};
 Texts[0 /* zh_CN */] = {
@@ -1355,7 +1748,9 @@ Texts[0 /* zh_CN */] = {
   setting_previewByKeyHelp: "\u5F00\u542F\u540E\u9F20\u6807\u79FB\u52A8\u5230\u56FE\u7247\u4E0A\u4E0D\u518D\u5C55\u793A\u9884\u89C8\u56FE\uFF0C\u6309\u4E0BCtrl\u952E\u624D\u5C55\u793A\uFF0C\u540C\u65F6\u201C\u5EF6\u8FDF\u663E\u793A\u9884\u89C8\u201D\u8BBE\u7F6E\u9879\u4E0D\u751F\u6548\u3002",
   setting_maxPage: "\u6BCF\u6B21\u6392\u5E8F\u65F6\u7EDF\u8BA1\u7684\u6700\u5927\u9875\u6570",
   setting_hideWork: "\u9690\u85CF\u6536\u85CF\u6570\u5C11\u4E8E\u8BBE\u5B9A\u503C\u7684\u4F5C\u54C1",
+  setting_sortOrderByBookmark: "\u6309\u7167\u6536\u85CF\u6570\u6392\u5E8F\u4F5C\u54C1",
   setting_hideAiWork: "\u6392\u5E8F\u65F6\u9690\u85CF AI \u751F\u6210\u4F5C\u54C1",
+  setting_hideAiAssistedWork: "\u6392\u5E8F\u65F6\u9690\u85CF AI \u8F85\u52A9\u4F5C\u54C1",
   setting_hideFav: "\u6392\u5E8F\u65F6\u9690\u85CF\u5DF2\u6536\u85CF\u7684\u4F5C\u54C1",
   setting_hideFollowed: "\u6392\u5E8F\u65F6\u9690\u85CF\u5DF2\u5173\u6CE8\u753B\u5E08\u4F5C\u54C1",
   setting_hideByTag: "\u6392\u5E8F\u65F6\u9690\u85CF\u6307\u5B9A\u6807\u7B7E\u7684\u4F5C\u54C1",
@@ -1531,11 +1926,131 @@ var i18n_default = Texts;
 // src/index.ts
 var g_language = 0 /* zh_CN */;
 var g_csrfToken = "";
-var g_pageType = -1;
-var initialUrl = location.href;
+var g_pageType;
 var g_settings;
-var g_sortComplete = true;
-var Pages = {};
+var Pages = {
+  [0 /* Search */]: {
+    PageTypeString: "SearchPage",
+    CheckUrl: function(url) {
+      return /^https?:\/\/www.pixiv.net(\/en)?\/tags\/.+\/(artworks|illustrations|manga)/.test(
+        url
+      );
+    },
+    GetToolBar: function() {
+      return findToolbarCommon();
+    }
+  },
+  [1 /* BookMarkNew */]: {
+    PageTypeString: "BookMarkNewPage",
+    CheckUrl: function(url) {
+      return /^https:\/\/www.pixiv.net(\/en)?\/bookmark_new_illust(_r18)?.php.*/.test(
+        url
+      );
+    },
+    GetToolBar: function() {
+      return findToolbarCommon();
+    }
+  },
+  [2 /* Discovery */]: {
+    PageTypeString: "DiscoveryPage",
+    CheckUrl: function(url) {
+      return /^https?:\/\/www.pixiv.net(\/en)?\/discovery.*/.test(url);
+    },
+    GetToolBar: function() {
+      return findToolbarCommon();
+    }
+  },
+  [3 /* Member */]: {
+    PageTypeString: "MemberPage/MemberIllustPage/MemberBookMark",
+    CheckUrl: function(url) {
+      return /^https?:\/\/www.pixiv.net(\/en)?\/users\/\d+/.test(url);
+    },
+    GetToolBar: function() {
+      return findToolbarCommon();
+    }
+  },
+  [4 /* Home */]: {
+    PageTypeString: "HomePage",
+    CheckUrl: function(url) {
+      return /https?:\/\/www.pixiv.net(\/en)?\/?$/.test(url) || /https?:\/\/www.pixiv.net(\/en)?\/illustration\/?$/.test(url) || /https?:\/\/www.pixiv.net(\/en)?\/manga\/?$/.test(url) || /https?:\/\/www.pixiv.net(\/en)?\/cate_r18\.php$/.test(url);
+    },
+    GetToolBar: function() {
+      return findToolbarCommon();
+    }
+  },
+  [5 /* Ranking */]: {
+    PageTypeString: "RankingPage",
+    CheckUrl: function(url) {
+      return /^https?:\/\/www.pixiv.net(\/en)?\/ranking.php.*/.test(url);
+    },
+    GetToolBar: function() {
+      return findToolbarOld();
+    }
+  },
+  [6 /* NewIllust */]: {
+    PageTypeString: "NewIllustPage",
+    CheckUrl: function(url) {
+      return /^https?:\/\/www.pixiv.net(\/en)?\/new_illust.php.*/.test(url);
+    },
+    GetToolBar: function() {
+      return findToolbarCommon();
+    }
+  },
+  [7 /* R18 */]: {
+    PageTypeString: "R18Page",
+    CheckUrl: function(url) {
+      return /^https?:\/\/www.pixiv.net(\/en)?\/cate_r18.php.*/.test(url);
+    },
+    GetToolBar: function() {
+      return findToolbarCommon();
+    }
+  },
+  [8 /* BookMark */]: {
+    PageTypeString: "BookMarkPage",
+    CheckUrl: function(url) {
+      return /^https:\/\/www.pixiv.net(\/en)?\/bookmark.php\/?$/.test(url);
+    },
+    GetToolBar: function() {
+      return findToolbarOld();
+    }
+  },
+  [9 /* Stacc */]: {
+    PageTypeString: "StaccPage",
+    CheckUrl: function(url) {
+      return /^https:\/\/www.pixiv.net(\/en)?\/stacc.*/.test(url);
+    },
+    GetToolBar: function() {
+      return findToolbarOld();
+    }
+  },
+  [10 /* Artwork */]: {
+    PageTypeString: "ArtworkPage",
+    CheckUrl: function(url) {
+      return /^https:\/\/www.pixiv.net(\/en)?\/artworks\/.*/.test(url);
+    },
+    GetToolBar: function() {
+      return findToolbarCommon();
+    }
+  },
+  [11 /* NovelSearch */]: {
+    PageTypeString: "NovelSearchPage",
+    CheckUrl: function(url) {
+      return /^https:\/\/www.pixiv.net(\/en)?\/tags\/.*\/novels/.test(url);
+    },
+    GetToolBar: function() {
+      return findToolbarCommon();
+    }
+  },
+  [12 /* SearchTop */]: {
+    PageTypeString: "SearchTopPage",
+    CheckUrl: function(url) {
+      return /^https?:\/\/www.pixiv.net(\/en)?\/tags\/[^/*]/.test(url);
+    },
+    GetToolBar: function() {
+      return findToolbarCommon();
+    }
+  }
+};
 function findToolbarCommon() {
   const rootToolbar = $("#root").find("ul:last").get(0);
   if (rootToolbar) return rootToolbar;
@@ -1544,11 +2059,6 @@ function findToolbarCommon() {
 }
 function findToolbarOld() {
   return $("._toolmenu").get(0);
-}
-function convertThumbUrlToSmall(thumbUrl) {
-  const replace1 = "c/540x540_70/img-master";
-  const replace2 = "_master";
-  return thumbUrl.replace(/c\/.*\/custom-thumb/, replace1).replace("_custom", replace2).replace(/c\/.*\/img-master/, replace1).replace("_square", replace2);
 }
 function showSearchLinksForDeletedArtworks() {
   const searchEngines = [
@@ -1577,1510 +2087,6 @@ function showSearchLinksForDeletedArtworks() {
     }
   });
 }
-Pages[0 /* Search */] = {
-  PageTypeString: "SearchPage",
-  CheckUrl: function(url) {
-    return /^https?:\/\/www.pixiv.net\/tags\/.*\/(artworks|illustrations|manga)/.test(
-      url
-    ) || /^https?:\/\/www.pixiv.net\/en\/tags\/.*\/(artworks|illustrations|manga)/.test(
-      url
-    );
-  },
-  GetToolBar: function() {
-    return findToolbarCommon();
-  },
-  // 搜索页有 lazyload，不开排序的情况下，最后几张图片可能会无法预览。这里把它当做自动加载处理
-  HasAutoLoad: true,
-  GetImageListContainer: function() {
-    return this.private.imageListConrainer;
-  },
-  GetFirstImageElement: function() {
-    return $(this.private.imageListConrainer).find("li").get(0);
-  },
-  GetPageSelector: function() {
-    const sections = $("section");
-    if (sections.length === 0) {
-      return null;
-    }
-    let resultSectionIndex = 0;
-    $.each(sections, (i, e) => {
-      if ($(e).find("aside").length === 0) {
-        resultSectionIndex = i;
-      }
-    });
-    const ul = $(sections[resultSectionIndex]).find("ul");
-    return ul.next().get(0) ?? ul.parent().next().get(0);
-  },
-  private: {
-    imageListContainer: null,
-    pageSelector: null,
-    returnMap: null
-  }
-};
-Pages[1 /* BookMarkNew */] = {
-  PageTypeString: "BookMarkNewPage",
-  CheckUrl: function(url) {
-    return /^https:\/\/www.pixiv.net\/bookmark_new_illust.php.*/.test(url) || /^https:\/\/www.pixiv.net\/bookmark_new_illust_r18.php.*/.test(url);
-  },
-  GetToolBar: function() {
-    return findToolbarCommon();
-  },
-  HasAutoLoad: true,
-  private: {
-    returnMap: null
-  }
-};
-Pages[2 /* Discovery */] = {
-  PageTypeString: "DiscoveryPage",
-  CheckUrl: function(url) {
-    return /^https?:\/\/www.pixiv.net\/discovery.*/.test(url);
-  },
-  GetToolBar: function() {
-    return findToolbarCommon();
-  },
-  HasAutoLoad: true,
-  private: {
-    returnMap: null
-  }
-};
-Pages[3 /* Member */] = {
-  PageTypeString: "MemberPage/MemberIllustPage/MemberBookMark",
-  CheckUrl: function(url) {
-    return /^https?:\/\/www.pixiv.net\/(en\/)?users\/\d+/.test(url);
-  },
-  GetToolBar: function() {
-    return findToolbarCommon();
-  },
-  // 跟搜索页一样的情况
-  HasAutoLoad: true,
-  private: {
-    returnMap: null
-  }
-};
-Pages[4 /* Home */] = {
-  PageTypeString: "HomePage",
-  CheckUrl: function(url) {
-    return /https?:\/\/www.pixiv.net\/?$/.test(url) || /https?:\/\/www.pixiv.net\/en\/?$/.test(url) || /https?:\/\/www.pixiv.net\/illustration\/?$/.test(url) || /https?:\/\/www.pixiv.net\/manga\/?$/.test(url) || /https?:\/\/www.pixiv.net\/cate_r18\.php$/.test(url) || /https?:\/\/www.pixiv.net\/en\/cate_r18\.php$/.test(url);
-  },
-  GetToolBar: function() {
-    return findToolbarCommon();
-  },
-  HasAutoLoad: true,
-  private: {
-    returnMap: null
-  }
-};
-Pages[5 /* Ranking */] = {
-  PageTypeString: "RankingPage",
-  CheckUrl: function(url) {
-    return /^https?:\/\/www.pixiv.net\/ranking.php.*/.test(url);
-  },
-  GetToolBar: function() {
-    return findToolbarOld();
-  },
-  HasAutoLoad: true,
-  private: {
-    returnMap: null
-  }
-};
-Pages[6 /* NewIllust */] = {
-  PageTypeString: "NewIllustPage",
-  CheckUrl: function(url) {
-    return /^https?:\/\/www.pixiv.net\/new_illust.php.*/.test(url);
-  },
-  GetToolBar: function() {
-    return findToolbarCommon();
-  },
-  HasAutoLoad: true,
-  private: {
-    returnMap: null
-  }
-};
-Pages[7 /* R18 */] = {
-  PageTypeString: "R18Page",
-  CheckUrl: function(url) {
-    return /^https?:\/\/www.pixiv.net\/cate_r18.php.*/.test(url);
-  },
-  GetToolBar: function() {
-  },
-  HasAutoLoad: false
-};
-Pages[8 /* BookMark */] = {
-  PageTypeString: "BookMarkPage",
-  CheckUrl: function(url) {
-    return /^https:\/\/www.pixiv.net\/bookmark.php\/?$/.test(url);
-  },
-  GetToolBar: function() {
-    return findToolbarOld();
-  },
-  HasAutoLoad: false,
-  private: {
-    returnMap: null
-  }
-};
-Pages[9 /* Stacc */] = {
-  PageTypeString: "StaccPage",
-  CheckUrl: function(url) {
-    return /^https:\/\/www.pixiv.net\/stacc.*/.test(url);
-  },
-  GetToolBar: function() {
-    return findToolbarOld();
-  },
-  HasAutoLoad: true,
-  private: {
-    returnMap: null
-  }
-};
-Pages[10 /* Artwork */] = {
-  PageTypeString: "ArtworkPage",
-  CheckUrl: function(url) {
-    return /^https:\/\/www.pixiv.net\/artworks\/.*/.test(url) || /^https:\/\/www.pixiv.net\/en\/artworks\/.*/.test(url);
-  },
-  GetToolBar: function() {
-    return findToolbarCommon();
-  },
-  HasAutoLoad: true,
-  Work: function() {
-    function AddDownloadButton(button, offsetToOffsetTop) {
-      if (!g_settings.enableAnimeDownload) {
-        return;
-      }
-      const cloneButton = button.clone().css({
-        bottom: "50px",
-        padding: 0,
-        width: "48px",
-        height: "48px",
-        opacity: "0.4",
-        cursor: "pointer"
-      });
-      cloneButton.get(0).innerHTML = '<svg viewBox="0 0 120 120" style="width: 40px; height: 40px; stroke-width: 10; stroke-linecap: round; stroke-linejoin: round; border-radius: 24px; background-color: black; stroke: limegreen; fill: none;" class="_3Fo0Hjg"><polyline points="60,30 60,90"></polyline><polyline points="30,60 60,90 90,60"></polyline></svg></button>';
-      function MoveButton() {
-        function getOffset(e) {
-          if (e.offsetParent) {
-            const offset = getOffset(e.offsetParent);
-            return {
-              offsetTop: e.offsetTop + offset.offsetTop,
-              offsetLeft: e.offsetLeft + offset.offsetLeft
-            };
-          } else {
-            return {
-              offsetTop: e.offsetTop,
-              offsetLeft: e.offsetLeft
-            };
-          }
-        }
-      }
-      MoveButton();
-      $(window).on("resize", MoveButton);
-      button.after(cloneButton);
-      cloneButton.mouseover(function() {
-        $(this).css("opacity", "0.2");
-      }).mouseleave(function() {
-        $(this).css("opacity", "0.4");
-      }).click(function() {
-        let illustId = "";
-        const matched = location.href.match(/artworks\/(\d+)/);
-        if (matched) {
-          illustId = matched[1];
-          DoLog(3 /* Info */, "IllustId=" + illustId);
-        } else {
-          DoLog(1 /* Error */, "Can not found illust id!");
-          return;
-        }
-        $.ajax(g_getUgoiraUrl.replace("#id#", illustId), {
-          method: "GET",
-          success: function(json) {
-            DoLog(4 /* Elements */, json);
-            if (json.error == true) {
-              DoLog(
-                1 /* Error */,
-                "Server response an error: " + json.message
-              );
-              return;
-            }
-            const newWindow = window.open("_blank");
-            newWindow.location = json.body.originalSrc;
-          },
-          error: function() {
-            DoLog(1 /* Error */, "Request zip file failed!");
-          }
-        });
-      });
-    }
-    if (this.private.needProcess) {
-      const canvas = $(".pp-canvas");
-      const div = $('div[role="presentation"]:last');
-      const button = div.find("button");
-      const headerRealHeight = parseInt($("header").css("height")) + parseInt($("header").css("padding-top")) + parseInt($("header").css("padding-bottom")) + parseInt($("header").css("margin-top")) + parseInt($("header").css("margin-bottom")) + parseInt($("header").css("border-bottom-width")) + parseInt($("header").css("border-top-width"));
-      AddDownloadButton(button, headerRealHeight);
-    }
-  },
-  private: {
-    needProcess: false,
-    returnMap: null
-  }
-};
-Pages[11 /* NovelSearch */] = {
-  PageTypeString: "NovelSearchPage",
-  CheckUrl: function(url) {
-    return /^https:\/\/www.pixiv.net\/tags\/.*\/novels/.test(url) || /^https:\/\/www.pixiv.net\/en\/tags\/.*\/novels/.test(url);
-  },
-  GetToolBar: function() {
-    return findToolbarCommon();
-  },
-  GetPageSelector: function() {
-    return $("section:first").find("nav:first");
-  },
-  HasAutoLoad: false,
-  private: {
-    returnMap: null
-  }
-};
-Pages[12 /* SearchTop */] = {
-  PageTypeString: "SearchTopPage",
-  CheckUrl: function(url) {
-    return /^https?:\/\/www.pixiv.net(\/en)?\/tags\/[^/*]/.test(url);
-  },
-  GetToolBar: function() {
-    return findToolbarCommon();
-  },
-  // 搜索页有 lazyload，不开排序的情况下，最后几张图片可能会无法预览。这里把它当做自动加载处理
-  HasAutoLoad: false,
-  GetImageListContainer: function() {
-    return this.private.imageListConrainer;
-  },
-  GetFirstImageElement: function() {
-    return $(this.private.imageListConrainer).find("li").get(0);
-  },
-  GetPageSelector: function() {
-    const sections = $("section");
-    if (sections.length == 0) {
-      return null;
-    }
-    let resultSectionIndex = 0;
-    $.each(sections, (i, e) => {
-      if ($(e).find("aside").length === 0) {
-        resultSectionIndex = i;
-      }
-    });
-    const ul = $(sections[resultSectionIndex]).find("ul");
-    return ul.next().get(0) ?? ul.parent().next().get(0);
-  },
-  private: {
-    imageListContainer: null,
-    pageSelector: null,
-    returnMap: null
-  }
-};
-var imageElementTemplate = null;
-function PixivSK(callback) {
-  if (g_settings.pageCount < 1 || g_settings.favFilter < 0) {
-    g_settings.pageCount = 1;
-    g_settings.favFilter = 0;
-  }
-  let currentGettingPageCount = 0;
-  let currentUrl = "https://www.pixiv.net/ajax/search/";
-  let currentPage = 0;
-  let works = [];
-  let worksCount = 0;
-  if (g_pageType != 0 /* Search */) {
-    return;
-  }
-  const getWorks = function(onloadCallback) {
-    $("#progress").text(
-      i18n_default[g_language].sort_getWorks.replace("%1", currentGettingPageCount + 1).replace("%2", g_settings.pageCount)
-    );
-    let url = currentUrl.replace(/p=\d+/, "p=" + currentPage);
-    if (location.href.indexOf("?") != -1) {
-      let param = location.href.split("?")[1];
-      param = param.replace(/^p=\d+/, "");
-      param = param.replace(/&p=\d+/, "");
-      url += "&" + param;
-    }
-    if (url.indexOf("order=") == -1) {
-      url += "&order=date_d";
-    }
-    if (url.indexOf("mode=") == -1) {
-      url += "&mode=all";
-    }
-    if (url.indexOf("s_mode=") == -1) {
-      url += "&s_mode=s_tag_full";
-    }
-    DoLog(3 /* Info */, "getWorks url: " + url);
-    const req = new XMLHttpRequest();
-    req.open("GET", url, true);
-    req.onload = function(event) {
-      onloadCallback(req);
-    };
-    req.onerror = function(event) {
-      DoLog(1 /* Error */, "Request search page error!");
-    };
-    req.send(null);
-  };
-  function getFollowingOfType(user_id, type, offset) {
-    return new Promise(function(resolve, reject) {
-      if (offset == null) {
-        offset = 0;
-      }
-      const limit = 100;
-      const following_show = [];
-      $.ajax(
-        "https://www.pixiv.net/ajax/user/" + user_id + "/following?offset=" + offset + "&limit=" + limit + "&rest=" + type,
-        {
-          async: true,
-          success: function(data) {
-            if (data == null || data.error) {
-              DoLog(1 /* Error */, "Following response contains an error.");
-              resolve([]);
-              return;
-            }
-            if (data.body.users.length == 0) {
-              resolve([]);
-              return;
-            }
-            $.each(data.body.users, function(i, user) {
-              following_show.push(user.userId);
-            });
-            getFollowingOfType(user_id, type, offset + limit).then(
-              function(members) {
-                resolve(following_show.concat(members));
-                return;
-              }
-            );
-          },
-          error: function() {
-            DoLog(1 /* Error */, "Request following failed.");
-            resolve([]);
-          }
-        }
-      );
-    });
-  }
-  function getFollowingOfCurrentUser() {
-    return new Promise(function(resolve, reject) {
-      let user_id = "";
-      try {
-        user_id = dataLayer[0].user_id;
-      } catch (ex) {
-        DoLog(1 /* Error */, "Get user id failed.");
-        resolve([]);
-        return;
-      }
-      $("#progress").text(i18n_default[g_language].sort_getPublicFollowing);
-      const following = GetLocalStorage("followingOfUid-" + user_id) || GetCookie("followingOfUid-" + user_id);
-      if (following != null && following != "null") {
-        resolve(following);
-        return;
-      }
-      getFollowingOfType(user_id, "show").then(function(members) {
-        $("#progress").text(i18n_default[g_language].sort_getPrivateFollowing);
-        getFollowingOfType(user_id, "hide").then(function(members2) {
-          const following2 = members.concat(members2);
-          SetLocalStorage("followingOfUid-" + user_id, following2);
-          resolve(following2);
-        });
-      });
-    });
-  }
-  const filterByUser = function() {
-    return new Promise(function(resolve, reject) {
-      if (!g_settings.hideFollowed) {
-        resolve();
-      }
-      getFollowingOfCurrentUser().then(function(members) {
-        const tempWorks = [];
-        let hideWorkCount = 0;
-        $(works).each(function(i, work) {
-          let found = false;
-          for (let i2 = 0; i2 < members.length; i2++) {
-            if (members[i2] == work.userId) {
-              found = true;
-              break;
-            }
-          }
-          if (!found) {
-            tempWorks.push(work);
-          } else {
-            hideWorkCount++;
-          }
-        });
-        works = tempWorks;
-        DoLog(3 /* Info */, hideWorkCount + " works were hide.");
-        DoLog(4 /* Elements */, works);
-        resolve();
-      });
-    });
-  };
-  const filterAndSort = function() {
-    return new Promise(function(resolve, reject) {
-      DoLog(3 /* Info */, "Start sort.");
-      DoLog(4 /* Elements */, works);
-      let text = i18n_default[g_language].sort_filtering.replace(
-        "%2",
-        g_settings.favFilter
-      );
-      text = text.replace(
-        "%1",
-        g_settings.hideFavorite ? i18n_default[g_language].sort_filteringHideFavorite : ""
-      );
-      $("#progress").text(text);
-      const tmp = [];
-      const tagsToHide = new Set(
-        g_settings.hideByTagList.replace("\uFF0C", ",").split(",")
-      );
-      $(works).each(function(i, work) {
-        const bookmarkCount = work.bookmarkCount ? work.bookmarkCount : 0;
-        if (bookmarkCount < g_settings.favFilter) return true;
-        if (g_settings.hideFavorite && work.bookmarkData) return true;
-        if (g_settings.aiFilter == 1 && work.aiType == 2) return true;
-        if (g_settings.hideByTag && work.tags.some((tag) => tagsToHide.has(tag)))
-          return true;
-        tmp.push(work);
-      });
-      works = tmp;
-      filterByUser().then(function() {
-        works.sort(function(a, b) {
-          let favA = a.bookmarkCount;
-          let favB = b.bookmarkCount;
-          if (!favA) {
-            favA = 0;
-          }
-          if (!favB) {
-            favB = 0;
-          }
-          if (favA > favB) {
-            return -1;
-          }
-          if (favA < favB) {
-            return 1;
-          }
-          return 0;
-        });
-        DoLog(3 /* Info */, "Sort complete.");
-        DoLog(4 /* Elements */, works);
-        resolve();
-      });
-    });
-  };
-  if (currentPage === 0) {
-    let url = location.href;
-    if (url.indexOf("&p=") == -1 && url.indexOf("?p=") == -1) {
-      DoLog(2 /* Warning */, "Can not found page in url.");
-      if (url.indexOf("?") == -1) {
-        url += "?p=1";
-        DoLog(3 /* Info */, 'Add "?p=1": ' + url);
-      } else {
-        url += "&p=1";
-        DoLog(3 /* Info */, 'Add "&p=1": ' + url);
-      }
-    }
-    const wordMatch = url.match(/\/tags\/([^/]*)\//);
-    let searchWord = "";
-    if (wordMatch) {
-      DoLog(3 /* Info */, "Search key word: " + searchWord);
-      searchWord = wordMatch[1];
-    } else {
-      DoLog(1 /* Error */, "Can not found search key word!");
-      return;
-    }
-    const page = url.match(/p=(\d*)/)[1];
-    currentPage = parseInt(page);
-    DoLog(3 /* Info */, "Current page: " + currentPage);
-    const type = url.match(/tags\/.*\/(.*)[?$]/)[1];
-    currentUrl += type + "/";
-    currentUrl += searchWord + "?word=" + searchWord + "&p=" + currentPage;
-    DoLog(3 /* Info */, "Current url: " + currentUrl);
-  } else {
-    DoLog(1 /* Error */, "???");
-  }
-  const imageContainer = Pages[0 /* Search */].GetImageListContainer();
-  $(imageContainer).hide().before(
-    '<div id="loading" style="width:100%;text-align:center;"><img src="' + g_loadingImage + '" /><p id="progress" style="text-align: center;font-size: large;font-weight: bold;padding-top: 10px;">0%</p></div>'
-  );
-  const pageSelectorDiv = Pages[0 /* Search */].GetPageSelector();
-  console.log("pageSelectorDiv", pageSelectorDiv);
-  if (pageSelectorDiv == null) {
-    DoLog(1 /* Error */, "Can not found page selector!");
-    return;
-  }
-  if ($(pageSelectorDiv).find("a").length > 2) {
-    const pageButton = $(pageSelectorDiv).find("a").get(1);
-    const newPageButtons = [];
-    const pageButtonString = "Previewer";
-    for (let i = 0; i < 9; i++) {
-      const newPageButton = pageButton.cloneNode(true);
-      $(newPageButton).find("span").text(pageButtonString[i]);
-      newPageButtons.push(newPageButton);
-    }
-    $(pageSelectorDiv).find("button").remove();
-    while ($(pageSelectorDiv).find("a").length > 2) {
-      $(pageSelectorDiv).find("a:first").next().remove();
-    }
-    for (let i = 0; i < 9; i++) {
-      $(pageSelectorDiv).find("a:last").before(newPageButtons[i]);
-    }
-    $(pageSelectorDiv).find("a").attr("href", "javascript:;");
-    let pageUrl = location.href;
-    if (pageUrl.indexOf("&p=") == -1 && pageUrl.indexOf("?p=") == -1) {
-      if (pageUrl.indexOf("?") == -1) {
-        pageUrl += "?p=1";
-      } else {
-        pageUrl += "&p=1";
-      }
-    }
-    const prevPageUrl = pageUrl.replace(
-      /p=\d+/,
-      "p=" + (currentPage - g_settings.pageCount > 1 ? currentPage - g_settings.pageCount : 1)
-    );
-    const nextPageUrl = pageUrl.replace(
-      /p=\d+/,
-      "p=" + (currentPage + g_settings.pageCount)
-    );
-    DoLog(3 /* Info */, "Previous page url: " + prevPageUrl);
-    DoLog(3 /* Info */, "Next page url: " + nextPageUrl);
-    const prevButton = $(pageSelectorDiv).find("a:first");
-    prevButton.before(prevButton.clone());
-    prevButton.remove();
-    const nextButton = $(pageSelectorDiv).find("a:last");
-    nextButton.before(nextButton.clone());
-    nextButton.remove();
-    $(pageSelectorDiv).find("a:first").attr("href", prevPageUrl).addClass("pp-prevPage");
-    $(pageSelectorDiv).find("a:last").attr("href", nextPageUrl).addClass("pp-nextPage");
-    const onloadCallback = function(req) {
-      let no_artworks_found = false;
-      try {
-        const json = JSON.parse(req.responseText);
-        if (json.hasOwnProperty("error")) {
-          if (json.error === false) {
-            let data;
-            if (json.body.illustManga) {
-              data = json.body.illustManga.data;
-            } else if (json.body.manga) {
-              data = json.body.manga.data;
-            } else if (json.body.illust) {
-              data = json.body.illust.data;
-            }
-            if (data.length > 0) {
-              works = works.concat(data);
-            } else {
-              no_artworks_found = true;
-            }
-          } else {
-            DoLog(1 /* Error */, "ajax error!");
-            return;
-          }
-        } else {
-          DoLog(1 /* Error */, 'Key "error" not found!');
-          return;
-        }
-      } catch (e) {
-        DoLog(1 /* Error */, "A invalid json string!");
-        DoLog(3 /* Info */, req.responseText);
-      }
-      currentPage++;
-      currentGettingPageCount++;
-      if (no_artworks_found) {
-        iLog.w(
-          2 /* Warning */,
-          "No artworks found, ignore " + (g_settings.pageCount - currentGettingPageCount) + " pages."
-        );
-        currentPage += g_settings.pageCount - currentGettingPageCount;
-        currentGettingPageCount = g_settings.pageCount;
-      }
-      if (currentGettingPageCount == g_settings.pageCount) {
-        DoLog(3 /* Info */, "Load complete, start to load bookmark count.");
-        DoLog(4 /* Elements */, works);
-        const tempWorks = [];
-        const workIdsSet = /* @__PURE__ */ new Set();
-        for (let i = 0; i < works.length; i++) {
-          if (works[i].id && !workIdsSet.has(works[i].id)) {
-            tempWorks.push(works[i]);
-            workIdsSet.add(works[i].id);
-          } else {
-            iLog.w("ignore work: " + works[i].id);
-          }
-        }
-        works = tempWorks;
-        worksCount = works.length;
-        DoLog(3 /* Info */, "Clear ad container complete.");
-        DoLog(4 /* Elements */, works);
-        GetBookmarkCount(0);
-      } else {
-        getWorks(onloadCallback);
-      }
-    };
-    getWorks(onloadCallback);
-  }
-  const xhrs = [];
-  let currentRequestGroupMinimumIndex = 0;
-  function FillXhrsArray() {
-    xhrs.length = 0;
-    const onloadFunc = function(event) {
-      let json = null;
-      try {
-        json = JSON.parse(event.responseText);
-      } catch (e) {
-        DoLog(1 /* Error */, "Parse json failed!");
-        DoLog(4 /* Elements */, e);
-        return;
-      }
-      if (json) {
-        let illustId = "";
-        const illustIdMatched = event.finalUrl.match(/illust_id=(\d+)/);
-        if (illustIdMatched) {
-          illustId = illustIdMatched[1];
-        } else {
-          DoLog(
-            1 /* Error */,
-            "Can not get illust id from url: " + event.finalUrl
-          );
-          return;
-        }
-        let indexOfThisRequest = -1;
-        for (let j = 0; j < g_maxXhr; j++) {
-          if (xhrs[j].illustId == illustId) {
-            indexOfThisRequest = j;
-            break;
-          }
-        }
-        if (indexOfThisRequest == -1) {
-          DoLog(1 /* Error */, "This url not match any request!");
-          return;
-        }
-        xhrs[indexOfThisRequest].complete = true;
-        if (!json.error) {
-          const bookmarkCount = json.body.illust_details.bookmark_user_total;
-          works[currentRequestGroupMinimumIndex + indexOfThisRequest].bookmarkCount = parseInt(bookmarkCount);
-          DoLog(
-            3 /* Info */,
-            "IllustId: " + illustId + ", bookmarkCount: " + bookmarkCount
-          );
-        } else {
-          DoLog(1 /* Error */, "Some error occured: " + json.message);
-        }
-        let completeCount = 0;
-        let completeReally = 0;
-        for (let j = 0; j < g_maxXhr; j++) {
-          if (xhrs[j].complete) {
-            completeCount++;
-            if (xhrs[j].illustId != "") {
-              completeReally++;
-            }
-          }
-        }
-        $("#loading").find("#progress").text(
-          i18n_default[g_language].sort_getBookmarkCount.replace("%1", currentRequestGroupMinimumIndex + completeReally).replace("%2", works.length)
-        );
-        if (completeCount == g_maxXhr) {
-          currentRequestGroupMinimumIndex += g_maxXhr;
-          GetBookmarkCount(currentRequestGroupMinimumIndex);
-        }
-      }
-    };
-    const onerrorFunc = function(event) {
-      let illustId = "";
-      const illustIdMatched = event.finalUrl.match(/illust_id=(\d+)/);
-      if (illustIdMatched) {
-        illustId = illustIdMatched[1];
-      } else {
-        DoLog(
-          1 /* Error */,
-          "Can not get illust id from url: " + event.finalUrl
-        );
-        return;
-      }
-      DoLog(
-        1 /* Error */,
-        "Send request failed, set this illust(" + illustId + ")'s bookmark count to 0!"
-      );
-      let indexOfThisRequest = -1;
-      for (let j = 0; j < g_maxXhr; j++) {
-        if (xhrs[j].illustId == illustId) {
-          indexOfThisRequest = j;
-          break;
-        }
-      }
-      if (indexOfThisRequest == -1) {
-        DoLog(1 /* Error */, "This url not match any request!");
-        return;
-      }
-      works[currentRequestGroupMinimumIndex + indexOfThisRequest].bookmarkCount = 0;
-      xhrs[indexOfThisRequest].complete = true;
-      let completeCount = 0;
-      let completeReally = 0;
-      for (let j = 0; j < g_maxXhr; j++) {
-        if (xhrs[j].complete) {
-          completeCount++;
-          if (xhrs[j].illustId != "") {
-            completeReally++;
-          }
-        }
-      }
-      $("#loading").find("#progress").text(
-        i18n_default[g_language].sort_getBookmarkCount.replace("%1", currentRequestGroupMinimumIndex + completeReally).replace("%2", works.length)
-      );
-      if (completeCount == g_maxXhr) {
-        currentRequestGroupMinimumIndex += g_maxXhr;
-        GetBookmarkCount(currentRequestGroupMinimumIndex + g_maxXhr);
-      }
-    };
-    for (let i = 0; i < g_maxXhr; i++) {
-      xhrs.push({
-        illustId: "",
-        complete: false,
-        onabort: onerrorFunc,
-        onerror: onerrorFunc,
-        onload: onloadFunc,
-        ontimeout: onerrorFunc
-      });
-    }
-  }
-  const GetBookmarkCount = function(index) {
-    if (index >= works.length) {
-      clearAndUpdateWorks();
-      return;
-    }
-    if (xhrs.length === 0) {
-      FillXhrsArray();
-    }
-    for (let i = 0; i < g_maxXhr; i++) {
-      if (index + i >= works.length) {
-        xhrs[i].complete = true;
-        xhrs[i].illustId = "";
-        continue;
-      }
-      const illustId = works[index + i].id;
-      const url = "https://www.pixiv.net/touch/ajax/illust/details?illust_id=" + illustId;
-      xhrs[i].illustId = illustId;
-      xhrs[i].complete = false;
-      request({
-        method: "GET",
-        url,
-        synchronous: true,
-        onabort: xhrs[i].onerror,
-        onerror: xhrs[i].onerror,
-        onload: xhrs[i].onload,
-        ontimeout: xhrs[i].onerror
-      });
-    }
-  };
-  const clearAndUpdateWorks = function() {
-    filterAndSort().then(function() {
-      const container = Pages[0 /* Search */].GetImageListContainer();
-      const firstImageElement = Pages[0 /* Search */].GetFirstImageElement();
-      $(firstImageElement).find("[data-mouseover]").removeAttr("data-mouseover");
-      if (imageElementTemplate == null) {
-        imageElementTemplate = firstImageElement.cloneNode(true);
-        const control = $(imageElementTemplate).find(".pp-control");
-        if (control == null) {
-          iLog.w("Cannot found some elements!");
-          return;
-        }
-        const imageLink = control.find("a:first");
-        const img = imageLink.find("img:first");
-        const imageDiv = img.parent();
-        const imageLinkDiv = imageLink.parent();
-        const titleLinkParent = control.next();
-        if (img == null || imageDiv == null || imageLink == null || imageLinkDiv == null || titleLinkParent == null) {
-          DoLog(1 /* Error */, "Can not found some elements!");
-        }
-        let titleLink = $("<a></a>");
-        if (titleLinkParent.children().length == 0) {
-          titleLinkParent.append(titleLink);
-        } else {
-          titleLink = titleLinkParent.children("a:first");
-        }
-        const authorDiv = titleLinkParent.next();
-        const authorLinkProfileImage = authorDiv.find("a:first");
-        const authorLink = authorDiv.find("a:last");
-        const authorName = authorLink;
-        const authorImage = $(authorDiv.find("img").get(0));
-        const bookmarkDiv = imageLink.next();
-        const bookmarkSvg = bookmarkDiv.find("svg");
-        const additionTagDiv = imageLink.children("div:last");
-        const bookmarkCountDiv = additionTagDiv.clone();
-        bookmarkCountDiv.css({ top: "auto", bottom: "0px", width: "65%" });
-        additionTagDiv.parent().append(bookmarkCountDiv);
-        img.addClass("ppImg");
-        imageLink.addClass("ppImageLink");
-        titleLink.addClass("ppTitleLink");
-        authorLinkProfileImage.addClass("ppAuthorLinkProfileImage");
-        authorLink.addClass("ppAuthorLink");
-        authorName.addClass("ppAuthorName");
-        authorImage.addClass("ppAuthorImage");
-        bookmarkSvg.attr("class", bookmarkSvg.attr("class") + " ppBookmarkSvg");
-        additionTagDiv.addClass("ppAdditionTag");
-        bookmarkCountDiv.addClass("ppBookmarkCount");
-        img.attr("src", "");
-        const animationTag = img.next();
-        if (animationTag.length != 0 && animationTag.get(0).tagName == "SVG") {
-          animationTag.remove();
-        }
-        additionTagDiv.empty();
-        bookmarkCountDiv.empty();
-        bookmarkSvg.find("path:first").css("fill", "rgb(31, 31, 31)");
-        bookmarkSvg.find("path:last").css("fill", "rgb(255, 255, 255)");
-        imageDiv.find("svg").remove();
-        if (g_settings.linkBlank) {
-          imageLink.attr("target", "_blank");
-          titleLink.attr("target", "_blank");
-          authorLinkProfileImage.attr("target", "_blank");
-          authorLink.attr("target", "_blank");
-        }
-      }
-      $(container).empty();
-      for (let i = 0; i < works.length; i++) {
-        const li = $(imageElementTemplate.cloneNode(true));
-        let regularUrl = works[i].url;
-        if (g_settings.fullSizeThumb) {
-          regularUrl = convertThumbUrlToSmall(works[i].url);
-        }
-        li.find(".ppImg").attr("src", regularUrl).css("object-fit", "contain");
-        li.find(".ppImageLink").attr("href", "/artworks/" + works[i].id);
-        li.find(".ppTitleLink").attr("href", "/artworks/" + works[i].id).text(works[i].title);
-        li.find(".ppAuthorLink, .ppAuthorLinkProfileImage").attr("href", "/member.php?id=" + works[i].userId).attr({
-          userId: works[i].userId,
-          profileImageUrl: works[i].profileImageUrl,
-          userName: works[i].userName
-        });
-        li.find(".ppAuthorName").text(works[i].userName);
-        li.find(".ppAuthorImage").parent().attr("titile", works[i].userName);
-        li.find(".ppAuthorImage").attr("src", works[i].profileImageUrl);
-        li.find(".ppBookmarkSvg").attr("illustId", works[i].id);
-        if (works[i].bookmarkData) {
-          li.find(".ppBookmarkSvg").find("path").css("fill", "rgb(255, 64, 96)");
-          li.find(".ppBookmarkSvg").attr(
-            "bookmarkId",
-            works[i].bookmarkData.id
-          );
-        }
-        if (works[i].xRestrict !== 0) {
-          const R18HTML = '<div style="margin-top: 2px; margin-left: 2px;"><div style="color: rgb(255, 255, 255);font-weight: bold;font-size: 10px;line-height: 1;padding: 3px 6px;border-radius: 3px;background: rgb(255, 64, 96);">R-18</div></div>';
-          li.find(".ppAdditionTag").append(R18HTML);
-        }
-        if (works[i].pageCount > 1) {
-          const pageCountHTML = '<div style="display: flex;-webkit-box-align: center;align-items: center;box-sizing: border-box;margin-left: auto;height: 20px;color: rgb(255, 255, 255);font-size: 10px;line-height: 12px;font-weight: bold;flex: 0 0 auto;padding: 4px 6px;background: rgba(0, 0, 0, 0.32);border-radius: 10px;"><svg viewBox="0 0 9 10" width="9" height="10" style="stroke: none;line-height: 0;font-size: 0px;fill: currentcolor;"><path d="M8,3 C8.55228475,3 9,3.44771525 9,4 L9,9 C9,9.55228475 8.55228475,10 8,10 L3,10 C2.44771525,10 2,9.55228475 2,9 L6,9 C7.1045695,9 8,8.1045695 8,7 L8,3 Z M1,1 L6,1 C6.55228475,1 7,1.44771525 7,2 L7,7 C7,7.55228475 6.55228475,8 6,8 L1,8 C0.44771525,8 0,7.55228475 0,7 L0,2 C0,1.44771525 0.44771525,1 1,1 Z"></path></svg><span style="margin-left: 2px;">' + works[i].pageCount + "</span></div>";
-          li.find(".ppAdditionTag").append(pageCountHTML);
-        }
-        const bookmarkCountHTML = '<div style="margin-bottom: 6px; margin-left: 2px;"><div style="color: rgb(7, 95, 166);font-weight: bold;font-size: 13px;line-height: 1;padding: 3px 6px;border-radius: 3px;background: rgb(204, 236, 255);">' + works[i].bookmarkCount + " likes</div></div>";
-        li.find(".ppBookmarkCount").append(bookmarkCountHTML);
-        if (works[i].illustType == 2) {
-          const animationHTML = '<svg viewBox="0 0 24 24" style="width: 48px; height: 48px;stroke: none;fill: rgb(255, 255, 255);line-height: 0;font-size: 0px;vertical-align: middle;position:absolute;"><circle cx="12" cy="12" r="10" style="fill: rgb(0, 0, 0);fill-opacity: 0.4;"></circle><path d="M9,8.74841664 L9,15.2515834 C9,15.8038681 9.44771525,16.2515834 10,16.2515834 C10.1782928,16.2515834 10.3533435,16.2039156 10.5070201,16.1135176 L16.0347118,12.8619342 C16.510745,12.5819147 16.6696454,11.969013 16.3896259,11.4929799 C16.3034179,11.3464262 16.1812655,11.2242738 16.0347118,11.1380658 L10.5070201,7.88648243 C10.030987,7.60646294 9.41808527,7.76536339 9.13806578,8.24139652 C9.04766776,8.39507316 9,8.57012386 9,8.74841664 Z"></path></svg>';
-          li.find(".ppImg").after(animationHTML);
-        }
-        $(container).append(li);
-      }
-      $(".ppBookmarkSvg").parent().on("click", function(ev) {
-        if (g_csrfToken == "") {
-          DoLog(1 /* Error */, "No g_csrfToken, failed to add bookmark!");
-          alert("\u83B7\u53D6 Token \u5931\u8D25\uFF0C\u65E0\u6CD5\u6DFB\u52A0\uFF0C\u8BF7\u5230\u8BE6\u60C5\u9875\u64CD\u4F5C\u3002");
-          return;
-        }
-        let restrict = 0;
-        if (ev.ctrlKey || ev.metaKey) {
-          restrict = 1;
-        }
-        const _this = $(this).children("svg:first");
-        const illustId = _this.attr("illustId");
-        const bookmarkId = _this.attr("bookmarkId");
-        if (bookmarkId == null || bookmarkId == "") {
-          DoLog(3 /* Info */, "Add bookmark, illustId: " + illustId);
-          $.ajax("/ajax/illusts/bookmarks/add", {
-            method: "POST",
-            contentType: "application/json;charset=utf-8",
-            headers: { "x-csrf-token": g_csrfToken },
-            data: '{"illust_id":"' + illustId + '","restrict":' + restrict + ',"comment":"","tags":[]}',
-            success: function(data) {
-              DoLog(3 /* Info */, "addBookmark result: ");
-              DoLog(4 /* Elements */, data);
-              if (data.error) {
-                DoLog(
-                  1 /* Error */,
-                  "Server returned an error: " + data.message
-                );
-                return;
-              }
-              const bookmarkId2 = data.body.last_bookmark_id;
-              DoLog(
-                3 /* Info */,
-                "Add bookmark success, bookmarkId is " + bookmarkId2
-              );
-              _this.attr("bookmarkId", bookmarkId2);
-              _this.find("path").css("fill", "rgb(255, 64, 96)");
-            }
-          });
-        } else {
-          DoLog(3 /* Info */, "Delete bookmark, bookmarkId: " + bookmarkId);
-          $.ajax("/rpc/index.php", {
-            method: "POST",
-            headers: { "x-csrf-token": g_csrfToken },
-            data: { mode: "delete_illust_bookmark", bookmark_id: bookmarkId },
-            success: function(data) {
-              DoLog(3 /* Info */, "delete bookmark result: ");
-              DoLog(4 /* Elements */, data);
-              if (data.error) {
-                DoLog(
-                  1 /* Error */,
-                  "Server returned an error: " + data.message
-                );
-                return;
-              }
-              DoLog(3 /* Info */, "Delete bookmark success.");
-              _this.attr("bookmarkId", "");
-              _this.find("path:first").css("fill", "rgb(31, 31, 31)");
-              _this.find("path:last").css("fill", "rgb(255, 255, 255)");
-            }
-          });
-        }
-        _this.parent().focus();
-      });
-      $(".ppAuthorLink").on("mouseenter", function(e) {
-        const _this = $(this);
-        function getOffset(e2) {
-          if (e2.offsetParent) {
-            const offset2 = getOffset(e2.offsetParent);
-            return {
-              offsetTop: e2.offsetTop + offset2.offsetTop,
-              offsetLeft: e2.offsetLeft + offset2.offsetLeft
-            };
-          } else {
-            return {
-              offsetTop: e2.offsetTop,
-              offsetLeft: e2.offsetLeft
-            };
-          }
-        }
-        let isFollowed = false;
-        $.ajax(
-          "https://www.pixiv.net/ajax/user/" + _this.attr("userId") + "?full=1",
-          {
-            method: "GET",
-            async: false,
-            success: function(data) {
-              if (data.error == false && data.body.isFollowed) {
-                isFollowed = true;
-              }
-            }
-          }
-        );
-        $(".pp-authorDiv").remove();
-        const pres = $(
-          '<div class="pp-authorDiv"><div class="ppa-main" style="position: absolute; top: 0px; left: 0px; border-width: 1px; border-style: solid; z-index: 1; border-color: rgba(0, 0, 0, 0.08); border-radius: 8px;"><div class=""style="    width: 336px;    background-color: rgb(255, 255, 255);    padding-top: 24px;    flex-flow: column;"><div class=""style=" display: flex; align-items: center; flex-flow: column;"><a class="ppa-authorLink"><div role="img"size="64"class=""style=" display: inline-block; width: 64px; height: 64px; border-radius: 50%; overflow: hidden;"><img class="ppa-authorImage" width="64"height="64"style="object-fit: cover; object-position: center top;"></div></a><a class="ppa-authorLink"><div class="ppa-authorName" style=" line-height: 24px; font-size: 16px; font-weight: bold; margin: 4px 0px 0px;"></div></a><div class=""style=" margin: 12px 0px 24px;"><button type="button"class="ppa-follow"style=" padding: 9px 25px; line-height: 1; border: none; border-radius: 16px; font-weight: 700; background-color: #0096fa; color: #fff; cursor: pointer;"><span style="margin-right: 4px;"><svg viewBox="0 0 8 8"width="10"height="10"class=""style=" stroke: rgb(255, 255, 255); stroke-linecap: round; stroke-width: 2;"><line x1="1"y1="4"x2="7"y2="4"></line><line x1="4"y1="1"x2="4"y2="7"></line></svg></span>\u5173\u6CE8</button></div></div></div></div></div>'
-        );
-        $("body").append(pres);
-        const offset = getOffset(this);
-        pres.find(".ppa-main").css({
-          top: offset.offsetTop - 196 + "px",
-          left: offset.offsetLeft - 113 + "px"
-        });
-        pres.find(".ppa-authorLink").attr("href", "/member.php?id=" + _this.attr("userId"));
-        pres.find(".ppa-authorImage").attr("src", _this.attr("profileImageUrl"));
-        pres.find(".ppa-authorName").text(_this.attr("userName"));
-        if (isFollowed) {
-          pres.find(".ppa-follow").get(0).outerHTML = '<button type="button" class="ppa-follow followed" data-click-action="click" data-click-label="follow" style="padding: 9px 25px;line-height: 1;border: none;border-radius: 16px;font-size: 14px;font-weight: 700;cursor: pointer;">\u5173\u6CE8\u4E2D</button>';
-        }
-        pres.find(".ppa-follow").attr("userId", _this.attr("userId"));
-        pres.on("mouseleave", function(e2) {
-          $(this).remove();
-        }).on("mouseenter", function() {
-          $(this).addClass("mouseenter");
-        });
-        pres.find(".ppa-follow").on("click", function() {
-          const userId = $(this).attr("userId");
-          if ($(this).hasClass("followed")) {
-            $.ajax("https://www.pixiv.net/rpc_group_setting.php", {
-              method: "POST",
-              headers: { "x-csrf-token": g_csrfToken },
-              data: "mode=del&type=bookuser&id=" + userId,
-              success: function(data) {
-                DoLog(3 /* Info */, "delete bookmark result: ");
-                DoLog(4 /* Elements */, data);
-                if (data.type == "bookuser") {
-                  $(".ppa-follow").get(0).outerHTML = '<button type="button"class="ppa-follow"style=" padding: 9px 25px; line-height: 1; border: none; border-radius: 16px; font-weight: 700; background-color: #0096fa; color: #fff; cursor: pointer;"><span style="margin-right: 4px;"><svg viewBox="0 0 8 8"width="10"height="10"class=""style=" stroke: rgb(255, 255, 255); stroke-linecap: round; stroke-width: 2;"><line x1="1"y1="4"x2="7"y2="4"></line><line x1="4"y1="1"x2="4"y2="7"></line></svg></span>\u5173\u6CE8</button>';
-                } else {
-                  DoLog(1 /* Error */, "Delete follow failed!");
-                }
-              }
-            });
-          } else {
-            $.ajax("https://www.pixiv.net/bookmark_add.php", {
-              method: "POST",
-              headers: { "x-csrf-token": g_csrfToken },
-              data: "mode=add&type=user&user_id=" + userId + "&tag=&restrict=0&format=json",
-              success: function(data) {
-                DoLog(3 /* Info */, "addBookmark result: ");
-                DoLog(4 /* Elements */, data);
-                if (data.length === 0) {
-                  $(".ppa-follow").get(0).outerHTML = '<button type="button" class="ppa-follow followed" data-click-action="click" data-click-label="follow" style="padding: 9px 25px;line-height: 1;border: none;border-radius: 16px;font-size: 14px;font-weight: 700;cursor: pointer;">\u5173\u6CE8\u4E2D</button>';
-                } else {
-                  DoLog(1 /* Error */, "Follow failed!");
-                }
-              }
-            });
-          }
-        });
-      }).on("mouseleave", function(e) {
-        setTimeout(function() {
-          if (!$(".pp-authorDiv").hasClass("mouseenter")) {
-            $(".pp-authorDiv").remove();
-          }
-        }, 200);
-      });
-      if (works.length === 0) {
-        $(container).show().get(0).outerHTML = '<div class=""style="display: flex;align-items: center;justify-content: center; height: 408px;flex-flow: column;"><div class=""style="margin-bottom: 12px;color: rgba(0, 0, 0, 0.16);"><svg viewBox="0 0 16 16"size="72"style="fill: currentcolor;height: 72px;vertical-align: middle;"><path d="M8.25739 9.1716C7.46696 9.69512 6.51908 10 5.5 10C2.73858 10 0.5 7.76142 0.5 5C0.5 2.23858 2.73858 0 5.5 0C8.26142 0 10.5 2.23858 10.5 5C10.5 6.01908 10.1951 6.96696 9.67161 7.75739L11.7071 9.79288C12.0976 10.1834 12.0976 10.8166 11.7071 11.2071C11.3166 11.5976 10.6834 11.5976 10.2929 11.2071L8.25739 9.1716ZM8.5 5C8.5 6.65685 7.15685 8 5.5 8C3.84315 8 2.5 6.65685 2.5 5C2.5 3.34315 3.84315 2 5.5 2C7.15685 2 8.5 3.34315 8.5 5Z"transform="translate(2.25 2.25)"fill-rule="evenodd"clip-rule="evenodd"></path></svg></div><span class="sc-LzMCO fLDUzU">' + i18n_default[g_language].sort_noWork.replace("%1", worksCount) + "</span></div>";
-      }
-      $("#loading").remove();
-      $(container).show();
-      $(document).keydown(function(e) {
-        if (g_settings.pageByKey != 1) {
-          return;
-        }
-        if (e.keyCode == 39) {
-          const btn = $(".pp-nextPage");
-          if (btn.length < 1 || btn.attr("hidden") == "hidden") {
-            return;
-          }
-          location.href = btn.attr("href");
-        } else if (e.keyCode == 37) {
-          const btn = $(".pp-prevPage");
-          if (btn.length < 1 || btn.attr("hidden") == "hidden") {
-            return;
-          }
-          location.href = btn.attr("href");
-        }
-      });
-      if (callback) {
-        callback();
-      }
-    });
-  };
-}
-function PixivNS() {
-  function findNovelSection() {
-    const ul = $("section:first").find("ul:first");
-    if (ul.length == 0) {
-      DoLog(1 /* Error */, "Can not found novel list.");
-      return null;
-    }
-    return ul;
-  }
-  function getSearchParamsWithoutPage() {
-    return location.search.substr(1).replace(/&?p=\d+/, "");
-  }
-  function getNovelTemplate(ul) {
-    if (!ul) {
-      return null;
-    }
-    if (ul.length == 0) {
-      DoLog(1 /* Error */, "Empty list, can not create template.");
-      return null;
-    }
-    const template = ul.children().eq(0).clone(true);
-    const picDiv = template.children().eq(0).children().eq(0);
-    picDiv.find("a:first").addClass("pns-link");
-    picDiv.find("img:first").addClass("pns-img");
-    const detailDiv = template.children().eq(0).children().eq(1).children().eq(0);
-    const titleDiv = detailDiv.children().eq(0);
-    if (titleDiv.children().length > 1) {
-      titleDiv.children().eq(0).addClass("pns-series");
-    } else {
-      const series = $(
-        '<a class="pns-series" href="/novel/series/000000"></a>'
-      );
-      series.css({
-        display: "inline-block",
-        "white-space": "nowrap",
-        "text-overflow": "ellipsis",
-        overflow: "hidden",
-        "max-width": "100%",
-        "line-height": "22px",
-        "font-size": "14px",
-        "text-decoration": "none"
-      });
-      $("head").append(
-        "<style>.pns-series:visited{color:rgb(173,173,173)}</style>"
-      );
-      titleDiv.prepend(series);
-    }
-    titleDiv.children().eq(1).children().eq(0).addClass("pns-title").addClass("pns-link");
-    detailDiv.find(".gtm-novel-searchpage-result-user:first").addClass("pns-author-img");
-    detailDiv.find(".gtm-novel-searchpage-result-user:last").addClass("pns-author");
-    const tagDiv = detailDiv.children().eq(2).children().eq(0);
-    const bookmarkDiv = tagDiv.children().eq(2);
-    bookmarkDiv.find("span:first").addClass("pns-text-count");
-    if (bookmarkDiv.find("span").length < 2) {
-      const textSpan = bookmarkDiv.find(".pns-text-count");
-      textSpan.append(
-        '<span class="pns-bookmark-count"><span><div class="sc-eoqmwo-1 grSeZG"><span class="sc-14heosd-0 gbNjEj"><svg viewBox="0 0 12 12" size="12" class="sc-14heosd-1 YtZop"><path fill-rule="evenodd" clip-rule="evenodd" d="M9 0.75C10.6569 0.75 12 2.09315 12 3.75C12 7.71703 7.33709 10.7126 6.23256 11.3666C6.08717 11.4526 5.91283 11.4526 5.76744 11.3666C4.6629 10.7126 0 7.71703 0 3.75C0 2.09315 1.34315 0.75 3 0.75C4.1265 0.75 5.33911 1.60202 6 2.66823C6.66089 1.60202 7.8735 0.75 9 0.75Z"></path></svg></span><span class="sc-eoqmwo-2 dfUmJJ">2,441</span></div></span></span>'
-      );
-      bookmarkDiv.find(".pns-bookmark-count").addClass(textSpan.get(0).className);
-    } else {
-      bookmarkDiv.find("span:last").addClass("pns-bookmark-count").parent().addClass("pns-bookmark-div");
-    }
-    tagDiv.children().eq(0).empty().addClass("pns-tag-list");
-    const descDiv = tagDiv.children().eq(1);
-    descDiv.children().eq(0).addClass("pns-desc");
-    const likeDiv = detailDiv.children().eq(2).children().eq(1);
-    const svg = likeDiv.find("svg");
-    svg.attr("class", svg.attr("class") + " pns-like");
-    likeDiv.find("path:first").css("color", "rgb(31, 31, 31)");
-    likeDiv.find("path:last").css("fill", "rgb(255, 255, 255)");
-    return template;
-  }
-  function fillTemplate(template, novel) {
-    if (template == null || novel == null) {
-      return null;
-    }
-    const link = template.find(".pns-link:first").attr("href").replace(/id=\d+/g, "id=" + novel.id);
-    template.find(".pns-link").attr("href", link);
-    template.find(".pns-img").attr("src", novel.url);
-    if (novel.seriesId) {
-      const seriesLink = template.find(".pns-series").attr("href").replace(/\d+$/, novel.seriesId);
-      template.find(".pns-series").text(novel.seriesTitle).attr("title", novel.seriesTitle).attr("href", seriesLink);
-    } else {
-      template.find(".pns-series").hide();
-    }
-    template.find(".pns-title").text(novel.title).attr("title", novel.title);
-    template.find(".pns-title").parent().attr("title", novel.title);
-    const authorLink = template.find(".pns-author").attr("href").replace(/\d+$/, novel.userId);
-    template.find(".pns-author").text(novel.userName).attr("href", authorLink);
-    template.find(".pns-author-img").attr("href", authorLink).find("img").attr("src", novel.profileImageUrl);
-    template.find(".pns-text-count").text(novel.textCount + "\u6587\u5B57");
-    if (novel.bookmarkCount == 0) {
-      template.find(".pns-bookmark-div").hide();
-    } else {
-      template.find(".pns-bookmark-count").text(novel.bookmarkCount);
-    }
-    const tagList = template.find(".pns-tag-list");
-    let search = getSearchParamsWithoutPage();
-    if (search.length > 0) {
-      search = "?" + search;
-    }
-    $.each(novel.tags, function(i, tag) {
-      const tagItem = $(
-        '<span"><a style="color: rgb(61, 118, 153);" href="/tags/' + encodeURIComponent(tag) + "/novels" + search + '">' + tag + "</a></span>"
-      );
-      if (tag == "R-18" || tag == "R-18G") {
-        tagItem.find("a").css({ color: "rgb(255, 64, 96)", "font-weight": "bold" }).text(tag);
-      }
-      tagList.append(tagItem);
-    });
-    template.find(".pns-desc").html(novel.description).attr("title", template.find(".pns-desc").text());
-    const like = template.find(".pns-like");
-    like.attr("novel-id", novel.id);
-    if (novel.bookmarkData) {
-      like.attr("bookmark-id", novel.bookmarkData.id);
-      like.find("path:first").css("color", "rgb(255, 64, 96)");
-      like.find("path:last").css("fill", "rgb(255, 64, 96)");
-    }
-    like.click(function() {
-      if ($(this).attr("disable")) {
-        return;
-      }
-      const bid = $(this).attr("bookmark-id");
-      const nid = $(this).attr("novel-id");
-      if (bid) {
-        deleteBookmark($(this), bid);
-      } else {
-        addBookmark($(this), nid, 0);
-      }
-      $(this).blur();
-    });
-    if (g_settings.linkBlank) {
-      template.find("a").attr("target", "_blank");
-    }
-    return template;
-  }
-  function getNovelByPage(key, from, to, total) {
-    if (total == void 0) {
-      total = to - from;
-    }
-    let url = location.origin + g_getNovelUrl.replace(/#key#/g, key).replace(/#page#/g, from);
-    const search = getSearchParamsWithoutPage();
-    if (search.length > 0) {
-      url += "&" + search;
-    }
-    updateProgress(
-      i18n_default[g_language].nsort_getWorks.replace("1%", total - to + from + 1).replace("2%", total)
-    );
-    let novelList = [];
-    function onLoadFinish(data, resolve) {
-      if (data && data.body && data.body.novel && data.body.novel.data) {
-        novelList = novelList.concat(data.body.novel.data);
-      }
-      if (from == to - 1) {
-        resolve(novelList);
-      } else {
-        getNovelByPage(key, from + 1, to, total).then(function(list) {
-          if (list && list.length > 0) {
-            novelList = novelList.concat(list);
-          }
-          resolve(novelList);
-        });
-      }
-    }
-    return new Promise(function(resolve, reject) {
-      $.ajax({
-        url,
-        success: function(data) {
-          onLoadFinish(data, resolve);
-        },
-        error: function() {
-          DoLog(1 /* Error */, "get novel page " + from + " failed!");
-          onLoadFinish(null, resolve);
-        }
-      });
-    });
-  }
-  function sortNovel(list) {
-    updateProgress(i18n_default[g_language].nsort_sorting);
-    list.sort(function(a, b) {
-      let bookmarkA = a.bookmarkCount;
-      let bookmarkB = b.bookmarkCount;
-      if (!bookmarkA) {
-        bookmarkA = 0;
-      }
-      if (!bookmarkB) {
-        bookmarkB = 0;
-      }
-      if (bookmarkA > bookmarkB) {
-        return -1;
-      }
-      if (bookmarkA < bookmarkB) {
-        return 1;
-      }
-      return 0;
-    });
-    const filteredList = [];
-    $.each(list, function(i, e) {
-      let bookmark = e.bookmarkCount;
-      if (!bookmark) {
-        bookmark = 0;
-      }
-      if (bookmark < g_settings.novelFavFilter) {
-        return true;
-      }
-      if (g_settings.novelHideFavorite && e.bookmarkData) {
-        return true;
-      }
-      filteredList.push(e);
-    });
-    return filteredList;
-  }
-  function rearrangeNovel(list) {
-    const ul = findNovelSection();
-    if (ul == null) {
-      return;
-    }
-    const template = getNovelTemplate(ul);
-    if (template == null) {
-      return;
-    }
-    const newList = [];
-    $.each(list, function(i, novel) {
-      const e = fillTemplate(template.clone(true), novel);
-      if (e != null) {
-        newList.push(e);
-      }
-    });
-    ul.empty();
-    $.each(newList, function(i, e) {
-      $(e).css("display", "block");
-      ul.append(e);
-    });
-    hideLoading();
-  }
-  function getKeyWord() {
-    const match = location.pathname.match(/\/tags\/(.+)\/novels/);
-    if (!match) {
-      return "";
-    }
-    return match[1];
-  }
-  function getCurrentPage() {
-    const match = location.search.match(/p=(\d+)/);
-    if (match) {
-      return parseInt(match[1]);
-    }
-    return 1;
-  }
-  function showLoading() {
-    const ul = findNovelSection();
-    if (ul == null) {
-      iLog.e("Can not found novel section!");
-      return;
-    }
-    ul.hide().before(
-      '<div id="loading" style="width:100%;text-align:center;"><img src="' + g_loadingImage + '" /><p id="progress" style="text-align: center;font-size: large;font-weight: bold;padding-top: 10px;">0%</p></div>'
-    );
-  }
-  function hideLoading() {
-    const ul = findNovelSection();
-    if (ul == null) {
-      iLog.e("Can not found novel section!");
-      return;
-    }
-    $("#loading").remove();
-    ul.show();
-  }
-  function updateProgress(msg) {
-    const p = $("#progress");
-    p.text(msg);
-  }
-  function addBookmark(element, novelId, restrict) {
-    if (g_csrfToken == "") {
-      iLog.e("No g_csrfToken, failed to add bookmark!");
-      alert("\u83B7\u53D6 Token \u5931\u8D25\uFF0C\u65E0\u6CD5\u6DFB\u52A0\uFF0C\u8BF7\u5230\u8BE6\u60C5\u9875\u64CD\u4F5C\u3002");
-      return;
-    }
-    element.attr("disable", "disable");
-    iLog.i("add bookmark: " + novelId);
-    $.ajax("/ajax/novels/bookmarks/add", {
-      method: "POST",
-      contentType: "application/json;charset=utf-8",
-      headers: { "x-csrf-token": g_csrfToken },
-      data: '{"novel_id":"' + novelId + '","restrict":' + restrict + ',"comment":"","tags":[]}',
-      success: function(data) {
-        iLog.i("add novel bookmark result: ");
-        iLog.d(data);
-        if (data.error) {
-          iLog.e("Server returned an error: " + data.message);
-          return;
-        }
-        const bookmarkId = data.body;
-        iLog.i("Add novel bookmark success, bookmarkId is " + bookmarkId);
-        element.attr("bookmark-id", bookmarkId);
-        element.find("path:first").css("color", "rgb(255, 64, 96)");
-        element.find("path:last").css("fill", "rgb(255, 64, 96)");
-        element.removeAttr("disable");
-      },
-      error: function() {
-        element.removeAttr("disable");
-      }
-    });
-  }
-  function deleteBookmark(element, bookmarkId) {
-    if (g_csrfToken == "") {
-      iLog.e("No g_csrfToken, failed to add bookmark!");
-      alert("\u83B7\u53D6 Token \u5931\u8D25\uFF0C\u65E0\u6CD5\u6DFB\u52A0\uFF0C\u8BF7\u5230\u8BE6\u60C5\u9875\u64CD\u4F5C\u3002");
-      return;
-    }
-    element.attr("disable", "disable");
-    iLog.i("delete bookmark: " + bookmarkId);
-    $.ajax("/ajax/novels/bookmarks/delete", {
-      method: "POST",
-      headers: { "x-csrf-token": g_csrfToken },
-      data: { del: 1, book_id: bookmarkId },
-      success: function(data) {
-        iLog.i("delete novel bookmark result: ");
-        iLog.d(data);
-        if (data.error) {
-          iLog.e("Server returned an error: " + data.message);
-          return;
-        }
-        iLog.i("delete novel bookmark success");
-        element.removeAttr("bookmark-id");
-        element.find("path:first").css("color", "rgb(31, 31, 31)");
-        element.find("path:last").css("fill", "rgb(255, 255, 255)");
-        element.removeAttr("disable");
-      },
-      error: function() {
-        element.removeAttr("disable");
-      }
-    });
-  }
-  function changePageSelector() {
-    const pager = Pages[11 /* NovelSearch */].GetPageSelector();
-    if (pager.length == 0) {
-      iLog.e("can not found page selector!");
-      return;
-    }
-    const left = pager.find("a:first").clone().attr("aria-disabled", "false").removeAttr("hidden").addClass("pp-prevPage");
-    const right = pager.find("a:last").clone().attr("aria-disabled", "false").removeAttr("hidden").addClass("pp-nextPage");
-    const normal = pager.find("a").eq(1).clone().removeAttr("href");
-    let href = location.href;
-    const match = href.match(/[?&]p=(\d+)/);
-    let page = 1;
-    if (match) {
-      page = parseInt(match[1]);
-    } else {
-      if (location.search == "") {
-        href += "?p=1";
-      } else {
-        href += "&p=1";
-      }
-    }
-    if (page == 1) {
-      left.attr("hidden", "hidden");
-    }
-    pager.empty();
-    const lp = page - g_settings.novelPageCount;
-    left.attr(
-      "href",
-      href.replace("?p=" + page, "?p=" + lp).replace("&p=" + page, "&p=" + lp)
-    );
-    pager.append(left);
-    const s = "Previewer";
-    for (let i = 0; i < s.length; ++i) {
-      const n = normal.clone().text(s[i]);
-      pager.append(n);
-    }
-    const rp = page + g_settings.novelPageCount;
-    right.attr(
-      "href",
-      href.replace("?p=" + page, "?p=" + rp).replace("&p=" + page, "&p=" + rp)
-    );
-    pager.append(right);
-  }
-  function listnerToKeyBoard() {
-    $(document).keydown(function(e) {
-      if (g_settings.pageByKey != 1) {
-        return;
-      }
-      if (e.keyCode == 39) {
-        const btn = $(".pp-nextPage");
-        if (btn.length < 1 || btn.attr("hidden") == "hidden") {
-          return;
-        }
-        location.href = btn.attr("href");
-      } else if (e.keyCode == 37) {
-        const btn = $(".pp-prevPage");
-        if (btn.length < 1 || btn.attr("hidden") == "hidden") {
-          return;
-        }
-        location.href = btn.attr("href");
-      }
-    });
-  }
-  function main() {
-    const keyWord = getKeyWord();
-    if (keyWord.length == 0) {
-      DoLog(1 /* Error */, "Parse key word error.");
-      return;
-    }
-    const currentPage = getCurrentPage();
-    if ($(".gtm-novel-searchpage-gs-toggle-button").attr("data-gtm-label") == "off") {
-      showLoading();
-      $(".gtm-novel-searchpage-gs-toggle-button").parent().next().text();
-      $("#loading").find("#progress").text(
-        '\u7531\u4E8E\u542F\u7528\u4E86 "' + $(".gtm-novel-searchpage-gs-toggle-button").parent().next().text() + '"\uFF0C\u65E0\u6CD5\u8FDB\u884C\u6392\u5E8F\u3002'
-      );
-      setTimeout(() => hideLoading(), 3e3);
-      return;
-    }
-    showLoading();
-    changePageSelector();
-    listnerToKeyBoard();
-    getNovelByPage(
-      keyWord,
-      currentPage,
-      currentPage + g_settings.novelPageCount
-    ).then(function(novelList) {
-      rearrangeNovel(sortNovel(novelList));
-    });
-  }
-  main();
-}
 function SetLocalStorage(name, value) {
   localStorage.setItem(name, JSON.stringify(value));
 }
@@ -3088,15 +2094,6 @@ function GetLocalStorage(name) {
   const value = localStorage.getItem(name);
   if (!value) return null;
   return value;
-}
-function GetCookie(name) {
-  let arr;
-  const reg = new RegExp("(^| )" + name + "=([^;]*)(;|$)");
-  if (arr = document.cookie.match(reg)) {
-    return unescape(arr[2]);
-  } else {
-    return null;
-  }
 }
 function ShowUpgradeMessage() {
   $("#pp-bg").remove();
@@ -3129,9 +2126,25 @@ function FillNewSetting(st) {
     change: changed
   };
 }
+function AutoDetectLanguage() {
+  g_language = -1 /* auto */;
+  if (g_settings && g_settings.lang) {
+    g_language = g_settings.lang;
+  }
+  if (g_language == -1 /* auto */) {
+    const lang = $("html").attr("lang");
+    if (lang && lang.indexOf("zh") != -1) {
+      g_language = 0 /* zh_CN */;
+    } else if (lang && lang.indexOf("ja") != -1) {
+      g_language = 3 /* ja_JP */;
+    } else {
+      g_language = 1 /* en_US */;
+    }
+  }
+}
 function GetSettings() {
   let settings;
-  const settingsData = GetLocalStorage("PixivPreview") || GetCookie("PixivPreview");
+  const settingsData = GetLocalStorage("PixivPreview");
   if (settingsData == null || settingsData == "null") {
     settings = g_defaultSettings;
     SetLocalStorage("PixivPreview", settings);
@@ -3196,17 +2209,20 @@ function ShowSetting() {
     i18n_default[g_language].setting_previewDelay
   );
   addItem("", "&nbsp");
-  addItem(getImageAction("pps-sort"), i18n_default[g_language].setting_sort);
   addItem(getInputAction("pps-maxPage"), i18n_default[g_language].setting_maxPage);
   addItem(getInputAction("pps-hideLess"), i18n_default[g_language].setting_hideWork);
+  addItem(
+    getImageAction("pps-orderByBookmark"),
+    i18n_default[g_language].setting_sortOrderByBookmark
+  );
   addItem(getImageAction("pps-hideAi"), i18n_default[g_language].setting_hideAiWork);
+  addItem(
+    getImageAction("pps-hideAiAssisted"),
+    i18n_default[g_language].setting_hideAiAssistedWork
+  );
   addItem(
     getImageAction("pps-hideBookmarked"),
     i18n_default[g_language].setting_hideFav
-  );
-  addItem(
-    getImageAction("pps-hideFollowed"),
-    i18n_default[g_language].setting_hideFollowed + '&nbsp<button id="pps-clearFollowingCache" style="cursor:pointer;background-color:gold;border-radius:12px;border:none;font-size:20px;padding:3px 10px;" title="' + i18n_default[g_language].setting_clearFollowingCacheHelp + '">' + i18n_default[g_language].setting_clearFollowingCache + "</button>"
   );
   addItem(getImageAction("pps-hideByTag"), i18n_default[g_language].setting_hideByTag);
   addItem(
@@ -3219,14 +2235,19 @@ function ShowSetting() {
   const imgOff = "https://pp-1252089172.cos.ap-chengdu.myqcloud.com/Off.png";
   $("#pps-preview").attr("src", settings.enablePreview ? imgOn : imgOff).addClass(settings.enablePreview ? "on" : "off").css("cursor: pointer");
   $("#pps-animePreview").attr("src", settings.enableAnimePreview ? imgOn : imgOff).addClass(settings.enableAnimePreview ? "on" : "off").css("cursor: pointer");
-  $("#pps-sort").attr("src", settings.enableSort ? imgOn : imgOff).addClass(settings.enableSort ? "on" : "off").css("cursor: pointer");
   $("#pps-previewDelay").val(settings.previewDelay);
   $("#pps-maxPage").val(settings.pageCount);
   $("#pps-hideLess").val(settings.favFilter);
+  $("#pps-orderByBookmark").attr(
+    "src",
+    settings.orderType === 0 /* BY_BOOKMARK_COUNT */ ? imgOn : imgOff
+  ).addClass(
+    settings.orderType === 0 /* BY_BOOKMARK_COUNT */ ? "on" : "off"
+  ).css("cursor: pointer");
   $("#pps-hideAi").attr("src", settings.aiFilter ? imgOn : imgOff).addClass(settings.aiFilter ? "on" : "off").css("cursor: pointer");
+  $("#pps-hideAiAssisted").attr("src", settings.aiAssistedFilter ? imgOn : imgOff).addClass(settings.aiAssistedFilter ? "on" : "off").css("cursor: pointer");
   $("#pps-hideBookmarked").attr("src", settings.hideFavorite ? imgOn : imgOff).addClass(settings.hideFavorite ? "on" : "off").css("cursor: pointer");
-  $("#pps-hideFollowed").attr("src", settings.hideFollowed ? imgOn : imgOff).addClass(settings.hideFollowed ? "on" : "off").css("cursor: pointer");
-  $("#pps-hideByTag").attr("src", settings.hideByTag ? imgOn : imgOff).addClass(settings.hideFollowed ? "on" : "off").css("cursor: pointer");
+  $("#pps-hideByTag").attr("src", settings.hideByTag ? imgOn : imgOff).addClass(settings.hideByTag ? "on" : "off").css("cursor: pointer");
   $("#pps-hideByTagList").val(settings.hideByTagList);
   $("#pps-newTab").attr("src", settings.linkBlank ? imgOn : imgOff).addClass(settings.linkBlank ? "on" : "off").css("cursor: pointer");
   $("#pps-pageKey").attr("src", settings.pageByKey ? imgOn : imgOff).addClass(settings.pageByKey ? "on" : "off").css("cursor: pointer");
@@ -3256,12 +2277,12 @@ function ShowSetting() {
       enablePreview: $("#pps-preview").hasClass("on") ? 1 : 0,
       enableAnimePreview: $("#pps-animePreview").hasClass("on") ? 1 : 0,
       previewDelay: parseInt(String($("#pps-previewDelay").val())),
-      enableSort: $("#pps-sort").hasClass("on") ? 1 : 0,
       pageCount: parseInt(String($("#pps-maxPage").val())),
       favFilter: parseInt(String($("#pps-hideLess").val())),
+      orderType: $("#pps-orderByBookmark").hasClass("on") ? 0 /* BY_BOOKMARK_COUNT */ : 1 /* BY_DATE */,
       aiFilter: $("#pps-hideAi").hasClass("on") ? 1 : 0,
+      aiAssistedFilter: $("#pps-hideAiAssisted").hasClass("on") ? 1 : 0,
       hideFavorite: $("#pps-hideBookmarked").hasClass("on") ? 1 : 0,
-      hideFollowed: $("#pps-hideFollowed").hasClass("on") ? 1 : 0,
       hideByTag: $("#pps-hideByTag").hasClass("on") ? 1 : 0,
       hideByTagList: String($("#pps-hideByTagList").val()),
       linkBlank: $("#pps-newTab").hasClass("on") ? 1 : 0,
@@ -3282,172 +2303,99 @@ function ShowSetting() {
     $("#pp-bg").remove();
   });
 }
-var loadInterval;
-function AutoDetectLanguage() {
-  g_language = -1 /* auto */;
-  if (g_settings && g_settings.lang) {
-    g_language = g_settings.lang;
-  }
-  if (g_language == -1 /* auto */) {
-    const lang = $("html").attr("lang");
-    if (lang && lang.indexOf("zh") != -1) {
-      g_language = 0 /* zh_CN */;
-    } else if (lang && lang.indexOf("ja") != -1) {
-      g_language = 3 /* ja_JP */;
-    } else {
-      g_language = 1 /* en_US */;
-    }
-  }
-}
-function Load() {
-  for (let i = 0; i < 13 /* PageTypeCount */; i++) {
-    if (Pages[i].CheckUrl(location.href)) {
-      g_pageType = i;
-      break;
-    }
-  }
-  if (g_pageType >= 0) {
-    DoLog(3 /* Info */, "Current page is " + Pages[g_pageType].PageTypeString);
-  } else {
-    DoLog(3 /* Info */, "Unsupported page.");
-    clearInterval(loadInterval);
-    return;
-  }
-  const toolBar = Pages[g_pageType].GetToolBar();
-  if (toolBar) {
-    DoLog(4 /* Elements */, toolBar);
-    clearInterval(loadInterval);
-  } else {
-    DoLog(2 /* Warning */, "Get toolbar failed.");
-    return;
-  }
-  window.onresize = function() {
-    if ($("#pp-bg").length > 0) {
-      const screenWidth = document.documentElement.clientWidth;
-      const screenHeight = document.documentElement.clientHeight;
-      $("#pp-bg").css({
-        width: screenWidth + "px",
-        height: screenHeight + "px"
-      });
-    }
-  };
-  AutoDetectLanguage();
-  g_settings = GetSettings();
-  AutoDetectLanguage();
-  if ($("#pp-sort").length === 0 && !g_settings?.enableSort) {
-    const newListItem = toolBar.firstChild.cloneNode(true);
-    newListItem.innerHTML = "";
-    const newButton = document.createElement("button");
-    newButton.id = "pp-sort";
-    newButton.style.cssText = "background-color: rgb(0, 0, 0); margin-top: 5px; opacity: 0.8; cursor: pointer; border: none; padding: 0px; border-radius: 24px; width: 48px; height: 48px;";
-    newButton.innerHTML = `<span style="color: white;vertical-align: text-top;">${i18n_default[g_language].text_sort}</span>`;
-    newListItem.appendChild(newButton);
-    toolBar.appendChild(newListItem);
-    $(newButton).click(function() {
-      this.disabled = true;
-      runPixivPreview(true);
-      setTimeout(() => {
-        this.disabled = false;
-      }, 7e3);
-    });
-  }
-  if ($("#pp-nextPage-fixed").length === 0) {
-    const newListItem = toolBar.firstChild.cloneNode(true);
-    newListItem.innerHTML = "";
-    const newButton = document.createElement("button");
-    newButton.id = "pp-nextPage-fixed";
-    newButton.style.cssText = "background-color: rgb(0, 0, 0); margin-top: 5px; opacity: 0.8; cursor: pointer; border: none; padding: 12px; border-radius: 24px; width: 48px; height: 48px;";
-    newButton.innerHTML = '<svg viewBox="0 0 120 120" width="24" height="24" stroke="white" fill="none" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" style="transform: rotate(90deg);"> <polyline points="60,105 60,8"></polyline> <polyline points="10,57 60,8 110,57"></polyline> </svg>';
-    newListItem.appendChild(newButton);
-    toolBar.appendChild(newListItem);
-    $(newButton).click(function() {
-      let nextPageHref = null;
-      const nextPageAnchor = $(".pp-nextPage");
-      if (nextPageAnchor.length > 0 && nextPageAnchor.attr("hidden") !== "hidden") {
-        nextPageHref = nextPageAnchor.attr("href");
-      } else {
-        nextPageHref = Array.from(document.querySelectorAll("nav")).find(
-          (nav) => Array.from(nav.children).filter((el) => el.tagName === "A").every((el) => /\?p=\d+$/.test(el.href))
-        )?.lastElementChild?.href ?? null;
+var initializePixivPreviewer = () => {
+  try {
+    AutoDetectLanguage();
+    g_settings = GetSettings();
+    iLog.i(
+      "Start to initialize Pixiv Previewer with global settings:",
+      g_settings
+    );
+    AutoDetectLanguage();
+    window.onresize = function() {
+      if ($("#pp-bg").length > 0) {
+        const screenWidth = document.documentElement.clientWidth;
+        const screenHeight = document.documentElement.clientHeight;
+        $("#pp-bg").css({
+          width: screenWidth + "px",
+          height: screenHeight + "px"
+        });
       }
-      if (nextPageHref != null) {
-        location.href = nextPageHref;
-      }
-    });
-  }
-  if ($("#pp-settings").length === 0) {
-    const newListItem = toolBar.firstChild.cloneNode(true);
-    newListItem.innerHTML = "";
-    const newButton = document.createElement("button");
-    newButton.id = "pp-settings";
-    newButton.style.cssText = "background-color: rgb(0, 0, 0); margin-top: 5px; opacity: 0.8; cursor: pointer; border: none; padding: 12px; border-radius: 24px; width: 48px; height: 48px;";
-    newButton.innerHTML = '<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px" viewBox="0 0 1000 1000" enable-background="new 0 0 1000 1000" xml:space="preserve" style="fill: white;"><metadata> Svg Vector Icons : http://www.sfont.cn </metadata><g><path d="M377.5,500c0,67.7,54.8,122.5,122.5,122.5S622.5,567.7,622.5,500S567.7,377.5,500,377.5S377.5,432.3,377.5,500z"></path><path d="M990,546v-94.8L856.2,411c-8.9-35.8-23-69.4-41.6-100.2L879,186L812,119L689,185.2c-30.8-18.5-64.4-32.6-100.2-41.5L545.9,10h-94.8L411,143.8c-35.8,8.9-69.5,23-100.2,41.5L186.1,121l-67,66.9L185.2,311c-18.6,30.8-32.6,64.4-41.5,100.3L10,454v94.8L143.8,589c8.9,35.8,23,69.4,41.6,100.2L121,814l67,67l123-66.2c30.8,18.6,64.5,32.6,100.3,41.5L454,990h94.8L589,856.2c35.8-8.9,69.4-23,100.2-41.6L814,879l67-67l-66.2-123.1c18.6-30.7,32.6-64.4,41.5-100.2L990,546z M500,745c-135.3,0-245-109.7-245-245c0-135.3,109.7-245,245-245s245,109.7,245,245C745,635.3,635.3,745,500,745z"></path></g></svg>';
-    newListItem.appendChild(newButton);
-    toolBar.appendChild(newListItem);
-    $(newButton).click(function() {
-      ShowSetting();
-    });
-  }
-  if (g_pageType == 0 /* Search */ || g_pageType == 11 /* NovelSearch */) {
+    };
+    if (g_settings.enablePreview) {
+      loadIllustPreview(g_settings);
+    }
     $.get(location.href, function(data) {
       const matched = data.match(/token\\":\\"([a-z0-9]{32})/);
       if (matched.length > 0) {
         g_csrfToken = matched[1];
         DoLog(3 /* Info */, "Got g_csrfToken: " + g_csrfToken);
+        loadIllustSort({ ...g_settings, csrfToken: g_csrfToken });
       } else {
         DoLog(
           1 /* Error */,
-          "Can not get g_csrfToken, so you can not add works to bookmark when sorting has enabled."
+          "Can not get g_csrfToken, sort function is disabled."
         );
       }
     });
-  }
-  if (g_pageType === 3 /* Member */) {
-    showSearchLinksForDeletedArtworks();
-  }
-  function runPixivPreview(eventFromButton = false) {
-    iLog.i("Global settings", g_settings);
-    try {
-      if (g_settings.enablePreview) {
-        try {
-          loadIllustPreview(g_settings);
-        } catch (error) {
-          iLog.e(`An error occurred while loading illust preview: ${error}`);
-        }
+    for (let i = 0; i < Object.keys(Pages).length; i++) {
+      if (Pages[i].CheckUrl(location.href)) {
+        g_pageType = i;
+        break;
       }
-      if (g_pageType == 10 /* Artwork */) {
-        Pages[g_pageType].Work();
-      } else if (g_pageType == 0 /* Search */) {
-        if (g_settings.enableSort || eventFromButton) {
-          g_sortComplete = false;
-          PixivSK(function() {
-            g_sortComplete = true;
-          });
-        }
-      } else if (g_pageType == 11 /* NovelSearch */) {
-        if (g_settings.enableNovelSort || eventFromButton) {
-          PixivNS();
-        }
-      }
-    } catch (e) {
-      DoLog(1 /* Error */, "Unknown error: " + e);
     }
-  }
-  runPixivPreview();
-}
-var startLoad = () => {
-  loadInterval = setInterval(Load, 1e3);
-  setInterval(function() {
-    if (location.href != initialUrl) {
-      if (!g_sortComplete) {
-        location.reload();
-        return;
-      }
-      initialUrl = location.href;
-      clearInterval(loadInterval);
-      g_pageType = -1;
-      loadInterval = setInterval(Load, 300);
+    if (g_pageType !== void 0) {
+      DoLog(
+        3 /* Info */,
+        "Current page is " + Pages[g_pageType].PageTypeString
+      );
+    } else {
+      DoLog(3 /* Info */, "Unsupported page.");
+      return;
     }
-  }, 1e3);
+    const toolBar = Pages[g_pageType].GetToolBar();
+    if (toolBar) {
+      DoLog(4 /* Elements */, toolBar);
+    } else {
+      DoLog(2 /* Warning */, "Get toolbar failed.");
+      return;
+    }
+    if (!$("#pp-sort").length) {
+      const newListItem = toolBar.firstChild.cloneNode(true);
+      newListItem.title = "Sort artworks";
+      newListItem.innerHTML = "";
+      const newButton = document.createElement("button");
+      newButton.id = "pp-sort";
+      newButton.style.cssText = "box-sizing: border-box; background-color: rgba(0,0,0,0.32); color: #fff; margin-top: 5px; opacity: 0.8; cursor: pointer; border: none; padding: 0px; border-radius: 24px; width: 48px; height: 48px; font-size: 12px; font-weight: bold;";
+      newButton.innerHTML = i18n_default[g_language].text_sort;
+      newListItem.appendChild(newButton);
+      toolBar.appendChild(newListItem);
+      $(newButton).on("click", () => {
+        const sortEvent = new Event(SORT_EVENT_NAME);
+        window.dispatchEvent(sortEvent);
+      });
+    }
+    if (!$("#pp-settings").length) {
+      const newListItem = toolBar.firstChild.cloneNode(true);
+      newListItem.title = "Pixiv Previewer Settings";
+      newListItem.innerHTML = "";
+      const newButton = document.createElement("button");
+      newButton.id = "pp-settings";
+      newButton.style.cssText = "box-sizing: border-box; background-color: rgba(0,0,0,0.32); margin-top: 5px; opacity: 0.8; cursor: pointer; border: none; padding: 12px; border-radius: 24px; width: 48px; height: 48px;";
+      newButton.innerHTML = '<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px" viewBox="0 0 1000 1000" enable-background="new 0 0 1000 1000" xml:space="preserve" style="fill: white;"><metadata> Svg Vector Icons : http://www.sfont.cn </metadata><g><path d="M377.5,500c0,67.7,54.8,122.5,122.5,122.5S622.5,567.7,622.5,500S567.7,377.5,500,377.5S377.5,432.3,377.5,500z"></path><path d="M990,546v-94.8L856.2,411c-8.9-35.8-23-69.4-41.6-100.2L879,186L812,119L689,185.2c-30.8-18.5-64.4-32.6-100.2-41.5L545.9,10h-94.8L411,143.8c-35.8,8.9-69.5,23-100.2,41.5L186.1,121l-67,66.9L185.2,311c-18.6,30.8-32.6,64.4-41.5,100.3L10,454v94.8L143.8,589c8.9,35.8,23,69.4,41.6,100.2L121,814l67,67l123-66.2c30.8,18.6,64.5,32.6,100.3,41.5L454,990h94.8L589,856.2c35.8-8.9,69.4-23,100.2-41.6L814,879l67-67l-66.2-123.1c18.6-30.7,32.6-64.4,41.5-100.2L990,546z M500,745c-135.3,0-245-109.7-245-245c0-135.3,109.7-245,245-245s245,109.7,245,245C745,635.3,635.3,745,500,745z"></path></g></svg>';
+      newListItem.appendChild(newButton);
+      toolBar.appendChild(newListItem);
+      $(newButton).on("click", () => {
+        ShowSetting();
+      });
+    }
+    if (g_pageType === 3 /* Member */) {
+      showSearchLinksForDeletedArtworks();
+    }
+  } catch (e) {
+    DoLog(1 /* Error */, "An error occurred while initializing:", e);
+  }
 };
-startLoad();
+window.addEventListener("DOMContentLoaded", () => {
+  setTimeout(initializePixivPreviewer, 1e3);
+});
