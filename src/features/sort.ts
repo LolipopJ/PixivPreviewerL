@@ -79,6 +79,7 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
     listElement = $();
     progressElement = $();
     progressText = $();
+    sortButtonElement = $("#pp-sort");
 
     reset({ type }: { type: IllustSortType }) {
       try {
@@ -139,112 +140,122 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
       this.sorting = true;
       iLog.i("Start to sort illustrations.");
 
-      //#region 获取作品分页列表
-      let illustrations: Illustration[] = [];
-      const startPage = Number(searchParams.get("p")) || 1;
-      const endPage = startPage + pageCount - 1;
-      for (let page = startPage; page < startPage + pageCount; page += 1) {
-        this.setProgress(`Getting ${page}/${endPage} page...`);
-        const requestUrl = `${api}?${searchParams}`;
-        const getIllustRes = await requestWithRetry({
-          url: requestUrl,
-          onRetry: (response, retryTimes) => {
-            iLog.w(
-              `Get illustration list through \`${requestUrl}\` failed:`,
-              response,
-              `${retryTimes} times retrying...`
-            );
-            this.setProgress(
-              `Retry to get ${page}/${endPage} page (${retryTimes} times)...`
-            );
-          },
-        });
-        const extractedIllustrations = getIllustrationsFromResponse(
-          type,
-          getIllustRes.response
-        );
-        illustrations = illustrations.concat(extractedIllustrations);
-      }
-      //#endregion
+      this.sortButtonElement.text("排序中");
 
-      //#region 获取作品详情信息，合并到列表中
-      const detailedIllustrations: IllustrationDetails[] = [];
-      for (let i = 0; i < illustrations.length; i += 1) {
-        this.setProgress(
-          `Getting details of ${i + 1}/${illustrations.length} illustration...`
-        );
-        const currentIllustration = illustrations[i];
-        const requestUrl = `/touch/ajax/illust/details?illust_id=${currentIllustration.id}`;
-        const getIllustDetailsRes = await requestWithRetry({
-          url: requestUrl,
-          onRetry: (response, retryTimes) => {
-            iLog.w(
-              `Get illustration details through \`${requestUrl}\` failed:`,
-              response,
-              `${retryTimes} times retrying...`
-            );
-            this.setProgress(
-              `Retry to get details of ${i + 1}/${illustrations.length} illustration (${retryTimes} times)...`
-            );
-          },
-        });
-        const illustDetails = (
-          getIllustDetailsRes.response as PixivStandardResponse<{
-            illust_details: IllustrationDetails;
-          }>
-        ).body.illust_details;
-        detailedIllustrations.push({
-          ...currentIllustration,
-          bookmark_user_total: illustDetails.bookmark_user_total,
-        });
+      try {
+        //#region 获取作品分页列表
+        let illustrations: Illustration[] = [];
+        const startPage = Number(searchParams.get("p")) || 1;
+        const endPage = startPage + pageCount - 1;
+        for (let page = startPage; page < startPage + pageCount; page += 1) {
+          this.setProgress(`Getting ${page}/${endPage} page...`);
+          const requestUrl = `${api}?${searchParams}`;
+          const getIllustRes = await requestWithRetry({
+            url: requestUrl,
+            onRetry: (response, retryTimes) => {
+              iLog.w(
+                `Get illustration list through \`${requestUrl}\` failed:`,
+                response,
+                `${retryTimes} times retrying...`
+              );
+              this.setProgress(
+                `Retry to get ${page}/${endPage} page (${retryTimes} times)...`
+              );
+            },
+          });
+          const extractedIllustrations = getIllustrationsFromResponse(
+            type,
+            getIllustRes.response
+          );
+          illustrations = illustrations.concat(extractedIllustrations);
+        }
+        //#endregion
 
-        // 主动暂停若干时间，降低被风控的风险
-        await pause(getRandomInt(100, 300));
-      }
-      iLog.d("Queried detailed illustrations:", detailedIllustrations);
-      //#endregion
+        //#region 获取作品详情信息，合并到列表中
+        const detailedIllustrations: IllustrationDetails[] = [];
+        for (let i = 0; i < illustrations.length; i += 1) {
+          this.setProgress(
+            `Getting details of ${i + 1}/${illustrations.length} illustration...`
+          );
+          const currentIllustration = illustrations[i];
+          const requestUrl = `/touch/ajax/illust/details?illust_id=${currentIllustration.id}`;
+          const getIllustDetailsRes = await requestWithRetry({
+            url: requestUrl,
+            onRetry: (response, retryTimes) => {
+              iLog.w(
+                `Get illustration details through \`${requestUrl}\` failed:`,
+                response,
+                `${retryTimes} times retrying...`
+              );
+              this.setProgress(
+                `Retry to get details of ${i + 1}/${illustrations.length} illustration (${retryTimes} times)...`
+              );
+            },
+          });
+          const illustDetails = (
+            getIllustDetailsRes.response as PixivStandardResponse<{
+              illust_details: IllustrationDetails;
+            }>
+          ).body.illust_details;
+          detailedIllustrations.push({
+            ...currentIllustration,
+            bookmark_user_total: illustDetails.bookmark_user_total,
+          });
 
-      //#region 过滤作品
-      this.setProgress("Filtering illustrations...");
-      const filteredIllustrations = detailedIllustrations.filter(
-        (illustration) => {
-          if (hideFavorite && illustration.bookmarkData) {
-            return false;
-          }
+          // 主动暂停若干时间，降低被风控的风险
+          await pause(getRandomInt(100, 300));
+        }
+        iLog.d("Queried detailed illustrations:", detailedIllustrations);
+        //#endregion
 
-          if (aiFilter && illustration.aiType === AiType.AI) {
-            return false;
-          }
+        //#region 过滤作品
+        this.setProgress("Filtering illustrations...");
+        const filteredIllustrations = detailedIllustrations.filter(
+          (illustration) => {
+            if (hideFavorite && illustration.bookmarkData) {
+              return false;
+            }
 
-          if ((hideByTag || aiAssistedFilter) && hideByTagList.length) {
-            for (const tag of illustration.tags) {
-              if (hideByTagList.includes(tag)) {
-                return false;
+            if (aiFilter && illustration.aiType === AiType.AI) {
+              return false;
+            }
+
+            if ((hideByTag || aiAssistedFilter) && hideByTagList.length) {
+              for (const tag of illustration.tags) {
+                if (hideByTagList.includes(tag)) {
+                  return false;
+                }
               }
             }
+
+            return illustration.bookmark_user_total >= favFilter;
           }
+        );
+        //#endregion
 
-          return illustration.bookmark_user_total >= favFilter;
-        }
-      );
-      //#endregion
+        //#region 排序作品
+        this.setProgress("Sorting filtered illustrations...");
+        const sortedIllustrations =
+          orderType === IllustSortOrder.BY_BOOKMARK_COUNT
+            ? filteredIllustrations.sort(
+                (a, b) => b.bookmark_user_total - a.bookmark_user_total
+              )
+            : filteredIllustrations;
+        iLog.d("Filtered and sorted illustrations:", sortedIllustrations);
+        //#endregion
 
-      //#region 排序作品
-      this.setProgress("Sorting filtered illustrations...");
-      const sortedIllustrations =
-        orderType === IllustSortOrder.BY_BOOKMARK_COUNT
-          ? filteredIllustrations.sort(
-              (a, b) => b.bookmark_user_total - a.bookmark_user_total
-            )
-          : filteredIllustrations;
-      iLog.d("Filtered and sorted illustrations:", sortedIllustrations);
-      //#endregion
+        iLog.i("Sort illustrations successfully.");
+        this.illustrations = sortedIllustrations;
+        this.showIllustrations();
 
-      this.illustrations = sortedIllustrations;
-      this.sorting = false;
-      iLog.i("Sort illustrations successfully.");
+        this.sortButtonElement.text("下一页");
+      } catch (error) {
+        iLog.e("Sort illustrations failed:", error);
+        this.sortButtonElement.text("排序");
+      }
+
       this.hideProgress();
-      this.showIllustrations();
+      this.sorting = false;
     }
 
     setProgress(text: string) {
@@ -384,7 +395,18 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
     }
 
     const url = new URL(location.href);
-    const { pathname, searchParams } = url;
+    const { origin, pathname, searchParams } = url;
+
+    if (illustSorter.listElement?.length) {
+      iLog.i(
+        "Illustrations in current page are sorted, jump to next available page..."
+      );
+      const currentPage = Number(searchParams.get("p") ?? 1);
+      const nextPage = currentPage + pageCount;
+      searchParams.set("p", String(nextPage));
+      location.href = `${origin}${pathname}?${searchParams}`;
+      return;
+    }
 
     const {
       type,

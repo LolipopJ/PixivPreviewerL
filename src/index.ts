@@ -1617,8 +1617,8 @@ const initializePixivPreviewer = () => {
       const newButton = document.createElement("button");
       newButton.id = "pp-sort";
       newButton.style.cssText =
-        "box-sizing: border-box; background-color: rgba(0,0,0,0.32); margin-top: 5px; opacity: 0.8; cursor: pointer; border: none; padding: 0px; border-radius: 24px; width: 48px; height: 48px;";
-      newButton.innerHTML = `<span style="color: #fff; font-size: 12px;">${Texts[g_language].text_sort}</span>`;
+        "box-sizing: border-box; background-color: rgba(0,0,0,0.32); color: #fff; margin-top: 5px; opacity: 0.8; cursor: pointer; border: none; padding: 0px; border-radius: 24px; width: 48px; height: 48px; font-size: 12px; font-weight: bold;";
+      newButton.innerHTML = Texts[g_language].text_sort;
       newListItem.appendChild(newButton);
       toolBar.appendChild(newListItem);
 
