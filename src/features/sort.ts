@@ -3,13 +3,8 @@ import {
   g_loadingImage,
   SORT_EVENT_NAME,
 } from "../constants";
-import {
-  AiType,
-  IllustSortOrder,
-  IllustSortType,
-  IllustType,
-  Lang,
-} from "../enums";
+import { AiType, IllustSortOrder, IllustSortType, IllustType } from "../enums";
+import Texts from "../i18n";
 import heartIcon from "../icons/heart.svg";
 import heartFilledIcon from "../icons/heart-filled.svg";
 import pageIcon from "../icons/page.svg";
@@ -33,7 +28,6 @@ type LoadIllustSortOptions = Pick<
   | "hideByTagList"
   | "aiFilter"
   | "aiAssistedFilter"
-  | "lang"
 > & { csrfToken: string };
 
 let isInitialized = false;
@@ -49,7 +43,6 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
     hideByTagList: hideByTagListString,
     aiFilter = false,
     aiAssistedFilter = false,
-    lang = Lang.zh_CN,
     csrfToken,
   } = options;
 
@@ -140,7 +133,7 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
       this.sorting = true;
       iLog.i("Start to sort illustrations.");
 
-      this.sortButtonElement.text("排序中");
+      this.sortButtonElement.text(Texts.label_sorting);
 
       try {
         //#region 获取作品分页列表
@@ -248,10 +241,10 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
         this.illustrations = sortedIllustrations;
         this.showIllustrations();
 
-        this.sortButtonElement.text("下一页");
+        this.sortButtonElement.text(Texts.label_nextPage);
       } catch (error) {
         iLog.e("Sort illustrations failed:", error);
-        this.sortButtonElement.text("排序");
+        this.sortButtonElement.text(Texts.label_sort);
       }
 
       this.hideProgress();
@@ -269,8 +262,6 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
     }
 
     showIllustrations() {
-      this.listElement.find("li").remove();
-
       const fragment = document.createDocumentFragment();
       for (const {
         aiType,
@@ -383,6 +374,7 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
         fragment.appendChild(listItem);
       }
 
+      this.listElement.find("li").remove();
       this.listElement.append(fragment);
     }
   }

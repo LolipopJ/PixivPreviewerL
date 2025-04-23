@@ -1,11 +1,3 @@
-export enum Lang {
-  auto = -1,
-  zh_CN = 0,
-  en_US = 1,
-  ru_RU = 2,
-  ja_JP = 3,
-}
-
 export enum LogLevel {
   None = 0,
   Error = 1,

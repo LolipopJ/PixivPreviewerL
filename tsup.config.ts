@@ -26,8 +26,6 @@ export default defineConfig({
 // @match               *://www.pixiv.net/*
 // @grant               unsafeWindow
 // @grant               GM.xmlHttpRequest
-// @grant               GM_xmlhttpRequest
-// @grant               GM_registerMenuCommand
 // @icon                https://t0.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&size=32&url=https://www.pixiv.net
 // @icon64              https://t0.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&size=64&url=https://www.pixiv.net
 // @require             https://raw.githubusercontent.com/Tampermonkey/utils/refs/heads/main/requires/gh_2215_make_GM_xhr_more_parallel_again.js

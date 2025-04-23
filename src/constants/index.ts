@@ -1,4 +1,4 @@
-import { IllustSortOrder, Lang } from "../enums";
+import { IllustSortOrder } from "../enums";
 import { GlobalSettings } from "../types";
 
 /** 版本号，发生改变时将会弹窗 */
@@ -18,8 +18,6 @@ export const g_loadingImage =
 export const g_maxXhr = 64;
 /** 默认设置，仅用于首次脚本初始化 */
 export const g_defaultSettings: GlobalSettings = {
-  lang: Lang.zh_CN,
-
   enablePreview: 1,
   enableAnimePreview: 1,
   previewDelay: 500,

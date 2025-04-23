@@ -1,8 +1,6 @@
-import { AiType, IllustSortOrder, IllustType, Lang } from "../enums";
+import { AiType, IllustSortOrder, IllustType } from "../enums";
 
 export interface GlobalSettings {
-  lang: Lang;
-
   /** 是否启用插画（漫画）作品预览功能 */
   enablePreview: 0 | 1;
   /** 是否启用动图作品预览功能 */
