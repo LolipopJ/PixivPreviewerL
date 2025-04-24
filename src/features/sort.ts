@@ -22,7 +22,7 @@ import type {
   IllustrationDetails,
 } from "../types";
 import { iLog } from "../utils/logger";
-import { getRandomInt, pause } from "../utils/utils";
+import { execLimitConcurrentPromises } from "../utils/promise";
 
 type LoadIllustSortOptions = Pick<
   GlobalSettings,
@@ -251,40 +251,39 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
         //#endregion
 
         //#region 获取作品详情信息，合并到列表中
-        const detailedIllustrations: IllustrationDetails[] = [];
+        const getDetailedIllustrationPromises: (() => Promise<IllustrationDetails>)[] =
+          [];
         for (let i = 0; i < illustrations.length; i += 1) {
-          this.setProgress(
-            `Getting details of ${i + 1}/${illustrations.length} illustration...`
-          );
-          const currentIllustration = illustrations[i];
-          const requestUrl = `/touch/ajax/illust/details?illust_id=${currentIllustration.id}`;
-          const getIllustDetailsRes = await requestWithRetry({
-            url: requestUrl,
-            onRetry: (response, retryTimes) => {
-              iLog.w(
-                `Get illustration details through \`${requestUrl}\` failed:`,
-                response,
-                `${retryTimes} times retrying...`
-              );
-              this.setProgress(
-                `Retry to get details of ${i + 1}/${illustrations.length} illustration (${retryTimes} times)...`
-              );
-            },
+          getDetailedIllustrationPromises.push(async () => {
+            this.setProgress(
+              `Getting details of ${i + 1}/${illustrations.length} illustration...`
+            );
+            const currentIllustration = illustrations[i];
+            const requestUrl = `/touch/ajax/illust/details?illust_id=${currentIllustration.id}`;
+            const getIllustDetailsRes = await requestWithRetry({
+              url: requestUrl,
+              onRetry: (response, retryTimes) => {
+                iLog.w(
+                  `Get illustration details through \`${requestUrl}\` failed:`,
+                  response,
+                  `${retryTimes} times retrying...`
+                );
+              },
+            });
+            const illustDetails = (
+              getIllustDetailsRes.response as PixivStandardResponse<{
+                illust_details: IllustrationDetails;
+              }>
+            ).body.illust_details;
+            return {
+              ...currentIllustration,
+              bookmark_user_total: illustDetails.bookmark_user_total,
+            } as IllustrationDetails;
           });
-          const illustDetails = (
-            getIllustDetailsRes.response as PixivStandardResponse<{
-              illust_details: IllustrationDetails;
-            }>
-          ).body.illust_details;
-          detailedIllustrations.push({
-            ...currentIllustration,
-            bookmark_user_total: illustDetails.bookmark_user_total,
-          });
-
-          // Pixiv 限制了账户在一定时间内对接口请求的数量
-          // 主动暂停若干时间，减少被风控的风险
-          await pause(getRandomInt(100, 300));
         }
+        const detailedIllustrations = await execLimitConcurrentPromises(
+          getDetailedIllustrationPromises
+        );
         iLog.d("Queried detailed illustrations:", detailedIllustrations);
         //#endregion
 
