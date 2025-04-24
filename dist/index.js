@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             0.3.2-2025/4/23
+// @version             0.3.3-2025/4/24
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0
@@ -20,7 +20,7 @@
 // ==/UserScript==
 
 // src/constants/index.ts
-var g_version = "0.3.2";
+var g_version = "0.3.3";
 var g_defaultSettings = {
   enablePreview: true,
   enableAnimePreview: true,
@@ -135,7 +135,7 @@ var request = (options) => {
 };
 var requestWithRetry = async (options) => {
   const {
-    retryDelay = 5e3,
+    retryDelay = 1e4,
     maxRetryTimes = Infinity,
     onRetry,
     ...restOptions
@@ -1686,6 +1686,11 @@ var loadIllustSort = (options) => {
         listItem.appendChild(container);
         fragment.appendChild(listItem);
       }
+      if ([3 /* BOOKMARK_NEW */, 4 /* BOOKMARK_NEW_R18 */].includes(
+        this.type
+      )) {
+        this.listElement.css({ "justify-content": "space-between" });
+      }
       this.listElement.find("li").remove();
       this.listElement.append(fragment);
     }
@@ -1733,14 +1738,23 @@ var loadIllustSort = (options) => {
   isInitialized2 = true;
 };
 function getIllustrationsListDom(type) {
+  let dom;
   if ([
     0 /* TAG_ARTWORK */,
     1 /* TAG_ILLUST */,
     2 /* TAG_MANGA */
   ].includes(type)) {
-    return $("ul.sc-ad8346e6-1.iwHaa-d");
+    dom = $("ul.sc-ad8346e6-1.iwHaa-d");
+  } else if ([3 /* BOOKMARK_NEW */, 4 /* BOOKMARK_NEW_R18 */].includes(
+    type
+  )) {
+    dom = $("ul.sc-7d21cb21-1.jELUak");
   }
-  throw new Error(`Illustrations list DOM not found.`);
+  if (dom) {
+    return dom;
+  } else {
+    throw new Error(`Illustrations list DOM not found.`);
+  }
 }
 function getSortOptionsFromPathname(pathname) {
   let type;
@@ -1763,8 +1777,22 @@ function getSortOptionsFromPathname(pathname) {
       api = `/ajax/search/manga/${tagName}`;
       defaultSearchParams = `word=${tagName}&order=date_d&mode=all&p=1&csw=0&s_mode=s_tag_full&type=manga&lang=zh`;
     }
+  } else if (match = pathname.match(/^\/bookmark_new_illust(_r18)?\.php/)) {
+    const isR18 = !!match[1];
+    api = "/ajax/follow_latest/illust";
+    if (isR18) {
+      type = 3 /* BOOKMARK_NEW */;
+      defaultSearchParams = "mode=r18&lang=zh";
+    } else {
+      type = 4 /* BOOKMARK_NEW_R18 */;
+      defaultSearchParams = "mode=all&lang=zh";
+    }
   }
-  return { type, api, searchParams: new URLSearchParams(defaultSearchParams) };
+  return {
+    type,
+    api,
+    searchParams: new URLSearchParams(defaultSearchParams)
+  };
 }
 function getIllustrationsFromResponse(type, response) {
   if (type === 0 /* TAG_ARTWORK */) {
@@ -1773,6 +1801,10 @@ function getIllustrationsFromResponse(type, response) {
     return response.body.illust.data ?? [];
   } else if (type === 2 /* TAG_MANGA */) {
     return response.body.manga.data ?? [];
+  } else if ([3 /* BOOKMARK_NEW */, 4 /* BOOKMARK_NEW_R18 */].includes(
+    type
+  )) {
+    return response.body.thumbnails.illust ?? [];
   }
   return [];
 }
@@ -2096,6 +2128,7 @@ var ShowUpgradeMessage = () => {
   $("body").append(bg);
   bg.get(0).innerHTML = '<img id="pps-close"src="https://pp-1252089172.cos.ap-chengdu.myqcloud.com/Close.png"style="position: absolute; right: 35px; top: 20px; width: 32px; height: 32px; cursor: pointer;"><div style="position: absolute; width: 40%; left: 30%; top: 25%; font-size: 25px; font-weight: bold; text-align: center; color: white;">' + i18n_default.install_title + g_version + '</div><br><div style="position: absolute; left: 50%; top: 35%; font-size: 20px; color: white; transform: translate(-50%,0); height: 50%; overflow: auto;">' + i18n_default.upgrade_body + "</div>";
   $("#pps-close").on("click", () => {
+    setSettingValue("version", g_version);
     $("#pp-bg").remove();
   });
 };
