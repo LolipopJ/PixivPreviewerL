@@ -376,6 +376,14 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
         fragment.appendChild(listItem);
       }
 
+      if (
+        [IllustSortType.BOOKMARK_NEW, IllustSortType.BOOKMARK_NEW_R18].includes(
+          this.type
+        )
+      ) {
+        this.listElement.css({ "justify-content": "space-between" });
+      }
+
       this.listElement.find("li").remove();
       this.listElement.append(fragment);
     }
@@ -430,7 +438,9 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
   isInitialized = true;
 };
 
+/** 获取作品节点 li 的父节点 ul */
 function getIllustrationsListDom(type: IllustSortType) {
+  let dom: JQuery<HTMLUListElement>;
   if (
     [
       IllustSortType.TAG_ARTWORK,
@@ -438,12 +448,23 @@ function getIllustrationsListDom(type: IllustSortType) {
       IllustSortType.TAG_MANGA,
     ].includes(type)
   ) {
-    return $("ul.sc-ad8346e6-1.iwHaa-d");
+    dom = $("ul.sc-ad8346e6-1.iwHaa-d");
+  } else if (
+    [IllustSortType.BOOKMARK_NEW, IllustSortType.BOOKMARK_NEW_R18].includes(
+      type
+    )
+  ) {
+    dom = $("ul.sc-7d21cb21-1.jELUak");
   }
 
-  throw new Error(`Illustrations list DOM not found.`);
+  if (dom) {
+    return dom;
+  } else {
+    throw new Error(`Illustrations list DOM not found.`);
+  }
 }
 
+/** 根据当前路由获取接口参数 */
 function getSortOptionsFromPathname(pathname: string) {
   let type: IllustSortType;
   let api: string;
@@ -467,11 +488,27 @@ function getSortOptionsFromPathname(pathname: string) {
       api = `/ajax/search/manga/${tagName}`;
       defaultSearchParams = `word=${tagName}&order=date_d&mode=all&p=1&csw=0&s_mode=s_tag_full&type=manga&lang=zh`;
     }
+  } else if ((match = pathname.match(/^\/bookmark_new_illust(_r18)?\.php/))) {
+    const isR18 = !!match[1];
+
+    api = "/ajax/follow_latest/illust";
+    if (isR18) {
+      type = IllustSortType.BOOKMARK_NEW;
+      defaultSearchParams = "mode=r18&lang=zh";
+    } else {
+      type = IllustSortType.BOOKMARK_NEW_R18;
+      defaultSearchParams = "mode=all&lang=zh";
+    }
   }
 
-  return { type, api, searchParams: new URLSearchParams(defaultSearchParams) };
+  return {
+    type,
+    api,
+    searchParams: new URLSearchParams(defaultSearchParams),
+  };
 }
 
+/** 从响应值里提取作品数据列表 */
 function getIllustrationsFromResponse(
   type: IllustSortType,
   response: PixivStandardResponse<unknown>
@@ -500,6 +537,19 @@ function getIllustrationsFromResponse(
         }>
       ).body.manga.data ?? []
     );
+  } else if (
+    [IllustSortType.BOOKMARK_NEW, IllustSortType.BOOKMARK_NEW_R18].includes(
+      type
+    )
+  ) {
+    return (
+      (
+        response as PixivStandardResponse<{
+          thumbnails: { illust: Illustration[] };
+        }>
+      ).body.thumbnails.illust ?? []
+    );
   }
+
   return [];
 }
