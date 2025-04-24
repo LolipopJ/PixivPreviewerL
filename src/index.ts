@@ -1,4 +1,11 @@
-import { g_defaultSettings, g_version, SORT_EVENT_NAME } from "./constants";
+import {
+  g_defaultSettings,
+  g_version,
+  SORT_BUTTON_ID,
+  SORT_EVENT_NAME,
+  SORT_NEXT_PAGE_BUTTON_ID,
+  SORT_NEXT_PAGE_EVENT_NAME,
+} from "./constants";
 import { IllustSortOrder, LogLevel, PageType } from "./enums";
 import { loadIllustPreview } from "./features/preview";
 import { loadIllustSort } from "./features/sort";
@@ -422,12 +429,12 @@ const initializePixivPreviewer = () => {
     }
 
     // 添加排序按钮
-    if (!$("#pp-sort").length) {
+    if (!$(`#${SORT_BUTTON_ID}`).length) {
       const newListItem = toolBar.firstChild.cloneNode(true) as HTMLElement;
       newListItem.title = "Sort artworks";
       newListItem.innerHTML = "";
       const newButton = document.createElement("button");
-      newButton.id = "pp-sort";
+      newButton.id = SORT_BUTTON_ID;
       newButton.style.cssText =
         "box-sizing: border-box; background-color: rgba(0,0,0,0.32); color: #fff; margin-top: 5px; opacity: 0.8; cursor: pointer; border: none; padding: 0px; border-radius: 24px; width: 48px; height: 48px; font-size: 12px; font-weight: bold;";
       newButton.innerHTML = Texts.label_sort;
@@ -436,6 +443,25 @@ const initializePixivPreviewer = () => {
 
       $(newButton).on("click", () => {
         const sortEvent = new Event(SORT_EVENT_NAME);
+        window.dispatchEvent(sortEvent);
+      });
+    }
+
+    // 添加前往下一页按钮
+    if (!$(`#${SORT_NEXT_PAGE_BUTTON_ID}`).length) {
+      const newListItem = toolBar.firstChild.cloneNode(true) as HTMLElement;
+      newListItem.title = "Jump to next page";
+      newListItem.innerHTML = "";
+      const newButton = document.createElement("button");
+      newButton.id = SORT_NEXT_PAGE_BUTTON_ID;
+      newButton.style.cssText =
+        "box-sizing: border-box; background-color: rgba(0,0,0,0.32); color: #fff; margin-top: 5px; opacity: 0.8; cursor: pointer; border: none; padding: 0px; border-radius: 24px; width: 48px; height: 48px; font-size: 12px; font-weight: bold;";
+      newButton.innerHTML = Texts.label_nextPage;
+      newListItem.appendChild(newButton);
+      toolBar.appendChild(newListItem);
+
+      $(newButton).on("click", () => {
+        const sortEvent = new Event(SORT_NEXT_PAGE_EVENT_NAME);
         window.dispatchEvent(sortEvent);
       });
     }

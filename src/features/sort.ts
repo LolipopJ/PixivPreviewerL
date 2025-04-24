@@ -1,7 +1,9 @@
 import {
   g_defaultSettings,
   g_loadingImage,
+  SORT_BUTTON_ID,
   SORT_EVENT_NAME,
+  SORT_NEXT_PAGE_EVENT_NAME,
 } from "../constants";
 import { AiType, IllustSortOrder, IllustSortType, IllustType } from "../enums";
 import Texts from "../i18n";
@@ -70,9 +72,11 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
     illustrations: IllustrationDetails[];
     sorting: boolean = false;
     listElement = $();
+
     progressElement = $();
     progressText = $();
-    sortButtonElement = $("#pp-sort");
+
+    sortButtonElement = $(`#${SORT_BUTTON_ID}`);
 
     reset({ type }: { type: IllustSortType }) {
       try {
@@ -116,6 +120,7 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
             color: "initial",
           })
           .appendTo(this.progressElement);
+        this.sortButtonElement.text(Texts.label_sort);
       } catch (error) {
         iLog.e(`An error occurred while resetting sorter:`, error);
         throw new Error(error);
@@ -248,15 +253,13 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
         iLog.i("Sort illustrations successfully.");
         this.illustrations = sortedIllustrations;
         this.showIllustrations();
-
-        this.sortButtonElement.text(Texts.label_nextPage);
       } catch (error) {
         iLog.e("Sort illustrations failed:", error);
-        this.sortButtonElement.text(Texts.label_sort);
       }
 
       this.hideProgress();
       this.sorting = false;
+      this.sortButtonElement.text(Texts.label_sort);
     }
 
     setProgress(text: string) {
@@ -405,18 +408,7 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
     }
 
     const url = new URL(location.href);
-    const { origin, pathname, searchParams } = url;
-
-    if (illustSorter.listElement?.length) {
-      iLog.i(
-        "Illustrations in current page are sorted, jump to next available page..."
-      );
-      const currentPage = Number(searchParams.get("p") ?? 1);
-      const nextPage = currentPage + pageCount;
-      searchParams.set("p", String(nextPage));
-      location.href = `${origin}${pathname}?${searchParams}`;
-      return;
-    }
+    const { pathname, searchParams } = url;
 
     const {
       type,
@@ -441,6 +433,24 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
       api,
       searchParams: mergedSearchParams,
     });
+  });
+
+  window.addEventListener(SORT_NEXT_PAGE_EVENT_NAME, () => {
+    const url = new URL(location.href);
+    const { origin, pathname, searchParams } = url;
+
+    const currentPage = Number(searchParams.get("p") ?? 1);
+    let nextPage = currentPage + 1;
+
+    if (illustSorter.listElement?.length) {
+      iLog.i(
+        "Illustrations in current page are sorted, jump to next available page..."
+      );
+      nextPage = currentPage + pageCount;
+    }
+
+    searchParams.set("p", String(nextPage));
+    location.href = `${origin}${pathname}?${searchParams}`;
   });
 
   isInitialized = true;
