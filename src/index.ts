@@ -352,6 +352,7 @@ const ShowUpgradeMessage = () => {
     "</div>";
 
   $("#pps-close").on("click", () => {
+    setSettingValue("version", g_version);
     $("#pp-bg").remove();
   });
 };
