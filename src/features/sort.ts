@@ -11,7 +11,11 @@ import heartIcon from "../icons/heart.svg";
 import heartFilledIcon from "../icons/heart-filled.svg";
 import pageIcon from "../icons/page.svg";
 import playIcon from "../icons/play.svg";
-import { PixivStandardResponse, requestWithRetry } from "../services";
+import {
+  getUserArtworks,
+  PixivStandardResponse,
+  requestWithRetry,
+} from "../services";
 import type {
   GlobalSettings,
   Illustration,
@@ -31,6 +35,9 @@ type LoadIllustSortOptions = Pick<
   | "aiFilter"
   | "aiAssistedFilter"
 > & { csrfToken: string };
+
+const USER_ARTWORKS_CACHE_PREFIX = "PIXIV_PREVIEWER_USER_ARTWORKS_";
+const USER_TYPE_ARTWORKS_PER_PAGE = 48;
 
 let isInitialized = false;
 export const loadIllustSort = (options: LoadIllustSortOptions) => {
@@ -146,14 +153,81 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
         let illustrations: Illustration[] = [];
         const startPage = Number(searchParams.get("p") ?? 1);
         const endPage = startPage + pageCount - 1;
+
         for (let page = startPage; page < startPage + pageCount; page += 1) {
-          this.setProgress(`Getting ${page}/${endPage} page...`);
           searchParams.set("p", String(page));
 
-          if ([IllustSortType.USER_BOOKMARK].includes(type)) {
-            searchParams.set("offset", String((page - 1) * 48));
+          if (
+            [
+              IllustSortType.USER_ARTWORK,
+              IllustSortType.USER_ILLUST,
+              IllustSortType.USER_MANGA,
+            ].includes(type)
+          ) {
+            searchParams.set("is_first_page", page > 1 ? "0" : "1");
+
+            const userId = searchParams.get("user_id");
+            let userArtworks: Awaited<ReturnType<typeof getUserArtworks>> = {
+              illusts: [],
+              manga: [],
+              artworks: [],
+            };
+            const userArtworksCacheKey = `${USER_ARTWORKS_CACHE_PREFIX}${userId}`;
+            try {
+              const userArtworksCacheString =
+                sessionStorage.getItem(userArtworksCacheKey);
+              if (!userArtworksCacheString)
+                throw new Error("Artworks cache not existed.");
+
+              userArtworks = JSON.parse(userArtworksCacheString);
+            } catch (error) {
+              iLog.i(
+                `Artworks of current user is not available in session storage, re-getting...`,
+                error
+              );
+              this.setProgress(`Getting artworks of current user...`);
+
+              userArtworks = await getUserArtworks(userId);
+              sessionStorage.setItem(
+                userArtworksCacheKey,
+                JSON.stringify(userArtworks)
+              );
+            }
+
+            searchParams.delete("ids[]");
+            const fromIndex = (page - 1) * USER_TYPE_ARTWORKS_PER_PAGE;
+            const toIndex = page * USER_TYPE_ARTWORKS_PER_PAGE;
+            switch (type) {
+              case IllustSortType.USER_ARTWORK:
+                userArtworks.artworks
+                  .slice(fromIndex, toIndex)
+                  .forEach((artworkId) =>
+                    searchParams.append("ids[]", artworkId)
+                  );
+                break;
+              case IllustSortType.USER_ILLUST:
+                userArtworks.illusts
+                  .slice(fromIndex, toIndex)
+                  .forEach((artworkId) =>
+                    searchParams.append("ids[]", artworkId)
+                  );
+                break;
+              case IllustSortType.USER_MANGA:
+                userArtworks.manga
+                  .slice(fromIndex, toIndex)
+                  .forEach((artworkId) =>
+                    searchParams.append("ids[]", artworkId)
+                  );
+                break;
+            }
+          } else if ([IllustSortType.USER_BOOKMARK].includes(type)) {
+            searchParams.set(
+              "offset",
+              String((page - 1) * USER_TYPE_ARTWORKS_PER_PAGE)
+            );
           }
 
+          this.setProgress(`Getting ${page}/${endPage} page...`);
           const requestUrl = `${api}?${searchParams}`;
           const getIllustRes = await requestWithRetry({
             url: requestUrl,
@@ -389,10 +463,15 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
         [
           IllustSortType.BOOKMARK_NEW,
           IllustSortType.BOOKMARK_NEW_R18,
+          IllustSortType.USER_ARTWORK,
+          IllustSortType.USER_ILLUST,
+          IllustSortType.USER_MANGA,
           IllustSortType.USER_BOOKMARK,
         ].includes(this.type)
       ) {
-        this.listElement.css({ "justify-content": "space-between" });
+        this.listElement.css({
+          gap: "24px",
+        });
       }
 
       this.listElement.find("li").remove();
@@ -471,6 +550,9 @@ function getIllustrationsListDom(type: IllustSortType) {
     [
       IllustSortType.BOOKMARK_NEW,
       IllustSortType.BOOKMARK_NEW_R18,
+      IllustSortType.USER_ARTWORK,
+      IllustSortType.USER_ILLUST,
+      IllustSortType.USER_MANGA,
       IllustSortType.USER_BOOKMARK,
     ].includes(type)
   ) {
@@ -493,24 +575,30 @@ function getSortOptionsFromPathname(pathname: string) {
   let defaultSearchParams: string;
 
   let match: RegExpMatchArray;
-  if ((match = pathname.match(/^\/tags\/(.+)\/(.+)$/))) {
+  if (
+    (match = pathname.match(/\/tags\/(.+)\/(artworks|illustrations|manga)$/))
+  ) {
     const tagName = match[1];
-    const tagFilterType = match[2];
+    const filterType = match[2];
 
-    if (tagFilterType === "artworks") {
-      type = IllustSortType.TAG_ARTWORK;
-      api = `/ajax/search/artworks/${tagName}`;
-      defaultSearchParams = `word=${tagName}&order=date_d&mode=all&p=1&csw=0&s_mode=s_tag_full&type=all&lang=zh`;
-    } else if (tagFilterType === "illustrations") {
-      type = IllustSortType.TAG_ILLUST;
-      api = `/ajax/search/illustrations/${tagName}`;
-      defaultSearchParams = `word=${tagName}&order=date_d&mode=all&p=1&csw=0&s_mode=s_tag_full&type=illust_and_ugoira&lang=zh`;
-    } else if (tagFilterType === "manga") {
-      type = IllustSortType.TAG_MANGA;
-      api = `/ajax/search/manga/${tagName}`;
-      defaultSearchParams = `word=${tagName}&order=date_d&mode=all&p=1&csw=0&s_mode=s_tag_full&type=manga&lang=zh`;
+    switch (filterType) {
+      case "artworks":
+        type = IllustSortType.TAG_ARTWORK;
+        api = `/ajax/search/artworks/${tagName}`;
+        defaultSearchParams = `word=${tagName}&order=date_d&mode=all&p=1&csw=0&s_mode=s_tag_full&type=all&lang=zh`;
+        break;
+      case "illustrations":
+        type = IllustSortType.TAG_ILLUST;
+        api = `/ajax/search/illustrations/${tagName}`;
+        defaultSearchParams = `word=${tagName}&order=date_d&mode=all&p=1&csw=0&s_mode=s_tag_full&type=illust_and_ugoira&lang=zh`;
+        break;
+      case "manga":
+        type = IllustSortType.TAG_MANGA;
+        api = `/ajax/search/manga/${tagName}`;
+        defaultSearchParams = `word=${tagName}&order=date_d&mode=all&p=1&csw=0&s_mode=s_tag_full&type=manga&lang=zh`;
+        break;
     }
-  } else if ((match = pathname.match(/^\/bookmark_new_illust(_r18)?\.php/))) {
+  } else if ((match = pathname.match(/\/bookmark_new_illust(_r18)?\.php$/))) {
     const isR18 = !!match[1];
 
     api = "/ajax/follow_latest/illust";
@@ -521,12 +609,34 @@ function getSortOptionsFromPathname(pathname: string) {
       type = IllustSortType.BOOKMARK_NEW_R18;
       defaultSearchParams = "mode=all&lang=zh";
     }
-  } else if ((match = pathname.match(/^\/users\/(\d+)\/bookmarks\/artworks/))) {
+  } else if ((match = pathname.match(/\/users\/(\d+)\/bookmarks\/artworks$/))) {
     const userId = match[1];
 
     type = IllustSortType.USER_BOOKMARK;
     api = `/ajax/user/${userId}/illusts/bookmarks`;
-    defaultSearchParams = "tag=&offset=0&limit=48&rest=show&lang=zh";
+    defaultSearchParams = `tag=&offset=0&limit=${USER_TYPE_ARTWORKS_PER_PAGE}&rest=show&lang=zh`;
+  } else if (
+    (match = pathname.match(/\/users\/(\d+)\/(artworks|illustrations|manga)$/))
+  ) {
+    const userId = match[1];
+    const filterType = match[2];
+
+    api = `/ajax/user/${userId}/profile/illusts`;
+    switch (filterType) {
+      case "artworks":
+        type = IllustSortType.USER_ARTWORK;
+        // 特别的，为默认的查询参数添加 `user_id=${userId}`，供后续处理使用
+        defaultSearchParams = `work_category=illustManga&is_first_page=1&sensitiveFilterMode=userSetting&user_id=${userId}&lang=zh`;
+        break;
+      case "illustrations":
+        type = IllustSortType.USER_ILLUST;
+        defaultSearchParams = `work_category=illust&is_first_page=1&sensitiveFilterMode=userSetting&user_id=${userId}&lang=zh`;
+        break;
+      case "manga":
+        type = IllustSortType.USER_MANGA;
+        defaultSearchParams = `work_category=manga&is_first_page=1&sensitiveFilterMode=userSetting&user_id=${userId}&lang=zh`;
+        break;
+    }
   }
 
   return {
@@ -577,10 +687,20 @@ function getIllustrationsFromResponse(
         }>
       ).body.thumbnails.illust ?? []
     );
-  } else if ([IllustSortType.USER_BOOKMARK].includes(type)) {
-    return (
-      (response as PixivStandardResponse<{ works: Illustration[] }>).body
-        .works ?? []
+  } else if (
+    [
+      IllustSortType.USER_ARTWORK,
+      IllustSortType.USER_ILLUST,
+      IllustSortType.USER_MANGA,
+      IllustSortType.USER_BOOKMARK,
+    ].includes(type)
+  ) {
+    return Object.values(
+      (
+        response as PixivStandardResponse<{
+          works: Record<string, Illustration>;
+        }>
+      ).body.works
     );
   }
 
