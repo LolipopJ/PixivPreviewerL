@@ -31,7 +31,7 @@
   - [x] Refactor：鼠标悬浮作品显示预览窗口，兼容所有页面
   - [ ] Feature: 预览窗口添加显示当前作品的收藏量等关键信息
 - [ ] 作品排序功能
-  - [ ] Feature：功能覆盖页面
+  - [x] Feature：功能覆盖页面
     - [x] 标签搜索
       - [x] 顶部：<https://www.pixiv.net/tags/%E5%A4%A9%E7%AB%A5%E3%82%A2%E3%83%AA%E3%82%B9/artworks>
       - [x] 插画：<https://www.pixiv.net/tags/%E5%A4%A9%E7%AB%A5%E3%82%A2%E3%83%AA%E3%82%B9/illustrations>
@@ -39,11 +39,11 @@
     - [x] 关注用户的新作品
       - [x] 全部：<https://www.pixiv.net/bookmark_new_illust.php>
       - [x] 限制级：<https://www.pixiv.net/bookmark_new_illust_r18.php>
-    - [ ] 用户主页
-      - [ ] 发表的插画 / 漫画：<https://www.pixiv.net/users/333556/artworks>
-      - [ ] 发表的插画：<https://www.pixiv.net/users/333556/illustrations>
-      - [ ] 发表的漫画：<https://www.pixiv.net/users/49906039/manga>
-      - [ ] 收藏的插画 / 漫画：<https://www.pixiv.net/users/17435436/bookmarks/artworks>
+    - [x] 用户主页
+      - [x] 发表的插画 / 漫画：<https://www.pixiv.net/users/333556/artworks>
+      - [x] 发表的插画：<https://www.pixiv.net/users/333556/illustrations>
+      - [x] 发表的漫画：<https://www.pixiv.net/users/49906039/manga>
+      - [x] 收藏的插画 / 漫画：<https://www.pixiv.net/users/17435436/bookmarks/artworks>
   - [x] Feature：支持按发布日期排序（过滤收藏数小于指定的作品）
   - [x] Feature：对 AI 生成作品和 AI 加笔作品显示特殊标记
   - [x] Feature：支持过滤 AI 加笔作品

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             0.3.3-2025/4/24
+// @version             0.4.0-2025/4/24
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0
@@ -20,7 +20,7 @@
 // ==/UserScript==
 
 // src/constants/index.ts
-var g_version = "0.3.3";
+var g_version = "0.4.0";
 var g_defaultSettings = {
   enablePreview: true,
   enableAnimePreview: true,
@@ -41,7 +41,10 @@ var PREVIEW_WRAPPER_BORDER_WIDTH = 2;
 var PREVIEW_WRAPPER_BORDER_RADIUS = 8;
 var PREVIEW_WRAPPER_DISTANCE_TO_MOUSE = 20;
 var PREVIEW_PRELOAD_NUM = 5;
-var SORT_EVENT_NAME = "runPixivPreviewerSort";
+var SORT_BUTTON_ID = "pp-sort";
+var SORT_EVENT_NAME = "PIXIV_PREVIEWER_RUN_SORT";
+var SORT_NEXT_PAGE_BUTTON_ID = "pp-sort-next-page";
+var SORT_NEXT_PAGE_EVENT_NAME = "PIXIV_PREVIEWER_JUMP_TO_NEXT_PAGE";
 
 // src/icons/download.svg
 var download_default = '<svg t="1742281193586" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg"\n  p-id="24408" width="10" height="10">\n  <path\n    d="M1024 896v128H0v-320h128v192h768v-192h128v192zM576 554.688L810.688 320 896 405.312l-384 384-384-384L213.312 320 448 554.688V0h128v554.688z"\n    fill="#ffffff" p-id="24409"></path>\n</svg>';
@@ -208,6 +211,22 @@ var getIllustPagesRequestUrl = (id) => {
 };
 var getUgoiraMetadataRequestUrl = (id) => {
   return `/ajax/illust/${id}/ugoira_meta`;
+};
+
+// src/services/user.ts
+var getUserArtworks = async (userId) => {
+  const response = await request_default({
+    url: `https://www.pixiv.net/ajax/user/${userId}/profile/all?sensitiveFilterMode=userSetting&lang=zh`
+  });
+  const responseData = response.response.body;
+  const illusts = Object.keys(responseData.illusts).reverse();
+  const manga = Object.keys(responseData.manga).reverse();
+  const artworks = [...illusts, ...manga].sort((a, b) => Number(b) - Number(a));
+  return {
+    illusts,
+    manga,
+    artworks
+  };
 };
 
 // src/utils/debounce.ts
@@ -1357,7 +1376,6 @@ var Texts = {
     >
     \u4E8C\u6B21\u5F00\u53D1\uFF0C\u65E8\u5728\u6EE1\u8DB3\u5F00\u53D1\u8005\u81EA\u5DF1\u9700\u8981\u7684\u80FD\u529B\u3002
   </p>
-  <br />
   <p>
     \u5982\u679C\u60A8\u6709\u4E0D\u9519\u7684\u60F3\u6CD5\u6216\u5EFA\u8BAE\uFF0C\u8BF7\u524D\u5F80\u539F\u811A\u672C\u7684<a
       style="color: skyblue"
@@ -1427,6 +1445,8 @@ var heart_filled_default = '<svg viewBox="0 0 32 32" width="32" height="32">\n  
 var play_default = '<svg viewBox="0 0 24 24"\n  style="width: 48px; height: 48px; stroke: none; line-height: 0; font-size: 0px; vertical-align: middle;">\n  <circle cx="12" cy="12" r="10" style="fill: rgba(0, 0, 0, 0.32);"></circle>\n  <path d="M9,8.74841664 L9,15.2515834 C9,15.8038681 9.44771525,16.2515834 10,16.2515834\nC10.1782928,16.2515834 10.3533435,16.2039156 10.5070201,16.1135176 L16.0347118,12.8619342\nC16.510745,12.5819147 16.6696454,11.969013 16.3896259,11.4929799\nC16.3034179,11.3464262 16.1812655,11.2242738 16.0347118,11.1380658 L10.5070201,7.88648243\nC10.030987,7.60646294 9.41808527,7.76536339 9.13806578,8.24139652\nC9.04766776,8.39507316 9,8.57012386 9,8.74841664 Z" style="fill: rgb(245, 245, 245);"></path>\n</svg>';
 
 // src/features/sort.ts
+var USER_ARTWORKS_CACHE_PREFIX = "PIXIV_PREVIEWER_USER_ARTWORKS_";
+var USER_TYPE_ARTWORKS_PER_PAGE = 48;
 var isInitialized2 = false;
 var loadIllustSort = (options) => {
   if (isInitialized2) return;
@@ -1459,7 +1479,7 @@ var loadIllustSort = (options) => {
     listElement = $();
     progressElement = $();
     progressText = $();
-    sortButtonElement = $("#pp-sort");
+    sortButtonElement = $(`#${SORT_BUTTON_ID}`);
     reset({ type }) {
       try {
         this.type = type;
@@ -1489,8 +1509,10 @@ var loadIllustSort = (options) => {
         }).css({
           "text-align": "center",
           "font-size": "16px",
-          "font-weight": "bold"
+          "font-weight": "bold",
+          color: "initial"
         }).appendTo(this.progressElement);
+        this.sortButtonElement.text(i18n_default.label_sort);
       } catch (error) {
         iLog.e(`An error occurred while resetting sorter:`, error);
         throw new Error(error);
@@ -1509,8 +1531,64 @@ var loadIllustSort = (options) => {
         const startPage = Number(searchParams.get("p") ?? 1);
         const endPage = startPage + pageCount - 1;
         for (let page = startPage; page < startPage + pageCount; page += 1) {
-          this.setProgress(`Getting ${page}/${endPage} page...`);
           searchParams.set("p", String(page));
+          if ([
+            5 /* USER_ARTWORK */,
+            6 /* USER_ILLUST */,
+            7 /* USER_MANGA */
+          ].includes(type)) {
+            searchParams.set("is_first_page", page > 1 ? "0" : "1");
+            const userId = searchParams.get("user_id");
+            let userArtworks = {
+              illusts: [],
+              manga: [],
+              artworks: []
+            };
+            const userArtworksCacheKey = `${USER_ARTWORKS_CACHE_PREFIX}${userId}`;
+            try {
+              const userArtworksCacheString = sessionStorage.getItem(userArtworksCacheKey);
+              if (!userArtworksCacheString)
+                throw new Error("Artworks cache not existed.");
+              userArtworks = JSON.parse(userArtworksCacheString);
+            } catch (error) {
+              iLog.i(
+                `Artworks of current user is not available in session storage, re-getting...`,
+                error
+              );
+              this.setProgress(`Getting artworks of current user...`);
+              userArtworks = await getUserArtworks(userId);
+              sessionStorage.setItem(
+                userArtworksCacheKey,
+                JSON.stringify(userArtworks)
+              );
+            }
+            searchParams.delete("ids[]");
+            const fromIndex = (page - 1) * USER_TYPE_ARTWORKS_PER_PAGE;
+            const toIndex = page * USER_TYPE_ARTWORKS_PER_PAGE;
+            switch (type) {
+              case 5 /* USER_ARTWORK */:
+                userArtworks.artworks.slice(fromIndex, toIndex).forEach(
+                  (artworkId) => searchParams.append("ids[]", artworkId)
+                );
+                break;
+              case 6 /* USER_ILLUST */:
+                userArtworks.illusts.slice(fromIndex, toIndex).forEach(
+                  (artworkId) => searchParams.append("ids[]", artworkId)
+                );
+                break;
+              case 7 /* USER_MANGA */:
+                userArtworks.manga.slice(fromIndex, toIndex).forEach(
+                  (artworkId) => searchParams.append("ids[]", artworkId)
+                );
+                break;
+            }
+          } else if ([8 /* USER_BOOKMARK */].includes(type)) {
+            searchParams.set(
+              "offset",
+              String((page - 1) * USER_TYPE_ARTWORKS_PER_PAGE)
+            );
+          }
+          this.setProgress(`Getting ${page}/${endPage} page...`);
           const requestUrl = `${api}?${searchParams}`;
           const getIllustRes = await requestWithRetry({
             url: requestUrl,
@@ -1586,13 +1664,12 @@ var loadIllustSort = (options) => {
         iLog.i("Sort illustrations successfully.");
         this.illustrations = sortedIllustrations;
         this.showIllustrations();
-        this.sortButtonElement.text(i18n_default.label_nextPage);
       } catch (error) {
         iLog.e("Sort illustrations failed:", error);
-        this.sortButtonElement.text(i18n_default.label_sort);
       }
       this.hideProgress();
       this.sorting = false;
+      this.sortButtonElement.text(i18n_default.label_sort);
     }
     setProgress(text) {
       this.progressText.text(text);
@@ -1686,10 +1763,17 @@ var loadIllustSort = (options) => {
         listItem.appendChild(container);
         fragment.appendChild(listItem);
       }
-      if ([3 /* BOOKMARK_NEW */, 4 /* BOOKMARK_NEW_R18 */].includes(
-        this.type
-      )) {
-        this.listElement.css({ "justify-content": "space-between" });
+      if ([
+        3 /* BOOKMARK_NEW */,
+        4 /* BOOKMARK_NEW_R18 */,
+        5 /* USER_ARTWORK */,
+        6 /* USER_ILLUST */,
+        7 /* USER_MANGA */,
+        8 /* USER_BOOKMARK */
+      ].includes(this.type)) {
+        this.listElement.css({
+          gap: "24px"
+        });
       }
       this.listElement.find("li").remove();
       this.listElement.append(fragment);
@@ -1702,17 +1786,7 @@ var loadIllustSort = (options) => {
       return;
     }
     const url = new URL(location.href);
-    const { origin, pathname, searchParams } = url;
-    if (illustSorter.listElement?.length) {
-      iLog.i(
-        "Illustrations in current page are sorted, jump to next available page..."
-      );
-      const currentPage = Number(searchParams.get("p") ?? 1);
-      const nextPage = currentPage + pageCount;
-      searchParams.set("p", String(nextPage));
-      location.href = `${origin}${pathname}?${searchParams}`;
-      return;
-    }
+    const { pathname, searchParams } = url;
     const {
       type,
       api,
@@ -1735,6 +1809,20 @@ var loadIllustSort = (options) => {
       searchParams: mergedSearchParams
     });
   });
+  window.addEventListener(SORT_NEXT_PAGE_EVENT_NAME, () => {
+    const url = new URL(location.href);
+    const { origin, pathname, searchParams } = url;
+    const currentPage = Number(searchParams.get("p") ?? 1);
+    let nextPage = currentPage + 1;
+    if (illustSorter.listElement?.length) {
+      iLog.i(
+        "Illustrations in current page are sorted, jump to next available page..."
+      );
+      nextPage = currentPage + pageCount;
+    }
+    searchParams.set("p", String(nextPage));
+    location.href = `${origin}${pathname}?${searchParams}`;
+  });
   isInitialized2 = true;
 };
 function getIllustrationsListDom(type) {
@@ -1745,15 +1833,22 @@ function getIllustrationsListDom(type) {
     2 /* TAG_MANGA */
   ].includes(type)) {
     dom = $("ul.sc-ad8346e6-1.iwHaa-d");
-  } else if ([3 /* BOOKMARK_NEW */, 4 /* BOOKMARK_NEW_R18 */].includes(
-    type
-  )) {
+  } else if ([
+    3 /* BOOKMARK_NEW */,
+    4 /* BOOKMARK_NEW_R18 */,
+    5 /* USER_ARTWORK */,
+    6 /* USER_ILLUST */,
+    7 /* USER_MANGA */,
+    8 /* USER_BOOKMARK */
+  ].includes(type)) {
     dom = $("ul.sc-7d21cb21-1.jELUak");
   }
   if (dom) {
     return dom;
   } else {
-    throw new Error(`Illustrations list DOM not found.`);
+    throw new Error(
+      `Illustrations list DOM not found. Please create a new issue here: ${"https://github.com/LolipopJ/PixivPreviewer/issues"}`
+    );
   }
 }
 function getSortOptionsFromPathname(pathname) {
@@ -1761,23 +1856,27 @@ function getSortOptionsFromPathname(pathname) {
   let api;
   let defaultSearchParams;
   let match;
-  if (match = pathname.match(/^\/tags\/(.+)\/(.+)$/)) {
+  if (match = pathname.match(/\/tags\/(.+)\/(artworks|illustrations|manga)$/)) {
     const tagName = match[1];
-    const tagFilterType = match[2];
-    if (tagFilterType === "artworks") {
-      type = 0 /* TAG_ARTWORK */;
-      api = `/ajax/search/artworks/${tagName}`;
-      defaultSearchParams = `word=${tagName}&order=date_d&mode=all&p=1&csw=0&s_mode=s_tag_full&type=all&lang=zh`;
-    } else if (tagFilterType === "illustrations") {
-      type = 1 /* TAG_ILLUST */;
-      api = `/ajax/search/illustrations/${tagName}`;
-      defaultSearchParams = `word=${tagName}&order=date_d&mode=all&p=1&csw=0&s_mode=s_tag_full&type=illust_and_ugoira&lang=zh`;
-    } else if (tagFilterType === "manga") {
-      type = 2 /* TAG_MANGA */;
-      api = `/ajax/search/manga/${tagName}`;
-      defaultSearchParams = `word=${tagName}&order=date_d&mode=all&p=1&csw=0&s_mode=s_tag_full&type=manga&lang=zh`;
+    const filterType = match[2];
+    switch (filterType) {
+      case "artworks":
+        type = 0 /* TAG_ARTWORK */;
+        api = `/ajax/search/artworks/${tagName}`;
+        defaultSearchParams = `word=${tagName}&order=date_d&mode=all&p=1&csw=0&s_mode=s_tag_full&type=all&lang=zh`;
+        break;
+      case "illustrations":
+        type = 1 /* TAG_ILLUST */;
+        api = `/ajax/search/illustrations/${tagName}`;
+        defaultSearchParams = `word=${tagName}&order=date_d&mode=all&p=1&csw=0&s_mode=s_tag_full&type=illust_and_ugoira&lang=zh`;
+        break;
+      case "manga":
+        type = 2 /* TAG_MANGA */;
+        api = `/ajax/search/manga/${tagName}`;
+        defaultSearchParams = `word=${tagName}&order=date_d&mode=all&p=1&csw=0&s_mode=s_tag_full&type=manga&lang=zh`;
+        break;
     }
-  } else if (match = pathname.match(/^\/bookmark_new_illust(_r18)?\.php/)) {
+  } else if (match = pathname.match(/\/bookmark_new_illust(_r18)?\.php$/)) {
     const isR18 = !!match[1];
     api = "/ajax/follow_latest/illust";
     if (isR18) {
@@ -1786,6 +1885,29 @@ function getSortOptionsFromPathname(pathname) {
     } else {
       type = 4 /* BOOKMARK_NEW_R18 */;
       defaultSearchParams = "mode=all&lang=zh";
+    }
+  } else if (match = pathname.match(/\/users\/(\d+)\/bookmarks\/artworks$/)) {
+    const userId = match[1];
+    type = 8 /* USER_BOOKMARK */;
+    api = `/ajax/user/${userId}/illusts/bookmarks`;
+    defaultSearchParams = `tag=&offset=0&limit=${USER_TYPE_ARTWORKS_PER_PAGE}&rest=show&lang=zh`;
+  } else if (match = pathname.match(/\/users\/(\d+)\/(artworks|illustrations|manga)$/)) {
+    const userId = match[1];
+    const filterType = match[2];
+    api = `/ajax/user/${userId}/profile/illusts`;
+    switch (filterType) {
+      case "artworks":
+        type = 5 /* USER_ARTWORK */;
+        defaultSearchParams = `work_category=illustManga&is_first_page=1&sensitiveFilterMode=userSetting&user_id=${userId}&lang=zh`;
+        break;
+      case "illustrations":
+        type = 6 /* USER_ILLUST */;
+        defaultSearchParams = `work_category=illust&is_first_page=1&sensitiveFilterMode=userSetting&user_id=${userId}&lang=zh`;
+        break;
+      case "manga":
+        type = 7 /* USER_MANGA */;
+        defaultSearchParams = `work_category=manga&is_first_page=1&sensitiveFilterMode=userSetting&user_id=${userId}&lang=zh`;
+        break;
     }
   }
   return {
@@ -1805,6 +1927,15 @@ function getIllustrationsFromResponse(type, response) {
     type
   )) {
     return response.body.thumbnails.illust ?? [];
+  } else if ([
+    5 /* USER_ARTWORK */,
+    6 /* USER_ILLUST */,
+    7 /* USER_MANGA */,
+    8 /* USER_BOOKMARK */
+  ].includes(type)) {
+    return Object.values(
+      response.body.works
+    );
   }
   return [];
 }
@@ -2180,18 +2311,33 @@ var initializePixivPreviewer = () => {
       DoLog(2 /* Warning */, "Get toolbar failed.");
       return;
     }
-    if (!$("#pp-sort").length) {
+    if (!$(`#${SORT_BUTTON_ID}`).length) {
       const newListItem = toolBar.firstChild.cloneNode(true);
       newListItem.title = "Sort artworks";
       newListItem.innerHTML = "";
       const newButton = document.createElement("button");
-      newButton.id = "pp-sort";
+      newButton.id = SORT_BUTTON_ID;
       newButton.style.cssText = "box-sizing: border-box; background-color: rgba(0,0,0,0.32); color: #fff; margin-top: 5px; opacity: 0.8; cursor: pointer; border: none; padding: 0px; border-radius: 24px; width: 48px; height: 48px; font-size: 12px; font-weight: bold;";
       newButton.innerHTML = i18n_default.label_sort;
       newListItem.appendChild(newButton);
       toolBar.appendChild(newListItem);
       $(newButton).on("click", () => {
         const sortEvent = new Event(SORT_EVENT_NAME);
+        window.dispatchEvent(sortEvent);
+      });
+    }
+    if (!$(`#${SORT_NEXT_PAGE_BUTTON_ID}`).length) {
+      const newListItem = toolBar.firstChild.cloneNode(true);
+      newListItem.title = "Jump to next page";
+      newListItem.innerHTML = "";
+      const newButton = document.createElement("button");
+      newButton.id = SORT_NEXT_PAGE_BUTTON_ID;
+      newButton.style.cssText = "box-sizing: border-box; background-color: rgba(0,0,0,0.32); color: #fff; margin-top: 5px; opacity: 0.8; cursor: pointer; border: none; padding: 0px; border-radius: 24px; width: 48px; height: 48px; font-size: 12px; font-weight: bold;";
+      newButton.innerHTML = i18n_default.label_nextPage;
+      newListItem.appendChild(newButton);
+      toolBar.appendChild(newListItem);
+      $(newButton).on("click", () => {
+        const sortEvent = new Event(SORT_NEXT_PAGE_EVENT_NAME);
         window.dispatchEvent(sortEvent);
       });
     }
