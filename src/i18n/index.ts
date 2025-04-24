@@ -1,9 +1,7 @@
 const Texts = {
-  install_title: "欢迎使用 Pixiv Previewer by Lolipop v",
-  install_body:
-    '<div style="position: absolute;left: 50%;top: 30%;font-size: 20px; color: white;transform:translate(-50%,0);"><p>欢迎反馈问题和提出建议！><a style="color: skyblue;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer/feedback" target="_blank">反馈页面</a><</p><br><p>如果您是第一次使用，推荐到<a style="color: skyblue;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer" target="_blank"> 详情页 </a>查看脚本介绍。</p></div>',
+  install_title: "欢迎使用 Pixiv Previewer (LolipopJ Edition) v",
   upgrade_body: `<div>
-  <p>
+  <p style="line-height: 1.6;">
     本脚本基于
     <a
       style="color: skyblue"
@@ -11,14 +9,12 @@ const Texts = {
       target="_blank"
       >Pixiv Previewer</a
     >
-    二次开发，旨在满足开发者自己需要的能力。
-  </p>
-  <p>
-    如果您有不错的想法或建议，请前往原脚本的<a
+    二次开发，旨在满足开发者自己需要的能力。如果您有不错的想法或建议，请前往原脚本的
+    <a
       style="color: skyblue"
       href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer/feedback"
       target="_blank"
-      >反馈页面</a
+      >Greasy Fork 反馈页面</a
     >或开启一个新的
     <a
       style="color: skyblue"
@@ -27,7 +23,8 @@ const Texts = {
       >Github 议题</a
     >！
   </p>
-</div>`,
+</div>
+`,
   setting_language: "语言",
   setting_preview: "预览",
   setting_animePreview: "动图预览",

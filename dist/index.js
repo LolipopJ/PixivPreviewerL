@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             0.4.0-2025/4/24
+// @version             1.0.0-2025/4/24
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0
@@ -14,13 +14,13 @@
 // @grant               GM.xmlHttpRequest
 // @icon                https://t0.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&size=32&url=https://www.pixiv.net
 // @icon64              https://t0.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&size=64&url=https://www.pixiv.net
-// @require             https://raw.githubusercontent.com/Tampermonkey/utils/refs/heads/main/requires/gh_2215_make_GM_xhr_more_parallel_again.js
+// @require             https://update.greasyfork.org/scripts/515994/1478507/gh_2215_make_GM_xhr_more_parallel_again.js
 // @require             http://code.jquery.com/jquery-3.7.1.min.js
 // @run-at              document-end
 // ==/UserScript==
 
 // src/constants/index.ts
-var g_version = "0.4.0";
+var g_version = "1.0.0";
 var g_defaultSettings = {
   enablePreview: true,
   enableAnimePreview: true,
@@ -116,11 +116,6 @@ function DoLog(level = 3 /* Info */, ...msgOrElement) {
 // src/utils/utils.ts
 var pause = (ms) => {
   return new Promise((resolve) => setTimeout(resolve, ms));
-};
-var getRandomInt = (min, max) => {
-  min = Math.ceil(min);
-  max = Math.floor(max);
-  return Math.floor(Math.random() * (max - min + 1)) + min;
 };
 
 // src/services/request.ts
@@ -1363,10 +1358,9 @@ var PreviewedIllust = class {
 
 // src/i18n/index.ts
 var Texts = {
-  install_title: "\u6B22\u8FCE\u4F7F\u7528 Pixiv Previewer by Lolipop v",
-  install_body: '<div style="position: absolute;left: 50%;top: 30%;font-size: 20px; color: white;transform:translate(-50%,0);"><p>\u6B22\u8FCE\u53CD\u9988\u95EE\u9898\u548C\u63D0\u51FA\u5EFA\u8BAE\uFF01><a style="color: skyblue;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer/feedback" target="_blank">\u53CD\u9988\u9875\u9762</a><</p><br><p>\u5982\u679C\u60A8\u662F\u7B2C\u4E00\u6B21\u4F7F\u7528\uFF0C\u63A8\u8350\u5230<a style="color: skyblue;" href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer" target="_blank"> \u8BE6\u60C5\u9875 </a>\u67E5\u770B\u811A\u672C\u4ECB\u7ECD\u3002</p></div>',
+  install_title: "\u6B22\u8FCE\u4F7F\u7528 Pixiv Previewer (LolipopJ Edition) v",
   upgrade_body: `<div>
-  <p>
+  <p style="line-height: 1.6;">
     \u672C\u811A\u672C\u57FA\u4E8E
     <a
       style="color: skyblue"
@@ -1374,14 +1368,12 @@ var Texts = {
       target="_blank"
       >Pixiv Previewer</a
     >
-    \u4E8C\u6B21\u5F00\u53D1\uFF0C\u65E8\u5728\u6EE1\u8DB3\u5F00\u53D1\u8005\u81EA\u5DF1\u9700\u8981\u7684\u80FD\u529B\u3002
-  </p>
-  <p>
-    \u5982\u679C\u60A8\u6709\u4E0D\u9519\u7684\u60F3\u6CD5\u6216\u5EFA\u8BAE\uFF0C\u8BF7\u524D\u5F80\u539F\u811A\u672C\u7684<a
+    \u4E8C\u6B21\u5F00\u53D1\uFF0C\u65E8\u5728\u6EE1\u8DB3\u5F00\u53D1\u8005\u81EA\u5DF1\u9700\u8981\u7684\u80FD\u529B\u3002\u5982\u679C\u60A8\u6709\u4E0D\u9519\u7684\u60F3\u6CD5\u6216\u5EFA\u8BAE\uFF0C\u8BF7\u524D\u5F80\u539F\u811A\u672C\u7684
+    <a
       style="color: skyblue"
       href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer/feedback"
       target="_blank"
-      >\u53CD\u9988\u9875\u9762</a
+      >Greasy Fork \u53CD\u9988\u9875\u9762</a
     >\u6216\u5F00\u542F\u4E00\u4E2A\u65B0\u7684
     <a
       style="color: skyblue"
@@ -1390,7 +1382,8 @@ var Texts = {
       >Github \u8BAE\u9898</a
     >\uFF01
   </p>
-</div>`,
+</div>
+`,
   setting_language: "\u8BED\u8A00",
   setting_preview: "\u9884\u89C8",
   setting_animePreview: "\u52A8\u56FE\u9884\u89C8",
@@ -1443,6 +1436,25 @@ var heart_filled_default = '<svg viewBox="0 0 32 32" width="32" height="32">\n  
 
 // src/icons/play.svg
 var play_default = '<svg viewBox="0 0 24 24"\n  style="width: 48px; height: 48px; stroke: none; line-height: 0; font-size: 0px; vertical-align: middle;">\n  <circle cx="12" cy="12" r="10" style="fill: rgba(0, 0, 0, 0.32);"></circle>\n  <path d="M9,8.74841664 L9,15.2515834 C9,15.8038681 9.44771525,16.2515834 10,16.2515834\nC10.1782928,16.2515834 10.3533435,16.2039156 10.5070201,16.1135176 L16.0347118,12.8619342\nC16.510745,12.5819147 16.6696454,11.969013 16.3896259,11.4929799\nC16.3034179,11.3464262 16.1812655,11.2242738 16.0347118,11.1380658 L10.5070201,7.88648243\nC10.030987,7.60646294 9.41808527,7.76536339 9.13806578,8.24139652\nC9.04766776,8.39507316 9,8.57012386 9,8.74841664 Z" style="fill: rgb(245, 245, 245);"></path>\n</svg>';
+
+// src/utils/promise.ts
+var execLimitConcurrentPromises = async (promises, limit = 48) => {
+  const results = [];
+  let index = 0;
+  const executeNext = async () => {
+    if (index >= promises.length) return Promise.resolve();
+    const currentIndex = index++;
+    const result = await promises[currentIndex]();
+    results[currentIndex] = result;
+    return await executeNext();
+  };
+  const initialPromises = Array.from(
+    { length: Math.min(limit, promises.length) },
+    () => executeNext()
+  );
+  await Promise.all(initialPromises);
+  return results;
+};
 
 // src/features/sort.ts
 var USER_ARTWORKS_CACHE_PREFIX = "PIXIV_PREVIEWER_USER_ARTWORKS_";
@@ -1609,33 +1621,34 @@ var loadIllustSort = (options) => {
           );
           illustrations = illustrations.concat(extractedIllustrations);
         }
-        const detailedIllustrations = [];
+        const getDetailedIllustrationPromises = [];
         for (let i = 0; i < illustrations.length; i += 1) {
-          this.setProgress(
-            `Getting details of ${i + 1}/${illustrations.length} illustration...`
-          );
-          const currentIllustration = illustrations[i];
-          const requestUrl = `/touch/ajax/illust/details?illust_id=${currentIllustration.id}`;
-          const getIllustDetailsRes = await requestWithRetry({
-            url: requestUrl,
-            onRetry: (response, retryTimes) => {
-              iLog.w(
-                `Get illustration details through \`${requestUrl}\` failed:`,
-                response,
-                `${retryTimes} times retrying...`
-              );
-              this.setProgress(
-                `Retry to get details of ${i + 1}/${illustrations.length} illustration (${retryTimes} times)...`
-              );
-            }
+          getDetailedIllustrationPromises.push(async () => {
+            this.setProgress(
+              `Getting details of ${i + 1}/${illustrations.length} illustration...`
+            );
+            const currentIllustration = illustrations[i];
+            const requestUrl = `/touch/ajax/illust/details?illust_id=${currentIllustration.id}`;
+            const getIllustDetailsRes = await requestWithRetry({
+              url: requestUrl,
+              onRetry: (response, retryTimes) => {
+                iLog.w(
+                  `Get illustration details through \`${requestUrl}\` failed:`,
+                  response,
+                  `${retryTimes} times retrying...`
+                );
+              }
+            });
+            const illustDetails = getIllustDetailsRes.response.body.illust_details;
+            return {
+              ...currentIllustration,
+              bookmark_user_total: illustDetails.bookmark_user_total
+            };
           });
-          const illustDetails = getIllustDetailsRes.response.body.illust_details;
-          detailedIllustrations.push({
-            ...currentIllustration,
-            bookmark_user_total: illustDetails.bookmark_user_total
-          });
-          await pause(getRandomInt(100, 300));
         }
+        const detailedIllustrations = await execLimitConcurrentPromises(
+          getDetailedIllustrationPromises
+        );
         iLog.d("Queried detailed illustrations:", detailedIllustrations);
         this.setProgress("Filtering illustrations...");
         const filteredIllustrations = detailedIllustrations.filter(
