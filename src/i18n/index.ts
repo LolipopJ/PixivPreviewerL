@@ -13,7 +13,6 @@ const Texts = {
     >
     二次开发，旨在满足开发者自己需要的能力。
   </p>
-  <br />
   <p>
     如果您有不错的想法或建议，请前往原脚本的<a
       style="color: skyblue"

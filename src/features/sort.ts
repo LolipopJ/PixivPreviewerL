@@ -113,6 +113,7 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
             "text-align": "center",
             "font-size": "16px",
             "font-weight": "bold",
+            color: "initial",
           })
           .appendTo(this.progressElement);
       } catch (error) {
@@ -143,6 +144,11 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
         for (let page = startPage; page < startPage + pageCount; page += 1) {
           this.setProgress(`Getting ${page}/${endPage} page...`);
           searchParams.set("p", String(page));
+
+          if ([IllustSortType.USER_BOOKMARK].includes(type)) {
+            searchParams.set("offset", String((page - 1) * 48));
+          }
+
           const requestUrl = `${api}?${searchParams}`;
           const getIllustRes = await requestWithRetry({
             url: requestUrl,
@@ -377,9 +383,11 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
       }
 
       if (
-        [IllustSortType.BOOKMARK_NEW, IllustSortType.BOOKMARK_NEW_R18].includes(
-          this.type
-        )
+        [
+          IllustSortType.BOOKMARK_NEW,
+          IllustSortType.BOOKMARK_NEW_R18,
+          IllustSortType.USER_BOOKMARK,
+        ].includes(this.type)
       ) {
         this.listElement.css({ "justify-content": "space-between" });
       }
@@ -450,9 +458,11 @@ function getIllustrationsListDom(type: IllustSortType) {
   ) {
     dom = $("ul.sc-ad8346e6-1.iwHaa-d");
   } else if (
-    [IllustSortType.BOOKMARK_NEW, IllustSortType.BOOKMARK_NEW_R18].includes(
-      type
-    )
+    [
+      IllustSortType.BOOKMARK_NEW,
+      IllustSortType.BOOKMARK_NEW_R18,
+      IllustSortType.USER_BOOKMARK,
+    ].includes(type)
   ) {
     dom = $("ul.sc-7d21cb21-1.jELUak");
   }
@@ -460,7 +470,9 @@ function getIllustrationsListDom(type: IllustSortType) {
   if (dom) {
     return dom;
   } else {
-    throw new Error(`Illustrations list DOM not found.`);
+    throw new Error(
+      `Illustrations list DOM not found. Please create a new issue here: ${process.env.BUG_REPORT_PAGE}`
+    );
   }
 }
 
@@ -499,6 +511,12 @@ function getSortOptionsFromPathname(pathname: string) {
       type = IllustSortType.BOOKMARK_NEW_R18;
       defaultSearchParams = "mode=all&lang=zh";
     }
+  } else if ((match = pathname.match(/^\/users\/(\d+)\/bookmarks\/artworks/))) {
+    const userId = match[1];
+
+    type = IllustSortType.USER_BOOKMARK;
+    api = `/ajax/user/${userId}/illusts/bookmarks`;
+    defaultSearchParams = "tag=&offset=0&limit=48&rest=show&lang=zh";
   }
 
   return {
@@ -548,6 +566,11 @@ function getIllustrationsFromResponse(
           thumbnails: { illust: Illustration[] };
         }>
       ).body.thumbnails.illust ?? []
+    );
+  } else if ([IllustSortType.USER_BOOKMARK].includes(type)) {
+    return (
+      (response as PixivStandardResponse<{ works: Illustration[] }>).body
+        .works ?? []
     );
   }
 

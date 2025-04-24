@@ -13,6 +13,7 @@ export default defineConfig({
   esbuildPlugins: [svg()],
   env: {
     VERSION: packageJson.version,
+    BUG_REPORT_PAGE: packageJson.bugs.url,
   },
   banner: {
     js: `// ==UserScript==

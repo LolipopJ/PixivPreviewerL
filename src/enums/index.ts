@@ -80,13 +80,7 @@ export enum IllustSortType {
   /** @link https://www.pixiv.net/users/49906039/manga */
   USER_MANGA,
   /** @link https://www.pixiv.net/users/17435436/bookmarks/artworks */
-  USER_BOOKMARK_NEW,
-  /** @link https://www.pixiv.net/discovery */
-  DISCOVERY,
-  /** @link https://www.pixiv.net/new_illust.php */
-  NEW,
-  /** @link https://www.pixiv.net/new_illust_r18.php */
-  NEW_R18,
+  USER_BOOKMARK,
 }
 
 /** 作品排序顺序 */
