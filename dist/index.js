@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             1.1.0-2025/4/25
+// @version             1.1.1-2025/4/25
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0
@@ -20,12 +20,12 @@
 // ==/UserScript==
 
 // src/constants/index.ts
-var g_version = "1.1.0";
+var g_version = "1.1.1";
 var g_defaultSettings = {
   enablePreview: true,
   enableAnimePreview: true,
   previewDelay: 500,
-  pageCount: 3,
+  pageCount: 2,
   favFilter: 500,
   orderType: 0 /* BY_BOOKMARK_COUNT */,
   aiFilter: true,
@@ -1558,6 +1558,7 @@ var loadIllustSort = (options) => {
     type;
     illustrations;
     sorting = false;
+    nextSortPage;
     listElement = $();
     progressElement = $();
     progressText = $();
@@ -1567,6 +1568,7 @@ var loadIllustSort = (options) => {
         this.type = type;
         this.illustrations = [];
         this.sorting = false;
+        this.nextSortPage = void 0;
         this.listElement = getIllustrationsListDom(type);
         this.progressElement?.remove();
         this.progressElement = $(document.createElement("div")).attr({
@@ -1611,7 +1613,7 @@ var loadIllustSort = (options) => {
       try {
         let illustrations = [];
         const startPage = Number(searchParams.get("p") ?? 1);
-        const endPage = startPage + pageCount - 1;
+        this.nextSortPage = startPage + pageCount;
         for (let page = startPage; page < startPage + pageCount; page += 1) {
           searchParams.set("p", String(page));
           if ([
@@ -1647,7 +1649,7 @@ var loadIllustSort = (options) => {
               String((page - 1) * USER_TYPE_ARTWORKS_PER_PAGE)
             );
           }
-          this.setProgress(`Getting ${page}/${endPage} page...`);
+          this.setProgress(`Getting illustration list of page ${page} ...`);
           const requestUrl = `${api}?${searchParams}`;
           const getIllustRes = await requestWithRetry({
             url: requestUrl,
@@ -1658,7 +1660,7 @@ var loadIllustSort = (options) => {
                 `${retryTimes} times retrying...`
               );
               this.setProgress(
-                `Retry to get ${page}/${endPage} page (${retryTimes} times)...`
+                `Retry to get illustration list of page ${page} (${retryTimes} times)...`
               );
             }
           });
@@ -1847,10 +1849,10 @@ var loadIllustSort = (options) => {
       iLog.w("Current page doesn't support sorting illustrations.");
       return;
     }
-    const mergedSearchParams = new URLSearchParams([
-      ...defaultSearchParams,
-      ...searchParams
-    ]);
+    const mergedSearchParams = new URLSearchParams(defaultSearchParams);
+    searchParams.forEach((value, key) => {
+      mergedSearchParams.set(key, value);
+    });
     illustSorter.reset({
       type
     });
@@ -1865,11 +1867,11 @@ var loadIllustSort = (options) => {
     const { origin, pathname, searchParams } = url;
     const currentPage = Number(searchParams.get("p") ?? 1);
     let nextPage = currentPage + 1;
-    if (illustSorter.listElement?.length) {
+    if (illustSorter.listElement?.length && illustSorter.nextSortPage) {
       iLog.i(
         "Illustrations in current page are sorted, jump to next available page..."
       );
-      nextPage = currentPage + pageCount;
+      nextPage = illustSorter.nextSortPage;
     }
     searchParams.set("p", String(nextPage));
     location.href = `${origin}${pathname}?${searchParams}`;
