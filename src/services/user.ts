@@ -1,7 +1,7 @@
 import request, { PixivStandardResponse } from "./request";
 
 /** 获取用户发布的所有作品，按照发布时间倒叙 */
-export const getUserArtworks = async (userId: string) => {
+export const getUserIllustrations = async (userId: string) => {
   const response = await request({
     url: `https://www.pixiv.net/ajax/user/${userId}/profile/all?sensitiveFilterMode=userSetting&lang=zh`,
   });

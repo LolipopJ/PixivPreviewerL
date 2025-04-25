@@ -5,6 +5,10 @@ import {
   SORT_EVENT_NAME,
   SORT_NEXT_PAGE_EVENT_NAME,
 } from "../constants";
+import {
+  cacheIllustrationDetails,
+  getCachedIllustrationDetails,
+} from "../databases";
 import { AiType, IllustSortOrder, IllustSortType, IllustType } from "../enums";
 import Texts from "../i18n";
 import heartIcon from "../icons/heart.svg";
@@ -12,7 +16,7 @@ import heartFilledIcon from "../icons/heart-filled.svg";
 import pageIcon from "../icons/page.svg";
 import playIcon from "../icons/play.svg";
 import {
-  getUserArtworks,
+  getUserIllustrations,
   PixivStandardResponse,
   requestWithRetry,
 } from "../services";
@@ -52,7 +56,7 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
     hideByTagList: hideByTagListString,
     aiFilter = false,
     aiAssistedFilter = false,
-    csrfToken,
+    // csrfToken,
   } = options;
 
   // 修正不符合实际的参数
@@ -168,33 +172,30 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
             searchParams.delete("ids[]");
 
             const userId = searchParams.get("user_id");
-            const userArtworks = await getUserArtworksWithCache(userId, {
-              onRequesting: () =>
-                this.setProgress(`Getting artworks of current user...`),
-            });
+            const userIllustrations = await getUserIllustrationsWithCache(
+              userId,
+              {
+                onRequesting: () =>
+                  this.setProgress(`Getting illustrations of current user...`),
+              }
+            );
             const fromIndex = (page - 1) * USER_TYPE_ARTWORKS_PER_PAGE;
             const toIndex = page * USER_TYPE_ARTWORKS_PER_PAGE;
             switch (type) {
               case IllustSortType.USER_ARTWORK:
-                userArtworks.artworks
+                userIllustrations.artworks
                   .slice(fromIndex, toIndex)
-                  .forEach((artworkId) =>
-                    searchParams.append("ids[]", artworkId)
-                  );
+                  .forEach((id) => searchParams.append("ids[]", id));
                 break;
               case IllustSortType.USER_ILLUST:
-                userArtworks.illusts
+                userIllustrations.illusts
                   .slice(fromIndex, toIndex)
-                  .forEach((artworkId) =>
-                    searchParams.append("ids[]", artworkId)
-                  );
+                  .forEach((id) => searchParams.append("ids[]", id));
                 break;
               case IllustSortType.USER_MANGA:
-                userArtworks.manga
+                userIllustrations.manga
                   .slice(fromIndex, toIndex)
-                  .forEach((artworkId) =>
-                    searchParams.append("ids[]", artworkId)
-                  );
+                  .forEach((id) => searchParams.append("ids[]", id));
                 break;
             }
           } else if ([IllustSortType.USER_BOOKMARK].includes(type)) {
@@ -235,32 +236,20 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
             this.setProgress(
               `Getting details of ${i + 1}/${illustrations.length} illustration...`
             );
-            const currentIllustration = illustrations[i];
-            const requestUrl = `/touch/ajax/illust/details?illust_id=${currentIllustration.id}`;
-            const getIllustDetailsRes = await requestWithRetry({
-              url: requestUrl,
-              onRetry: (response, retryTimes) => {
-                iLog.w(
-                  `Get illustration details through \`${requestUrl}\` failed:`,
-                  response,
-                  `${retryTimes} times retrying...`
-                );
-              },
-            });
-            const illustDetails = (
-              getIllustDetailsRes.response as PixivStandardResponse<{
-                illust_details: IllustrationDetails;
-              }>
-            ).body.illust_details;
+            const illustration = illustrations[i];
+            const illustrationId = illustration.id;
+            const illustrationDetails =
+              await getIllustrationDetailsWithCache(illustrationId);
             return {
-              ...currentIllustration,
-              bookmark_user_total: illustDetails.bookmark_user_total,
+              ...illustration,
+              bookmark_user_total: illustrationDetails.bookmark_user_total,
             } as IllustrationDetails;
           });
         }
         const detailedIllustrations = await execLimitConcurrentPromises(
           getDetailedIllustrationPromises
         );
+        cacheIllustrationDetails(detailedIllustrations);
         iLog.d("Queried detailed illustrations:", detailedIllustrations);
         //#endregion
 
@@ -329,7 +318,7 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
         alt,
         bookmarkData,
         bookmark_user_total,
-        createDate,
+        // createDate,
         id,
         illustType,
         pageCount,
@@ -350,33 +339,33 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
         const container = document.createElement("div");
         container.style = "width: 184px;";
 
-        const artworkAnchor = document.createElement("a");
-        artworkAnchor.setAttribute("data-gtm-value", id);
-        artworkAnchor.setAttribute("data-gtm-user-id", userId);
-        artworkAnchor.href = `/artworks/${id}`;
-        artworkAnchor.target = "_blank";
-        artworkAnchor.rel = "external";
-        artworkAnchor.style =
+        const illustrationAnchor = document.createElement("a");
+        illustrationAnchor.setAttribute("data-gtm-value", id);
+        illustrationAnchor.setAttribute("data-gtm-user-id", userId);
+        illustrationAnchor.href = `/artworks/${id}`;
+        illustrationAnchor.target = "_blank";
+        illustrationAnchor.rel = "external";
+        illustrationAnchor.style =
           "display: block; position: relative; width: 184px;";
 
-        const artworkImageWrapper = document.createElement("div");
-        artworkImageWrapper.style =
+        const illustrationImageWrapper = document.createElement("div");
+        illustrationImageWrapper.style =
           "position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;";
 
-        const artworkImage = document.createElement("img");
-        artworkImage.src = url;
-        artworkImage.alt = alt;
-        artworkImage.style =
+        const illustrationImage = document.createElement("img");
+        illustrationImage.src = url;
+        illustrationImage.alt = alt;
+        illustrationImage.style =
           "object-fit: cover; object-position: center center; width: 100%; height: 100%; border-radius: 4px; background-color: rgb(31, 31, 31);";
 
         const ugoriaSvg = document.createElement("div");
         ugoriaSvg.style = "position: absolute;";
         ugoriaSvg.innerHTML = playIcon;
 
-        const artworkMeta = document.createElement("div");
-        artworkMeta.style =
+        const illustrationMeta = document.createElement("div");
+        illustrationMeta.style =
           "position: absolute; top: 0px; left: 0px; right: 0px; display: flex; align-items: flex-start; padding: 4px 4px 0; pointer-events: none; font-size: 10px;";
-        artworkMeta.innerHTML = `
+        illustrationMeta.innerHTML = `
           ${isR18 ? '<div style="padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: rgb(255, 64, 96); font-weight: bold; line-height: 16px; user-select: none;">R-18</div>' : ""}
           ${
             isAi
@@ -398,39 +387,40 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
           }
         `;
 
-        const artworkToolbar = document.createElement("div");
-        artworkToolbar.style =
+        const illustrationToolbar = document.createElement("div");
+        illustrationToolbar.style =
           "position: absolute; top: 154px; left: 0px; right: 0px; display: flex; align-items: center; padding: 0 4px 4px; pointer-events: none; font-size: 12px;";
-        artworkToolbar.innerHTML = `
+        // TODO: 支持收藏 / 取消收藏作品
+        illustrationToolbar.innerHTML = `
           <div style="padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: ${bookmark_user_total > 50000 ? "#9f1239" : bookmark_user_total > 10000 ? "#dc2626" : bookmark_user_total > 5000 ? "#1d4ed8" : bookmark_user_total > 1000 ? "#15803d" : "#475569"}; font-weight: bold; line-height: 16px; user-select: none;">❤ ${bookmark_user_total}</div>
           <div style="margin-left: auto;">${bookmarkData ? heartFilledIcon : heartIcon}</div>
         `;
 
-        const artworkTitle = document.createElement("div");
-        artworkTitle.innerHTML = title;
-        artworkTitle.style =
+        const illustrationTitle = document.createElement("div");
+        illustrationTitle.innerHTML = title;
+        illustrationTitle.style =
           "margin-top: 4px; max-width: 100%; overflow: hidden; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; line-height: 22px; font-size: 14px; font-weight: bold; color: rgb(245, 245, 245); transition: color 0.2s;";
 
-        const artworkAuthor = document.createElement("a");
-        artworkAuthor.setAttribute("data-gtm-value", userId);
-        artworkAuthor.href = `/users/${userId}`;
-        artworkAuthor.target = "_blank";
-        artworkAuthor.rel = "external";
-        artworkAuthor.style =
+        const illustrationAuthor = document.createElement("a");
+        illustrationAuthor.setAttribute("data-gtm-value", userId);
+        illustrationAuthor.href = `/users/${userId}`;
+        illustrationAuthor.target = "_blank";
+        illustrationAuthor.rel = "external";
+        illustrationAuthor.style =
           "display: flex; align-items: center; margin-top: 4px;";
-        artworkAuthor.innerHTML = `
+        illustrationAuthor.innerHTML = `
           <img src="${profileImageUrl}" alt="${userName}" style="object-fit: cover; object-position: center top; width: 24px; height: 24px; border-radius: 50%; margin-right: 4px;">
           <span style="min-width: 0px; line-height: 22px; font-size: 14px; color: rgb(214, 214, 214); text-decoration: none; text-overflow: ellipsis; white-space: nowrap; overflow: hidden;">${userName}</span>
         `;
 
-        artworkImageWrapper.appendChild(artworkImage);
-        if (isUgoira) artworkImageWrapper.appendChild(ugoriaSvg);
-        artworkAnchor.appendChild(artworkImageWrapper);
-        artworkAnchor.appendChild(artworkMeta);
-        artworkAnchor.appendChild(artworkToolbar);
-        artworkAnchor.appendChild(artworkTitle);
-        container.appendChild(artworkAnchor);
-        container.appendChild(artworkAuthor);
+        illustrationImageWrapper.appendChild(illustrationImage);
+        if (isUgoira) illustrationImageWrapper.appendChild(ugoriaSvg);
+        illustrationAnchor.appendChild(illustrationImageWrapper);
+        illustrationAnchor.appendChild(illustrationMeta);
+        illustrationAnchor.appendChild(illustrationToolbar);
+        illustrationAnchor.appendChild(illustrationTitle);
+        container.appendChild(illustrationAnchor);
+        container.appendChild(illustrationAuthor);
         listItem.appendChild(container);
         fragment.appendChild(listItem);
       }
@@ -471,7 +461,7 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
       searchParams: defaultSearchParams,
     } = getSortOptionsFromPathname(pathname);
     if (type === undefined) {
-      iLog.w("Current page doesn't support sorting artworks.");
+      iLog.w("Current page doesn't support sorting illustrations.");
       return;
     }
 
@@ -684,32 +674,64 @@ function getIllustrationsFromResponse(
 }
 
 /** 从 Session Storage 或接口获取指定用户的作品列表 */
-async function getUserArtworksWithCache(
+async function getUserIllustrationsWithCache(
   userId: string,
   { onRequesting }: { onRequesting?: () => void } = {}
 ) {
-  let userArtworks: Awaited<ReturnType<typeof getUserArtworks>> = {
+  let userIllustrations: Awaited<ReturnType<typeof getUserIllustrations>> = {
     illusts: [],
     manga: [],
     artworks: [],
   };
-  const userArtworksCacheKey = `${USER_ARTWORKS_CACHE_PREFIX}${userId}`;
+  const userIllustrationsCacheKey = `${USER_ARTWORKS_CACHE_PREFIX}${userId}`;
   try {
-    const userArtworksCacheString =
-      sessionStorage.getItem(userArtworksCacheKey);
-    if (!userArtworksCacheString)
-      throw new Error("Artworks cache not existed.");
+    const userIllustrationsCacheString = sessionStorage.getItem(
+      userIllustrationsCacheKey
+    );
+    if (!userIllustrationsCacheString)
+      throw new Error("Illustrations cache not existed.");
 
-    userArtworks = JSON.parse(userArtworksCacheString);
+    userIllustrations = JSON.parse(userIllustrationsCacheString);
   } catch (error) {
     iLog.i(
-      `Artworks of current user is not available in session storage, re-getting...`,
+      `Illustrations of current user is not available in session storage, re-getting...`,
       error
     );
     onRequesting?.();
 
-    userArtworks = await getUserArtworks(userId);
-    sessionStorage.setItem(userArtworksCacheKey, JSON.stringify(userArtworks));
+    userIllustrations = await getUserIllustrations(userId);
+    sessionStorage.setItem(
+      userIllustrationsCacheKey,
+      JSON.stringify(userIllustrations)
+    );
   }
-  return userArtworks;
+  return userIllustrations;
+}
+
+async function getIllustrationDetailsWithCache(id: string) {
+  let illustDetails: IllustrationDetails =
+    await getCachedIllustrationDetails(id);
+
+  if (illustDetails) {
+    iLog.d(`Use cached details for illustration ${id}`, illustDetails);
+  } else {
+    const requestUrl = `/touch/ajax/illust/details?illust_id=${id}`;
+    const getIllustDetailsRes = await requestWithRetry({
+      url: requestUrl,
+      onRetry: (response, retryTimes) => {
+        iLog.w(
+          `Get illustration details through \`${requestUrl}\` failed:`,
+          response,
+          `${retryTimes} times retrying...`
+        );
+      },
+    });
+    illustDetails = (
+      getIllustDetailsRes.response as PixivStandardResponse<{
+        illust_details: IllustrationDetails;
+      }>
+    ).body.illust_details;
+  }
+
+  return illustDetails;
 }
