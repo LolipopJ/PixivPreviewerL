@@ -165,36 +165,13 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
             ].includes(type)
           ) {
             searchParams.set("is_first_page", page > 1 ? "0" : "1");
+            searchParams.delete("ids[]");
 
             const userId = searchParams.get("user_id");
-            let userArtworks: Awaited<ReturnType<typeof getUserArtworks>> = {
-              illusts: [],
-              manga: [],
-              artworks: [],
-            };
-            const userArtworksCacheKey = `${USER_ARTWORKS_CACHE_PREFIX}${userId}`;
-            try {
-              const userArtworksCacheString =
-                sessionStorage.getItem(userArtworksCacheKey);
-              if (!userArtworksCacheString)
-                throw new Error("Artworks cache not existed.");
-
-              userArtworks = JSON.parse(userArtworksCacheString);
-            } catch (error) {
-              iLog.i(
-                `Artworks of current user is not available in session storage, re-getting...`,
-                error
-              );
-              this.setProgress(`Getting artworks of current user...`);
-
-              userArtworks = await getUserArtworks(userId);
-              sessionStorage.setItem(
-                userArtworksCacheKey,
-                JSON.stringify(userArtworks)
-              );
-            }
-
-            searchParams.delete("ids[]");
+            const userArtworks = await getUserArtworksWithCache(userId, {
+              onRequesting: () =>
+                this.setProgress(`Getting artworks of current user...`),
+            });
             const fromIndex = (page - 1) * USER_TYPE_ARTWORKS_PER_PAGE;
             const toIndex = page * USER_TYPE_ARTWORKS_PER_PAGE;
             switch (type) {
@@ -704,4 +681,35 @@ function getIllustrationsFromResponse(
   }
 
   return [];
+}
+
+/** 从 Session Storage 或接口获取指定用户的作品列表 */
+async function getUserArtworksWithCache(
+  userId: string,
+  { onRequesting }: { onRequesting?: () => void } = {}
+) {
+  let userArtworks: Awaited<ReturnType<typeof getUserArtworks>> = {
+    illusts: [],
+    manga: [],
+    artworks: [],
+  };
+  const userArtworksCacheKey = `${USER_ARTWORKS_CACHE_PREFIX}${userId}`;
+  try {
+    const userArtworksCacheString =
+      sessionStorage.getItem(userArtworksCacheKey);
+    if (!userArtworksCacheString)
+      throw new Error("Artworks cache not existed.");
+
+    userArtworks = JSON.parse(userArtworksCacheString);
+  } catch (error) {
+    iLog.i(
+      `Artworks of current user is not available in session storage, re-getting...`,
+      error
+    );
+    onRequesting?.();
+
+    userArtworks = await getUserArtworks(userId);
+    sessionStorage.setItem(userArtworksCacheKey, JSON.stringify(userArtworks));
+  }
+  return userArtworks;
 }
