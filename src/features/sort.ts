@@ -156,7 +156,6 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
         //#region 获取作品分页列表
         let illustrations: Illustration[] = [];
         const startPage = Number(searchParams.get("p") ?? 1);
-        const endPage = startPage + pageCount - 1;
 
         for (let page = startPage; page < startPage + pageCount; page += 1) {
           searchParams.set("p", String(page));
@@ -205,7 +204,7 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
             );
           }
 
-          this.setProgress(`Getting ${page}/${endPage} page...`);
+          this.setProgress(`Getting illustration list of page ${page} ...`);
           const requestUrl = `${api}?${searchParams}`;
           const getIllustRes = await requestWithRetry({
             url: requestUrl,
@@ -216,7 +215,7 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
                 `${retryTimes} times retrying...`
               );
               this.setProgress(
-                `Retry to get ${page}/${endPage} page (${retryTimes} times)...`
+                `Retry to get illustration list of page ${page} (${retryTimes} times)...`
               );
             },
           });
@@ -465,10 +464,10 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
       return;
     }
 
-    const mergedSearchParams = new URLSearchParams([
-      ...defaultSearchParams,
-      ...searchParams,
-    ]);
+    const mergedSearchParams = new URLSearchParams(defaultSearchParams);
+    searchParams.forEach((value, key) => {
+      mergedSearchParams.set(key, value);
+    });
 
     illustSorter.reset({
       type,
