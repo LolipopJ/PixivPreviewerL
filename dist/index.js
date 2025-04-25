@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             1.0.0-2025/4/24
+// @version             1.1.0-2025/4/25
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0
@@ -20,7 +20,7 @@
 // ==/UserScript==
 
 // src/constants/index.ts
-var g_version = "1.0.0";
+var g_version = "1.1.0";
 var g_defaultSettings = {
   enablePreview: true,
   enableAnimePreview: true,
@@ -209,7 +209,7 @@ var getUgoiraMetadataRequestUrl = (id) => {
 };
 
 // src/services/user.ts
-var getUserArtworks = async (userId) => {
+var getUserIllustrations = async (userId) => {
   const response = await request_default({
     url: `https://www.pixiv.net/ajax/user/${userId}/profile/all?sensitiveFilterMode=userSetting&lang=zh`
   });
@@ -1356,6 +1356,76 @@ var PreviewedIllust = class {
   }
 };
 
+// src/databases/index.ts
+var INDEX_DB_NAME = "PIXIV_PREVIEWER_L";
+var INDEX_DB_VERSION = 1;
+var ILLUSTRATION_DETAILS_CACHE_TABLE_KEY = "illustrationDetailsCache";
+var ILLUSTRATION_DETAILS_CACHE_TIME = 1e3 * 60 * 60 * 12;
+var NEW_ILLUSTRATION_NOT_CACHE_TIME = 1e3 * 60 * 60 * 6;
+var request2 = indexedDB.open(INDEX_DB_NAME, INDEX_DB_VERSION);
+var db;
+request2.onupgradeneeded = (event) => {
+  const db2 = event.target.result;
+  db2.createObjectStore(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY, {
+    keyPath: "id"
+  });
+};
+request2.onsuccess = (event) => {
+  db = event.target.result;
+  console.log("Open IndexedDB successfully:", db);
+};
+request2.onerror = (event) => {
+  iLog.e(`An error occurred while requesting IndexedDB`, event);
+};
+var cacheIllustrationDetails = (illustrations, now = /* @__PURE__ */ new Date()) => {
+  return new Promise(() => {
+    const cachedIllustrationDetailsObjectStore = db.transaction(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY, "readwrite").objectStore(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY);
+    illustrations.forEach((illustration) => {
+      const createDate = new Date(illustration.createDate);
+      if (now.getTime() - createDate.getTime() > NEW_ILLUSTRATION_NOT_CACHE_TIME) {
+        const illustrationDetails = {
+          ...illustration,
+          cacheDate: now
+        };
+        const addCachedIllustrationDetailsRequest = cachedIllustrationDetailsObjectStore.put(illustrationDetails);
+        addCachedIllustrationDetailsRequest.onerror = (event) => {
+          iLog.e(`An error occurred while caching illustration details`, event);
+        };
+      }
+    });
+  });
+};
+var getCachedIllustrationDetails = (id, now = /* @__PURE__ */ new Date()) => {
+  return new Promise((resolve) => {
+    const cachedIllustrationDetailsObjectStore = db.transaction(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY, "readwrite").objectStore(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY);
+    const getCachedIllustrationDetailsRequest = cachedIllustrationDetailsObjectStore.get(id);
+    getCachedIllustrationDetailsRequest.onsuccess = (event) => {
+      const illustrationDetails = event.target.result;
+      if (illustrationDetails) {
+        const { cacheDate } = illustrationDetails;
+        if (now.getTime() - cacheDate.getTime() <= ILLUSTRATION_DETAILS_CACHE_TIME) {
+          resolve(illustrationDetails);
+        } else {
+          cachedIllustrationDetailsObjectStore.delete(id).onerror = (event2) => {
+            iLog.e(
+              `An error occurred while deleting outdated illustration details`,
+              event2
+            );
+          };
+        }
+      }
+      resolve(void 0);
+    };
+    getCachedIllustrationDetailsRequest.onerror = (event) => {
+      iLog.e(
+        `An error occurred while getting cached illustration details`,
+        event
+      );
+      resolve(void 0);
+    };
+  });
+};
+
 // src/i18n/index.ts
 var Texts = {
   install_title: "\u6B22\u8FCE\u4F7F\u7528 Pixiv Previewer (LolipopJ Edition) v",
@@ -1470,8 +1540,8 @@ var loadIllustSort = (options) => {
     hideByTag = false,
     hideByTagList: hideByTagListString,
     aiFilter = false,
-    aiAssistedFilter = false,
-    csrfToken
+    aiAssistedFilter = false
+    // csrfToken,
   } = options;
   let pageCount = Number(optionPageCount), favFilter = Number(optionFavFilter);
   if (pageCount <= 0) {
@@ -1550,48 +1620,25 @@ var loadIllustSort = (options) => {
             7 /* USER_MANGA */
           ].includes(type)) {
             searchParams.set("is_first_page", page > 1 ? "0" : "1");
-            const userId = searchParams.get("user_id");
-            let userArtworks = {
-              illusts: [],
-              manga: [],
-              artworks: []
-            };
-            const userArtworksCacheKey = `${USER_ARTWORKS_CACHE_PREFIX}${userId}`;
-            try {
-              const userArtworksCacheString = sessionStorage.getItem(userArtworksCacheKey);
-              if (!userArtworksCacheString)
-                throw new Error("Artworks cache not existed.");
-              userArtworks = JSON.parse(userArtworksCacheString);
-            } catch (error) {
-              iLog.i(
-                `Artworks of current user is not available in session storage, re-getting...`,
-                error
-              );
-              this.setProgress(`Getting artworks of current user...`);
-              userArtworks = await getUserArtworks(userId);
-              sessionStorage.setItem(
-                userArtworksCacheKey,
-                JSON.stringify(userArtworks)
-              );
-            }
             searchParams.delete("ids[]");
+            const userId = searchParams.get("user_id");
+            const userIllustrations = await getUserIllustrationsWithCache(
+              userId,
+              {
+                onRequesting: () => this.setProgress(`Getting illustrations of current user...`)
+              }
+            );
             const fromIndex = (page - 1) * USER_TYPE_ARTWORKS_PER_PAGE;
             const toIndex = page * USER_TYPE_ARTWORKS_PER_PAGE;
             switch (type) {
               case 5 /* USER_ARTWORK */:
-                userArtworks.artworks.slice(fromIndex, toIndex).forEach(
-                  (artworkId) => searchParams.append("ids[]", artworkId)
-                );
+                userIllustrations.artworks.slice(fromIndex, toIndex).forEach((id) => searchParams.append("ids[]", id));
                 break;
               case 6 /* USER_ILLUST */:
-                userArtworks.illusts.slice(fromIndex, toIndex).forEach(
-                  (artworkId) => searchParams.append("ids[]", artworkId)
-                );
+                userIllustrations.illusts.slice(fromIndex, toIndex).forEach((id) => searchParams.append("ids[]", id));
                 break;
               case 7 /* USER_MANGA */:
-                userArtworks.manga.slice(fromIndex, toIndex).forEach(
-                  (artworkId) => searchParams.append("ids[]", artworkId)
-                );
+                userIllustrations.manga.slice(fromIndex, toIndex).forEach((id) => searchParams.append("ids[]", id));
                 break;
             }
           } else if ([8 /* USER_BOOKMARK */].includes(type)) {
@@ -1627,28 +1674,19 @@ var loadIllustSort = (options) => {
             this.setProgress(
               `Getting details of ${i + 1}/${illustrations.length} illustration...`
             );
-            const currentIllustration = illustrations[i];
-            const requestUrl = `/touch/ajax/illust/details?illust_id=${currentIllustration.id}`;
-            const getIllustDetailsRes = await requestWithRetry({
-              url: requestUrl,
-              onRetry: (response, retryTimes) => {
-                iLog.w(
-                  `Get illustration details through \`${requestUrl}\` failed:`,
-                  response,
-                  `${retryTimes} times retrying...`
-                );
-              }
-            });
-            const illustDetails = getIllustDetailsRes.response.body.illust_details;
+            const illustration = illustrations[i];
+            const illustrationId = illustration.id;
+            const illustrationDetails = await getIllustrationDetailsWithCache(illustrationId);
             return {
-              ...currentIllustration,
-              bookmark_user_total: illustDetails.bookmark_user_total
+              ...illustration,
+              bookmark_user_total: illustrationDetails.bookmark_user_total
             };
           });
         }
         const detailedIllustrations = await execLimitConcurrentPromises(
           getDetailedIllustrationPromises
         );
+        cacheIllustrationDetails(detailedIllustrations);
         iLog.d("Queried detailed illustrations:", detailedIllustrations);
         this.setProgress("Filtering illustrations...");
         const filteredIllustrations = detailedIllustrations.filter(
@@ -1699,7 +1737,7 @@ var loadIllustSort = (options) => {
         alt,
         bookmarkData,
         bookmark_user_total,
-        createDate,
+        // createDate,
         id,
         illustType,
         pageCount: pageCount2,
@@ -1717,25 +1755,25 @@ var loadIllustSort = (options) => {
         const listItem = document.createElement("li");
         const container = document.createElement("div");
         container.style = "width: 184px;";
-        const artworkAnchor = document.createElement("a");
-        artworkAnchor.setAttribute("data-gtm-value", id);
-        artworkAnchor.setAttribute("data-gtm-user-id", userId);
-        artworkAnchor.href = `/artworks/${id}`;
-        artworkAnchor.target = "_blank";
-        artworkAnchor.rel = "external";
-        artworkAnchor.style = "display: block; position: relative; width: 184px;";
-        const artworkImageWrapper = document.createElement("div");
-        artworkImageWrapper.style = "position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;";
-        const artworkImage = document.createElement("img");
-        artworkImage.src = url;
-        artworkImage.alt = alt;
-        artworkImage.style = "object-fit: cover; object-position: center center; width: 100%; height: 100%; border-radius: 4px; background-color: rgb(31, 31, 31);";
+        const illustrationAnchor = document.createElement("a");
+        illustrationAnchor.setAttribute("data-gtm-value", id);
+        illustrationAnchor.setAttribute("data-gtm-user-id", userId);
+        illustrationAnchor.href = `/artworks/${id}`;
+        illustrationAnchor.target = "_blank";
+        illustrationAnchor.rel = "external";
+        illustrationAnchor.style = "display: block; position: relative; width: 184px;";
+        const illustrationImageWrapper = document.createElement("div");
+        illustrationImageWrapper.style = "position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;";
+        const illustrationImage = document.createElement("img");
+        illustrationImage.src = url;
+        illustrationImage.alt = alt;
+        illustrationImage.style = "object-fit: cover; object-position: center center; width: 100%; height: 100%; border-radius: 4px; background-color: rgb(31, 31, 31);";
         const ugoriaSvg = document.createElement("div");
         ugoriaSvg.style = "position: absolute;";
         ugoriaSvg.innerHTML = play_default;
-        const artworkMeta = document.createElement("div");
-        artworkMeta.style = "position: absolute; top: 0px; left: 0px; right: 0px; display: flex; align-items: flex-start; padding: 4px 4px 0; pointer-events: none; font-size: 10px;";
-        artworkMeta.innerHTML = `
+        const illustrationMeta = document.createElement("div");
+        illustrationMeta.style = "position: absolute; top: 0px; left: 0px; right: 0px; display: flex; align-items: flex-start; padding: 4px 4px 0; pointer-events: none; font-size: 10px;";
+        illustrationMeta.innerHTML = `
           ${isR18 ? '<div style="padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: rgb(255, 64, 96); font-weight: bold; line-height: 16px; user-select: none;">R-18</div>' : ""}
           ${isAi ? '<div style="padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: #1d4ed8; font-weight: bold; line-height: 16px; user-select: none;">AI</div>' : isAiAssisted ? '<div style="padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: #6d28d9; font-weight: bold; line-height: 16px; user-select: none;">AI-\u8F85\u52A9</div>' : ""}
           ${pageCount2 > 1 ? `
@@ -1746,33 +1784,33 @@ var loadIllustSort = (options) => {
                   </div>
                 </div>` : ""}
         `;
-        const artworkToolbar = document.createElement("div");
-        artworkToolbar.style = "position: absolute; top: 154px; left: 0px; right: 0px; display: flex; align-items: center; padding: 0 4px 4px; pointer-events: none; font-size: 12px;";
-        artworkToolbar.innerHTML = `
+        const illustrationToolbar = document.createElement("div");
+        illustrationToolbar.style = "position: absolute; top: 154px; left: 0px; right: 0px; display: flex; align-items: center; padding: 0 4px 4px; pointer-events: none; font-size: 12px;";
+        illustrationToolbar.innerHTML = `
           <div style="padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: ${bookmark_user_total > 5e4 ? "#9f1239" : bookmark_user_total > 1e4 ? "#dc2626" : bookmark_user_total > 5e3 ? "#1d4ed8" : bookmark_user_total > 1e3 ? "#15803d" : "#475569"}; font-weight: bold; line-height: 16px; user-select: none;">\u2764 ${bookmark_user_total}</div>
           <div style="margin-left: auto;">${bookmarkData ? heart_filled_default : heart_default}</div>
         `;
-        const artworkTitle = document.createElement("div");
-        artworkTitle.innerHTML = title;
-        artworkTitle.style = "margin-top: 4px; max-width: 100%; overflow: hidden; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; line-height: 22px; font-size: 14px; font-weight: bold; color: rgb(245, 245, 245); transition: color 0.2s;";
-        const artworkAuthor = document.createElement("a");
-        artworkAuthor.setAttribute("data-gtm-value", userId);
-        artworkAuthor.href = `/users/${userId}`;
-        artworkAuthor.target = "_blank";
-        artworkAuthor.rel = "external";
-        artworkAuthor.style = "display: flex; align-items: center; margin-top: 4px;";
-        artworkAuthor.innerHTML = `
+        const illustrationTitle = document.createElement("div");
+        illustrationTitle.innerHTML = title;
+        illustrationTitle.style = "margin-top: 4px; max-width: 100%; overflow: hidden; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; line-height: 22px; font-size: 14px; font-weight: bold; color: rgb(245, 245, 245); transition: color 0.2s;";
+        const illustrationAuthor = document.createElement("a");
+        illustrationAuthor.setAttribute("data-gtm-value", userId);
+        illustrationAuthor.href = `/users/${userId}`;
+        illustrationAuthor.target = "_blank";
+        illustrationAuthor.rel = "external";
+        illustrationAuthor.style = "display: flex; align-items: center; margin-top: 4px;";
+        illustrationAuthor.innerHTML = `
           <img src="${profileImageUrl}" alt="${userName}" style="object-fit: cover; object-position: center top; width: 24px; height: 24px; border-radius: 50%; margin-right: 4px;">
           <span style="min-width: 0px; line-height: 22px; font-size: 14px; color: rgb(214, 214, 214); text-decoration: none; text-overflow: ellipsis; white-space: nowrap; overflow: hidden;">${userName}</span>
         `;
-        artworkImageWrapper.appendChild(artworkImage);
-        if (isUgoira) artworkImageWrapper.appendChild(ugoriaSvg);
-        artworkAnchor.appendChild(artworkImageWrapper);
-        artworkAnchor.appendChild(artworkMeta);
-        artworkAnchor.appendChild(artworkToolbar);
-        artworkAnchor.appendChild(artworkTitle);
-        container.appendChild(artworkAnchor);
-        container.appendChild(artworkAuthor);
+        illustrationImageWrapper.appendChild(illustrationImage);
+        if (isUgoira) illustrationImageWrapper.appendChild(ugoriaSvg);
+        illustrationAnchor.appendChild(illustrationImageWrapper);
+        illustrationAnchor.appendChild(illustrationMeta);
+        illustrationAnchor.appendChild(illustrationToolbar);
+        illustrationAnchor.appendChild(illustrationTitle);
+        container.appendChild(illustrationAnchor);
+        container.appendChild(illustrationAuthor);
         listItem.appendChild(container);
         fragment.appendChild(listItem);
       }
@@ -1806,7 +1844,7 @@ var loadIllustSort = (options) => {
       searchParams: defaultSearchParams
     } = getSortOptionsFromPathname(pathname);
     if (type === void 0) {
-      iLog.w("Current page doesn't support sorting artworks.");
+      iLog.w("Current page doesn't support sorting illustrations.");
       return;
     }
     const mergedSearchParams = new URLSearchParams([
@@ -1951,6 +1989,54 @@ function getIllustrationsFromResponse(type, response) {
     );
   }
   return [];
+}
+async function getUserIllustrationsWithCache(userId, { onRequesting } = {}) {
+  let userIllustrations = {
+    illusts: [],
+    manga: [],
+    artworks: []
+  };
+  const userIllustrationsCacheKey = `${USER_ARTWORKS_CACHE_PREFIX}${userId}`;
+  try {
+    const userIllustrationsCacheString = sessionStorage.getItem(
+      userIllustrationsCacheKey
+    );
+    if (!userIllustrationsCacheString)
+      throw new Error("Illustrations cache not existed.");
+    userIllustrations = JSON.parse(userIllustrationsCacheString);
+  } catch (error) {
+    iLog.i(
+      `Illustrations of current user is not available in session storage, re-getting...`,
+      error
+    );
+    onRequesting?.();
+    userIllustrations = await getUserIllustrations(userId);
+    sessionStorage.setItem(
+      userIllustrationsCacheKey,
+      JSON.stringify(userIllustrations)
+    );
+  }
+  return userIllustrations;
+}
+async function getIllustrationDetailsWithCache(id) {
+  let illustDetails = await getCachedIllustrationDetails(id);
+  if (illustDetails) {
+    iLog.d(`Use cached details for illustration ${id}`, illustDetails);
+  } else {
+    const requestUrl = `/touch/ajax/illust/details?illust_id=${id}`;
+    const getIllustDetailsRes = await requestWithRetry({
+      url: requestUrl,
+      onRetry: (response, retryTimes) => {
+        iLog.w(
+          `Get illustration details through \`${requestUrl}\` failed:`,
+          response,
+          `${retryTimes} times retrying...`
+        );
+      }
+    });
+    illustDetails = getIllustDetailsRes.response.body.illust_details;
+  }
+  return illustDetails;
 }
 
 // src/utils/setting.ts
