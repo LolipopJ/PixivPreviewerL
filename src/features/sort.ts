@@ -82,6 +82,7 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
     type: IllustSortType;
     illustrations: IllustrationDetails[];
     sorting: boolean = false;
+    nextSortPage: number;
     listElement = $();
 
     progressElement = $();
@@ -94,6 +95,7 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
         this.type = type;
         this.illustrations = [];
         this.sorting = false;
+        this.nextSortPage = undefined;
         this.listElement = getIllustrationsListDom(type);
         this.progressElement?.remove();
         this.progressElement = $(document.createElement("div"))
@@ -156,6 +158,7 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
         //#region 获取作品分页列表
         let illustrations: Illustration[] = [];
         const startPage = Number(searchParams.get("p") ?? 1);
+        this.nextSortPage = startPage + pageCount;
 
         for (let page = startPage; page < startPage + pageCount; page += 1) {
           searchParams.set("p", String(page));
@@ -486,11 +489,11 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
     const currentPage = Number(searchParams.get("p") ?? 1);
     let nextPage = currentPage + 1;
 
-    if (illustSorter.listElement?.length) {
+    if (illustSorter.listElement?.length && illustSorter.nextSortPage) {
       iLog.i(
         "Illustrations in current page are sorted, jump to next available page..."
       );
-      nextPage = currentPage + pageCount;
+      nextPage = illustSorter.nextSortPage;
     }
 
     searchParams.set("p", String(nextPage));
