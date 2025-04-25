@@ -10,7 +10,7 @@ export const g_defaultSettings: GlobalSettings = {
   enableAnimePreview: true,
   previewDelay: 500,
 
-  pageCount: 3,
+  pageCount: 2,
   favFilter: 500,
   orderType: IllustSortOrder.BY_BOOKMARK_COUNT,
   aiFilter: true,
