@@ -37,6 +37,8 @@ export const PREVIEW_WRAPPER_DISTANCE_TO_MOUSE = 20;
 /** 预览容器预加载图片数量。仅适用于插画类型作品 */
 export const PREVIEW_PRELOAD_NUM = 5;
 
+/** 工具栏 ID */
+export const TOOLBAR_ID = "pp-toolbar";
 /** 排序按钮 ID */
 export const SORT_BUTTON_ID = "pp-sort";
 /** 排序事件名称 */
