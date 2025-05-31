@@ -83,7 +83,7 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
     illustrations: IllustrationDetails[];
     sorting: boolean = false;
     nextSortPage: number;
-    listElement = $();
+    listElement: JQuery<HTMLUListElement> = $();
 
     progressElement = $();
     progressText = $();
