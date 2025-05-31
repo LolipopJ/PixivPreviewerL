@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             1.1.1-2025/4/25
+// @version             1.1.2-2025/5/31
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0
@@ -20,7 +20,7 @@
 // ==/UserScript==
 
 // src/constants/index.ts
-var g_version = "1.1.1";
+var g_version = "1.1.2";
 var g_defaultSettings = {
   enablePreview: true,
   enableAnimePreview: true,
@@ -41,6 +41,7 @@ var PREVIEW_WRAPPER_BORDER_WIDTH = 2;
 var PREVIEW_WRAPPER_BORDER_RADIUS = 8;
 var PREVIEW_WRAPPER_DISTANCE_TO_MOUSE = 20;
 var PREVIEW_PRELOAD_NUM = 5;
+var TOOLBAR_ID = "pp-toolbar";
 var SORT_BUTTON_ID = "pp-sort";
 var SORT_EVENT_NAME = "PIXIV_PREVIEWER_RUN_SORT";
 var SORT_NEXT_PAGE_BUTTON_ID = "pp-sort-next-page";
@@ -2202,10 +2203,14 @@ var Pages = {
   }
 };
 function findToolbarCommon() {
-  const rootToolbar = $("#root").find("ul:last").get(0);
-  if (rootToolbar) return rootToolbar;
-  const nextToolbar = $("#__next").find("ul:last").get(0);
-  return nextToolbar;
+  const toolbar = $(`#${TOOLBAR_ID}`);
+  if (toolbar.length > 0) {
+    return toolbar.get(0);
+  }
+  $("body").append(
+    `<div id="${TOOLBAR_ID}" style="position: fixed; right: 28px; bottom: 96px;"></div>`
+  );
+  return $(`#${TOOLBAR_ID}`).get(0);
 }
 function findToolbarOld() {
   return $("._toolmenu").get(0);
@@ -2358,7 +2363,7 @@ var ShowUpgradeMessage = () => {
     inset: "0px"
   });
   $("body").append(bg);
-  bg.get(0).innerHTML = '<img id="pps-close"src="https://pp-1252089172.cos.ap-chengdu.myqcloud.com/Close.png"style="position: absolute; right: 35px; top: 20px; width: 32px; height: 32px; cursor: pointer;"><div style="position: absolute; width: 40%; left: 30%; top: 25%; font-size: 25px; font-weight: bold; text-align: center; color: white;">' + i18n_default.install_title + g_version + '</div><br><div style="position: absolute; left: 50%; top: 35%; font-size: 20px; color: white; transform: translate(-50%,0); height: 50%; overflow: auto;">' + i18n_default.upgrade_body + "</div>";
+  bg.get(0).innerHTML = '<img id="pps-close" src="https://pp-1252089172.cos.ap-chengdu.myqcloud.com/Close.png"style="position: absolute; right: 35px; top: 20px; width: 32px; height: 32px; cursor: pointer;"><div style="position: absolute; width: 40%; left: 30%; top: 25%; font-size: 25px; font-weight: bold; text-align: center; color: white;">' + i18n_default.install_title + g_version + '</div><br><div style="position: absolute; left: 50%; top: 35%; font-size: 20px; color: white; transform: translate(-50%,0); height: 50%; overflow: auto;">' + i18n_default.upgrade_body + "</div>";
   $("#pps-close").on("click", () => {
     setSettingValue("version", g_version);
     $("#pp-bg").remove();
@@ -2413,7 +2418,7 @@ var initializePixivPreviewer = () => {
       return;
     }
     if (!$(`#${SORT_BUTTON_ID}`).length) {
-      const newListItem = toolBar.firstChild.cloneNode(true);
+      const newListItem = document.createElement("div");
       newListItem.title = "Sort artworks";
       newListItem.innerHTML = "";
       const newButton = document.createElement("button");
@@ -2428,7 +2433,7 @@ var initializePixivPreviewer = () => {
       });
     }
     if (!$(`#${SORT_NEXT_PAGE_BUTTON_ID}`).length) {
-      const newListItem = toolBar.firstChild.cloneNode(true);
+      const newListItem = document.createElement("div");
       newListItem.title = "Jump to next page";
       newListItem.innerHTML = "";
       const newButton = document.createElement("button");
