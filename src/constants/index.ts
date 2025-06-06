@@ -8,7 +8,7 @@ export const g_version = process.env.VERSION;
 export const g_defaultSettings: GlobalSettings = {
   enablePreview: true,
   enableAnimePreview: true,
-  previewDelay: 500,
+  previewDelay: 300,
 
   pageCount: 2,
   favFilter: 500,

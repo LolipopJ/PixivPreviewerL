@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             1.1.2-2025/5/31
+// @version             1.1.2-2025/6/7
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0
@@ -24,7 +24,7 @@ var g_version = "1.1.2";
 var g_defaultSettings = {
   enablePreview: true,
   enableAnimePreview: true,
-  previewDelay: 500,
+  previewDelay: 300,
   pageCount: 2,
   favFilter: 500,
   orderType: 0 /* BY_BOOKMARK_COUNT */,
