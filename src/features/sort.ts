@@ -239,12 +239,19 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
         const getDetailedIllustrationPromises: (() => Promise<IllustrationDetails>)[] =
           [];
         for (let i = 0; i < illustrations.length; i += 1) {
+          const illustration = illustrations[i];
+          const illustrationId = illustration.id;
+          const illustrationAuthorId = illustration.userId;
+
+          if (String(illustrationAuthorId) === "0") {
+            // 跳过已删除或不可查看的作品
+            continue;
+          }
+
           getDetailedIllustrationPromises.push(async () => {
             this.setProgress(
               `Getting details of ${i + 1}/${illustrations.length} illustration...`
             );
-            const illustration = illustrations[i];
-            const illustrationId = illustration.id;
             const illustrationDetails =
               await getIllustrationDetailsWithCache(illustrationId);
             return {
