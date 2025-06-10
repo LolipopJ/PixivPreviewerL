@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             1.1.2-2025/6/7
+// @version             1.1.3-2025/6/10
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0
@@ -20,7 +20,7 @@
 // ==/UserScript==
 
 // src/constants/index.ts
-var g_version = "1.1.2";
+var g_version = "1.1.3";
 var g_defaultSettings = {
   enablePreview: true,
   enableAnimePreview: true,
@@ -28,7 +28,7 @@ var g_defaultSettings = {
   pageCount: 2,
   favFilter: 500,
   orderType: 0 /* BY_BOOKMARK_COUNT */,
-  aiFilter: true,
+  aiFilter: false,
   aiAssistedFilter: false,
   hideFavorite: true,
   hideByTag: false,
@@ -46,6 +46,17 @@ var SORT_BUTTON_ID = "pp-sort";
 var SORT_EVENT_NAME = "PIXIV_PREVIEWER_RUN_SORT";
 var SORT_NEXT_PAGE_BUTTON_ID = "pp-sort-next-page";
 var SORT_NEXT_PAGE_EVENT_NAME = "PIXIV_PREVIEWER_JUMP_TO_NEXT_PAGE";
+var AI_ASSISTED_TAGS = [
+  "ai\u30A4\u30E9\u30B9\u30C8",
+  "ai-generated",
+  "ai-assisted",
+  "ai-shoujo",
+  "ai\u751F\u6210",
+  "ai\u8F14\u52A9",
+  "ai\u8F85\u52A9",
+  "ai\u52A0\u7B46",
+  "ai\u52A0\u7B14"
+];
 
 // src/icons/download.svg
 var download_default = '<svg t="1742281193586" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg"\n  p-id="24408" width="10" height="10">\n  <path\n    d="M1024 896v128H0v-320h128v192h768v-192h128v192zM576 554.688L810.688 320 896 405.312l-384 384-384-384L213.312 320 448 554.688V0h128v554.688z"\n    fill="#ffffff" p-id="24409"></path>\n</svg>';
@@ -1508,6 +1519,16 @@ var heart_filled_default = '<svg viewBox="0 0 32 32" width="32" height="32">\n  
 // src/icons/play.svg
 var play_default = '<svg viewBox="0 0 24 24"\n  style="width: 48px; height: 48px; stroke: none; line-height: 0; font-size: 0px; vertical-align: middle;">\n  <circle cx="12" cy="12" r="10" style="fill: rgba(0, 0, 0, 0.32);"></circle>\n  <path d="M9,8.74841664 L9,15.2515834 C9,15.8038681 9.44771525,16.2515834 10,16.2515834\nC10.1782928,16.2515834 10.3533435,16.2039156 10.5070201,16.1135176 L16.0347118,12.8619342\nC16.510745,12.5819147 16.6696454,11.969013 16.3896259,11.4929799\nC16.3034179,11.3464262 16.1812655,11.2242738 16.0347118,11.1380658 L10.5070201,7.88648243\nC10.030987,7.60646294 9.41808527,7.76536339 9.13806578,8.24139652\nC9.04766776,8.39507316 9,8.57012386 9,8.74841664 Z" style="fill: rgb(245, 245, 245);"></path>\n</svg>';
 
+// src/utils/illustration.ts
+var checkIsAiAssisted = (tags) => {
+  for (const tag of tags) {
+    if (AI_ASSISTED_TAGS.includes(tag.toLowerCase())) {
+      return true;
+    }
+  }
+  return false;
+};
+
 // src/utils/promise.ts
 var execLimitConcurrentPromises = async (promises, limit = 48) => {
   const results = [];
@@ -1528,6 +1549,8 @@ var execLimitConcurrentPromises = async (promises, limit = 48) => {
 };
 
 // src/features/sort.ts
+var TAG_PAGE_LIST_DOM = "ul.sc-98699d11-1.hHLaTl";
+var OTHER_PAGE_LIST_DOM = "ul.sc-bf8cea3f-1.bCxfvI";
 var USER_ARTWORKS_CACHE_PREFIX = "PIXIV_PREVIEWER_USER_ARTWORKS_";
 var USER_TYPE_ARTWORKS_PER_PAGE = 48;
 var isInitialized2 = false;
@@ -1551,9 +1574,9 @@ var loadIllustSort = (options) => {
   if (favFilter < 0) {
     favFilter = g_defaultSettings.favFilter;
   }
-  const hideByTagList = hideByTagListString.split(",").map((tag) => tag.trim()).filter((tag) => !!tag);
+  const hideByTagList = hideByTagListString.split(",").map((tag) => tag.trim().toLowerCase()).filter((tag) => !!tag);
   if (aiAssistedFilter) {
-    hideByTagList.push("AI-assisted");
+    hideByTagList.push(...AI_ASSISTED_TAGS);
   }
   class IllustSorter {
     type;
@@ -1702,7 +1725,7 @@ var loadIllustSort = (options) => {
             }
             if ((hideByTag || aiAssistedFilter) && hideByTagList.length) {
               for (const tag of illustration.tags) {
-                if (hideByTagList.includes(tag)) {
+                if (hideByTagList.includes(tag.toLowerCase())) {
                   return false;
                 }
               }
@@ -1754,7 +1777,7 @@ var loadIllustSort = (options) => {
         const isR18 = tags.includes("R-18");
         const isUgoira = illustType === 2 /* UGOIRA */;
         const isAi = aiType === 2 /* AI */;
-        const isAiAssisted = tags.includes("AI-assisted");
+        const isAiAssisted = checkIsAiAssisted(tags);
         const listItem = document.createElement("li");
         const container = document.createElement("div");
         container.style = "width: 184px;";
@@ -1886,7 +1909,7 @@ function getIllustrationsListDom(type) {
     1 /* TAG_ILLUST */,
     2 /* TAG_MANGA */
   ].includes(type)) {
-    dom = $("ul.sc-ad8346e6-1.iwHaa-d");
+    dom = $(TAG_PAGE_LIST_DOM);
   } else if ([
     3 /* BOOKMARK_NEW */,
     4 /* BOOKMARK_NEW_R18 */,
@@ -1895,7 +1918,7 @@ function getIllustrationsListDom(type) {
     7 /* USER_MANGA */,
     8 /* USER_BOOKMARK */
   ].includes(type)) {
-    dom = $("ul.sc-7d21cb21-1.jELUak");
+    dom = $(OTHER_PAGE_LIST_DOM);
   }
   if (dom) {
     return dom;
