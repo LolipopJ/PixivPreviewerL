@@ -42,6 +42,9 @@ type LoadIllustSortOptions = Pick<
   | "aiAssistedFilter"
 > & { csrfToken: string };
 
+const TAG_PAGE_LIST_DOM = "ul.sc-98699d11-1.hHLaTl";
+const OTHER_PAGE_LIST_DOM = "ul.sc-bf8cea3f-1.bCxfvI";
+
 const USER_ARTWORKS_CACHE_PREFIX = "PIXIV_PREVIEWER_USER_ARTWORKS_";
 const USER_TYPE_ARTWORKS_PER_PAGE = 48;
 
@@ -515,7 +518,7 @@ function getIllustrationsListDom(type: IllustSortType) {
       IllustSortType.TAG_MANGA,
     ].includes(type)
   ) {
-    dom = $("ul.sc-ad8346e6-1.iwHaa-d");
+    dom = $(TAG_PAGE_LIST_DOM);
   } else if (
     [
       IllustSortType.BOOKMARK_NEW,
@@ -526,7 +529,7 @@ function getIllustrationsListDom(type: IllustSortType) {
       IllustSortType.USER_BOOKMARK,
     ].includes(type)
   ) {
-    dom = $("ul.sc-7d21cb21-1.jELUak");
+    dom = $(OTHER_PAGE_LIST_DOM);
   }
 
   if (dom) {
