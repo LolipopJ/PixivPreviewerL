@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             1.1.3-2025/6/10
+// @version             1.1.4-2025/6/10
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0
@@ -20,7 +20,7 @@
 // ==/UserScript==
 
 // src/constants/index.ts
-var g_version = "1.1.3";
+var g_version = "1.1.4";
 var g_defaultSettings = {
   enablePreview: true,
   enableAnimePreview: true,
@@ -1549,8 +1549,8 @@ var execLimitConcurrentPromises = async (promises, limit = 48) => {
 };
 
 // src/features/sort.ts
-var TAG_PAGE_LIST_DOM = "ul.sc-98699d11-1.hHLaTl";
-var OTHER_PAGE_LIST_DOM = "ul.sc-bf8cea3f-1.bCxfvI";
+var TAG_PAGE_ILLUSTRATION_LIST_SELECTOR = "ul.sc-98699d11-1.hHLaTl";
+var BOOKMARK_USER_PAGE_ILLUSTRATION_LIST_SELECTOR = "ul.sc-bf8cea3f-1.bCxfvI";
 var USER_ARTWORKS_CACHE_PREFIX = "PIXIV_PREVIEWER_USER_ARTWORKS_";
 var USER_TYPE_ARTWORKS_PER_PAGE = 48;
 var isInitialized2 = false;
@@ -1696,12 +1696,16 @@ var loadIllustSort = (options) => {
         }
         const getDetailedIllustrationPromises = [];
         for (let i = 0; i < illustrations.length; i += 1) {
+          const illustration = illustrations[i];
+          const illustrationId = illustration.id;
+          const illustrationAuthorId = illustration.userId;
+          if (String(illustrationAuthorId) === "0") {
+            continue;
+          }
           getDetailedIllustrationPromises.push(async () => {
             this.setProgress(
               `Getting details of ${i + 1}/${illustrations.length} illustration...`
             );
-            const illustration = illustrations[i];
-            const illustrationId = illustration.id;
             const illustrationDetails = await getIllustrationDetailsWithCache(illustrationId);
             return {
               ...illustration,
@@ -1909,22 +1913,34 @@ function getIllustrationsListDom(type) {
     1 /* TAG_ILLUST */,
     2 /* TAG_MANGA */
   ].includes(type)) {
-    dom = $(TAG_PAGE_LIST_DOM);
+    dom = $("section").find("ul").first();
+    if (!dom.length) {
+      dom = $(TAG_PAGE_ILLUSTRATION_LIST_SELECTOR);
+    }
   } else if ([
     3 /* BOOKMARK_NEW */,
     4 /* BOOKMARK_NEW_R18 */,
-    5 /* USER_ARTWORK */,
-    6 /* USER_ILLUST */,
-    7 /* USER_MANGA */,
     8 /* USER_BOOKMARK */
   ].includes(type)) {
-    dom = $(OTHER_PAGE_LIST_DOM);
+    dom = $("section").find("ul").first();
+    if (!dom.length) {
+      dom = $(BOOKMARK_USER_PAGE_ILLUSTRATION_LIST_SELECTOR);
+    }
+  } else if ([
+    5 /* USER_ARTWORK */,
+    6 /* USER_ILLUST */,
+    7 /* USER_MANGA */
+  ].includes(type)) {
+    dom = $(".__top_side_menu_body").find("ul").last();
+    if (!dom.length) {
+      dom = $(BOOKMARK_USER_PAGE_ILLUSTRATION_LIST_SELECTOR);
+    }
   }
-  if (dom) {
+  if (dom.length) {
     return dom;
   } else {
     throw new Error(
-      `Illustrations list DOM not found. Please create a new issue here: ${"https://github.com/LolipopJ/PixivPreviewer/issues"}`
+      `Illustrations list DOM not found in current page: ${location.href}. Please create a new issue here: ${"https://github.com/LolipopJ/PixivPreviewer/issues"}`
     );
   }
 }
