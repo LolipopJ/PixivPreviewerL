@@ -1,4 +1,5 @@
 import {
+  AI_ASSISTED_TAGS,
   g_defaultSettings,
   g_loadingImage,
   SORT_BUTTON_ID,
@@ -25,6 +26,7 @@ import type {
   Illustration,
   IllustrationDetails,
 } from "../types";
+import { checkIsAiAssisted } from "../utils/illustration";
 import { iLog } from "../utils/logger";
 import { execLimitConcurrentPromises } from "../utils/promise";
 
@@ -72,10 +74,10 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
   // 添加过滤标签列表
   const hideByTagList = hideByTagListString
     .split(",")
-    .map((tag) => tag.trim())
+    .map((tag) => tag.trim().toLowerCase())
     .filter((tag) => !!tag);
   if (aiAssistedFilter) {
-    hideByTagList.push("AI-assisted");
+    hideByTagList.push(...AI_ASSISTED_TAGS);
   }
 
   class IllustSorter {
@@ -269,7 +271,7 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
 
             if ((hideByTag || aiAssistedFilter) && hideByTagList.length) {
               for (const tag of illustration.tags) {
-                if (hideByTagList.includes(tag)) {
+                if (hideByTagList.includes(tag.toLowerCase())) {
                   return false;
                 }
               }
@@ -334,7 +336,7 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
         const isR18 = tags.includes("R-18");
         const isUgoira = illustType === IllustType.UGOIRA;
         const isAi = aiType === AiType.AI;
-        const isAiAssisted = tags.includes("AI-assisted");
+        const isAiAssisted = checkIsAiAssisted(tags);
 
         const listItem = document.createElement("li");
 
