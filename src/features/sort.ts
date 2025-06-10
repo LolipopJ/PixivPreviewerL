@@ -42,8 +42,8 @@ type LoadIllustSortOptions = Pick<
   | "aiAssistedFilter"
 > & { csrfToken: string };
 
-const TAG_PAGE_LIST_DOM = "ul.sc-98699d11-1.hHLaTl";
-const OTHER_PAGE_LIST_DOM = "ul.sc-bf8cea3f-1.bCxfvI";
+const TAG_PAGE_ILLUSTRATION_LIST_SELECTOR = "ul.sc-98699d11-1.hHLaTl";
+const BOOKMARK_USER_PAGE_ILLUSTRATION_LIST_SELECTOR = "ul.sc-bf8cea3f-1.bCxfvI";
 
 const USER_ARTWORKS_CACHE_PREFIX = "PIXIV_PREVIEWER_USER_ARTWORKS_";
 const USER_TYPE_ARTWORKS_PER_PAGE = 48;
@@ -518,25 +518,39 @@ function getIllustrationsListDom(type: IllustSortType) {
       IllustSortType.TAG_MANGA,
     ].includes(type)
   ) {
-    dom = $(TAG_PAGE_LIST_DOM);
+    dom = $("section").find("ul").first();
+    if (!dom.length) {
+      dom = $(TAG_PAGE_ILLUSTRATION_LIST_SELECTOR);
+    }
   } else if (
     [
       IllustSortType.BOOKMARK_NEW,
       IllustSortType.BOOKMARK_NEW_R18,
-      IllustSortType.USER_ARTWORK,
-      IllustSortType.USER_ILLUST,
-      IllustSortType.USER_MANGA,
       IllustSortType.USER_BOOKMARK,
     ].includes(type)
   ) {
-    dom = $(OTHER_PAGE_LIST_DOM);
+    dom = $("section").find("ul").first();
+    if (!dom.length) {
+      dom = $(BOOKMARK_USER_PAGE_ILLUSTRATION_LIST_SELECTOR);
+    }
+  } else if (
+    [
+      IllustSortType.USER_ARTWORK,
+      IllustSortType.USER_ILLUST,
+      IllustSortType.USER_MANGA,
+    ].includes(type)
+  ) {
+    dom = $(".__top_side_menu_body").find("ul").last();
+    if (!dom.length) {
+      dom = $(BOOKMARK_USER_PAGE_ILLUSTRATION_LIST_SELECTOR);
+    }
   }
 
-  if (dom) {
+  if (dom.length) {
     return dom;
   } else {
     throw new Error(
-      `Illustrations list DOM not found. Please create a new issue here: ${process.env.BUG_REPORT_PAGE}`
+      `Illustrations list DOM not found in current page: ${location.href}. Please create a new issue here: ${process.env.BUG_REPORT_PAGE}`
     );
   }
 }
