@@ -31,7 +31,7 @@ export interface GlobalSettings {
   version: string;
 }
 
-export interface Illustration {
+export interface IllustrationListItem {
   /** AI 生成类型 */
   aiType: AiType;
   alt: string;
@@ -71,7 +71,35 @@ export interface Illustration {
   xRestrict: number;
 }
 
-export interface IllustrationDetails extends Illustration {
+export interface IllustrationDetails {
+  aiType: AiType;
+  alt: string;
+  /** 当前用户的收藏作品 ID，不为空时表示已收藏作品 */
+  bookmarkId?: string;
   /** 作品收藏数 */
-  bookmark_user_total: number;
+  bookmarkUserTotal: number;
+  comment: string;
+  commentHtml: string;
+  height: string;
+  id: string;
+  pageCount: string;
+  restrict: string;
+  /** 作品重上传时间戳（秒） */
+  reuploadTimestamp?: number;
+  shareText: string;
+  sl: number;
+  tags: string[];
+  title: string;
+  type: IllustType;
+  ugoiraMeta?: {
+    frames: { delay: number; file: string }[];
+    mime_type: string;
+    src: string;
+  };
+  /** 作品上传时间戳（秒） */
+  uploadTimestamp: number;
+  url: string;
+  userId: string;
+  width: string;
+  xRestrict: string;
 }

@@ -4,6 +4,7 @@ import {
 } from "../databases";
 import type { IllustrationDetails } from "../types";
 import { iLog } from "../utils/logger";
+import { convertObjectKeysFromSnakeToCamel } from "../utils/utils";
 import request, {
   type PixivStandardResponse,
   requestWithRetry,
@@ -17,7 +18,7 @@ export const getIllustrationDetailsWithCache = async (
   let illustDetails = await getCachedIllustrationDetails(id);
 
   if (illustDetails) {
-    iLog.d(`Use cached details for illustration ${id}`, illustDetails);
+    iLog.d(`Use cached details of illustration ${id}`, illustDetails);
   } else {
     const requestUrl = `/touch/ajax/illust/details?illust_id=${id}`;
     const getIllustDetailsRes = retry
@@ -34,12 +35,14 @@ export const getIllustrationDetailsWithCache = async (
       : await request({ url: requestUrl });
 
     if (getIllustDetailsRes.status === 200) {
-      illustDetails = (
-        getIllustDetailsRes.response as PixivStandardResponse<{
-          illust_details: IllustrationDetails;
-        }>
-      ).body.illust_details;
-
+      // 解析作品详细信息，统一最外层键命名为小驼峰（例如 bookmark_user_total -> bookmarkUserTotal）
+      illustDetails = convertObjectKeysFromSnakeToCamel(
+        (
+          getIllustDetailsRes.response as PixivStandardResponse<{
+            illust_details: IllustrationDetails;
+          }>
+        ).body.illust_details
+      );
       cacheIllustrationDetails([illustDetails]);
     } else {
       illustDetails = null;
@@ -70,7 +73,6 @@ const getUserIllustrations = async (userId: string) => {
   };
 };
 
-const USER_ARTWORKS_CACHE_PREFIX = "PIXIV_PREVIEWER_USER_ARTWORKS_";
 /** 从 Session Storage 或接口获取指定用户的作品列表 */
 export const getUserIllustrationsWithCache = async (
   userId: string,
@@ -81,7 +83,7 @@ export const getUserIllustrationsWithCache = async (
     manga: [],
     artworks: [],
   };
-  const userIllustrationsCacheKey = `${USER_ARTWORKS_CACHE_PREFIX}${userId}`;
+  const userIllustrationsCacheKey = `PIXIV_PREVIEWER_CACHED_ARTWORKS_OF_USER_${userId}`;
   try {
     const userIllustrationsCacheString = sessionStorage.getItem(
       userIllustrationsCacheKey
@@ -92,7 +94,7 @@ export const getUserIllustrationsWithCache = async (
     userIllustrations = JSON.parse(userIllustrationsCacheString);
   } catch (error) {
     iLog.i(
-      `Illustrations of current user is not available in session storage, re-getting...`,
+      `Get illustrations of current user from session storage failed, re-getting...`,
       error
     );
     onRequesting?.();

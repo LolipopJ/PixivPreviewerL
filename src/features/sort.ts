@@ -6,7 +6,7 @@ import {
   SORT_EVENT_NAME,
   SORT_NEXT_PAGE_EVENT_NAME,
 } from "../constants";
-import { AiType, IllustSortOrder, IllustSortType, IllustType } from "../enums";
+import { AiType, IllustSortOrder, IllustSortType } from "../enums";
 import Texts from "../i18n";
 import heartIcon from "../icons/heart.svg";
 import heartFilledIcon from "../icons/heart-filled.svg";
@@ -18,12 +18,13 @@ import {
   type PixivStandardResponse,
   requestWithRetry,
 } from "../services";
-import type {
-  GlobalSettings,
-  Illustration,
-  IllustrationDetails,
-} from "../types";
-import { checkIsAiAssisted } from "../utils/illustration";
+import type { GlobalSettings, IllustrationListItem } from "../types";
+import {
+  checkIsAiAssisted,
+  checkIsAiGenerated,
+  checkIsR18,
+  checkIsUgoira,
+} from "../utils/illustration";
 import { iLog } from "../utils/logger";
 import { execLimitConcurrentPromises } from "../utils/promise";
 
@@ -81,7 +82,7 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
 
   class IllustSorter {
     type: IllustSortType;
-    illustrations: IllustrationDetails[];
+    illustrations: (IllustrationListItem & { bookmarkUserTotal: number })[];
     sorting: boolean = false;
     nextSortPage: number;
     listElement: JQuery<HTMLUListElement> = $();
@@ -157,7 +158,7 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
 
       try {
         //#region 获取作品分页列表
-        let illustrations: Illustration[] = [];
+        let illustrations: IllustrationListItem[] = [];
         const startPage = Number(searchParams.get("p") ?? 1);
         this.nextSortPage = startPage + pageCount;
 
@@ -232,8 +233,9 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
         //#endregion
 
         //#region 获取作品详情信息，合并到列表中
-        const getDetailedIllustrationPromises: (() => Promise<IllustrationDetails>)[] =
-          [];
+        const getDetailedIllustrationPromises: (() => Promise<
+          IllustrationListItem & { bookmarkUserTotal: number }
+        >)[] = [];
         for (let i = 0; i < illustrations.length; i += 1) {
           const illustration = illustrations[i];
           const illustrationId = illustration.id;
@@ -254,9 +256,8 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
             );
             return {
               ...illustration,
-              bookmark_user_total:
-                illustrationDetails?.bookmark_user_total ?? -1,
-            } as IllustrationDetails;
+              bookmarkUserTotal: illustrationDetails?.bookmarkUserTotal ?? -1,
+            };
           });
         }
         const detailedIllustrations = await execLimitConcurrentPromises(
@@ -285,7 +286,7 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
               }
             }
 
-            return illustration.bookmark_user_total >= favFilter;
+            return illustration.bookmarkUserTotal >= favFilter;
           }
         );
         //#endregion
@@ -295,7 +296,7 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
         const sortedIllustrations =
           orderType === IllustSortOrder.BY_BOOKMARK_COUNT
             ? filteredIllustrations.sort(
-                (a, b) => b.bookmark_user_total - a.bookmark_user_total
+                (a, b) => b.bookmarkUserTotal - a.bookmarkUserTotal
               )
             : filteredIllustrations;
         iLog.d("Filtered and sorted illustrations:", sortedIllustrations);
@@ -329,8 +330,7 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
         aiType,
         alt,
         bookmarkData,
-        bookmark_user_total,
-        // createDate,
+        bookmarkUserTotal,
         id,
         illustType,
         pageCount,
@@ -341,9 +341,9 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
         userId,
         userName,
       } of this.illustrations) {
-        const isR18 = tags.includes("R-18");
-        const isUgoira = illustType === IllustType.UGOIRA;
-        const isAi = aiType === AiType.AI;
+        const isR18 = checkIsR18(tags);
+        const isUgoira = checkIsUgoira(illustType);
+        const isAi = checkIsAiGenerated(aiType);
         const isAiAssisted = checkIsAiAssisted(tags);
 
         const listItem = document.createElement("li");
@@ -381,9 +381,9 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
           ${isR18 ? '<div style="padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: rgb(255, 64, 96); font-weight: bold; line-height: 16px; user-select: none;">R-18</div>' : ""}
           ${
             isAi
-              ? '<div style="padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: #1d4ed8; font-weight: bold; line-height: 16px; user-select: none;">AI</div>'
+              ? '<div style="padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: rgb(29, 78, 216); font-weight: bold; line-height: 16px; user-select: none;">AI 生成</div>'
               : isAiAssisted
-                ? '<div style="padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: #6d28d9; font-weight: bold; line-height: 16px; user-select: none;">AI-辅助</div>'
+                ? '<div style="padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: rgb(109, 40, 217); font-weight: bold; line-height: 16px; user-select: none;">AI 辅助</div>'
                 : ""
           }
           ${
@@ -404,7 +404,7 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
           "position: absolute; top: 154px; left: 0px; right: 0px; display: flex; align-items: center; padding: 0 4px 4px; pointer-events: none; font-size: 12px;";
         // TODO: 支持收藏 / 取消收藏作品
         illustrationToolbar.innerHTML = `
-          <div style="padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: ${bookmark_user_total > 50000 ? "#9f1239" : bookmark_user_total > 10000 ? "#dc2626" : bookmark_user_total > 5000 ? "#1d4ed8" : bookmark_user_total > 1000 ? "#15803d" : "#475569"}; font-weight: bold; line-height: 16px; user-select: none;">❤ ${bookmark_user_total}</div>
+          <div style="padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: ${bookmarkUserTotal > 50000 ? "rgb(159, 18, 57)" : bookmarkUserTotal > 10000 ? "rgb(220, 38, 38)" : bookmarkUserTotal > 5000 ? "rgb(29, 78, 216)" : bookmarkUserTotal > 1000 ? "rgb(21, 128, 61)" : "rgb(71, 85, 105)"}; font-weight: bold; line-height: 16px; user-select: none;">❤ ${bookmarkUserTotal}</div>
           <div style="margin-left: auto;">${bookmarkData ? heartFilledIcon : heartIcon}</div>
         `;
 
@@ -647,7 +647,7 @@ function getIllustrationsFromResponse(
     return (
       (
         response as PixivStandardResponse<{
-          illustManga: { data: Illustration[] };
+          illustManga: { data: IllustrationListItem[] };
         }>
       ).body.illustManga.data ?? []
     );
@@ -655,7 +655,7 @@ function getIllustrationsFromResponse(
     return (
       (
         response as PixivStandardResponse<{
-          illust: { data: Illustration[] };
+          illust: { data: IllustrationListItem[] };
         }>
       ).body.illust.data ?? []
     );
@@ -663,7 +663,7 @@ function getIllustrationsFromResponse(
     return (
       (
         response as PixivStandardResponse<{
-          manga: { data: Illustration[] };
+          manga: { data: IllustrationListItem[] };
         }>
       ).body.manga.data ?? []
     );
@@ -675,7 +675,7 @@ function getIllustrationsFromResponse(
     return (
       (
         response as PixivStandardResponse<{
-          thumbnails: { illust: Illustration[] };
+          thumbnails: { illust: IllustrationListItem[] };
         }>
       ).body.thumbnails.illust ?? []
     );
@@ -690,7 +690,7 @@ function getIllustrationsFromResponse(
     return Object.values(
       (
         response as PixivStandardResponse<{
-          works: Record<string, Illustration>;
+          works: Record<string, IllustrationListItem>;
         }>
       ).body.works
     );

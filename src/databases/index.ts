@@ -6,9 +6,9 @@ const INDEX_DB_VERSION = 1;
 
 const ILLUSTRATION_DETAILS_CACHE_TABLE_KEY = "illustrationDetailsCache";
 /** 缓存过期时间 */
-const ILLUSTRATION_DETAILS_CACHE_TIME = 1000 * 60 * 60 * 12; // 12 小时
+const ILLUSTRATION_DETAILS_CACHE_TIME = 1000 * 60 * 60 * 6; // 6 小时
 /** 不添加缓存的新作品发布时间 */
-const NEW_ILLUSTRATION_NOT_CACHE_TIME = 1000 * 60 * 60 * 6; // 6 小时
+const NEW_ILLUSTRATION_NOT_CACHE_TIME = 1000 * 60 * 60 * 1; // 1 小时
 
 export interface IllustrationDetailsCache extends IllustrationDetails {
   cacheDate: Date;
@@ -44,12 +44,9 @@ export const cacheIllustrationDetails = (
       .objectStore(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY);
 
     illustrations.forEach((illustration) => {
-      const createDate = new Date(illustration.createDate);
+      const uploadTimestamp = illustration.uploadTimestamp * 1000;
 
-      if (
-        now.getTime() - createDate.getTime() >
-        NEW_ILLUSTRATION_NOT_CACHE_TIME
-      ) {
+      if (now.getTime() - uploadTimestamp > NEW_ILLUSTRATION_NOT_CACHE_TIME) {
         // 作品发布超过一定时间，添加缓存
         const illustrationDetails: IllustrationDetailsCache = {
           ...illustration,

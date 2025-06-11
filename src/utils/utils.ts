@@ -8,3 +8,18 @@ export const getRandomInt = (min: number, max: number) => {
 
   return Math.floor(Math.random() * (max - min + 1)) + min;
 };
+
+export const convertObjectKeysFromSnakeToCamel = <T = Record<string, unknown>>(
+  obj: T
+) => {
+  function snakeToCamel(snake: string) {
+    return snake.replace(/_([a-z])/g, (result) => result[1].toUpperCase());
+  }
+
+  const newResponse = {} as T;
+  for (const key in obj) {
+    newResponse[snakeToCamel(key)] = obj[key];
+  }
+
+  return newResponse;
+};

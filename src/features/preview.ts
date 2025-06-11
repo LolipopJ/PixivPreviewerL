@@ -11,14 +11,20 @@ import pageIcon from "../icons/page.svg";
 import {
   downloadIllust,
   getIllustPagesRequestUrl,
-  GetIllustPagesResponse,
+  type GetIllustPagesResponse,
+  getIllustrationDetailsWithCache,
   getUgoiraMetadataRequestUrl,
-  GetUgoiraMetaResponse,
-  GetUgoiraMetaResponseData,
+  type GetUgoiraMetaResponse,
+  type GetUgoiraMetaResponseData,
 } from "../services";
-import { GlobalSettings } from "../types";
+import type { GlobalSettings, IllustrationDetails } from "../types";
 import debounce from "../utils/debounce";
 import { stopEventPropagation } from "../utils/event";
+import {
+  checkIsAiAssisted,
+  checkIsAiGenerated,
+  checkIsR18,
+} from "../utils/illustration";
 import { iLog } from "../utils/logger";
 import mouseMonitor from "../utils/mouse-monitor";
 import ZipImagePlayer from "../utils/ugoira-player";
@@ -87,7 +93,7 @@ export const loadIllustPreview = (
   const previewIllust = (() => {
     const previewedIllust = new PreviewedIllust();
     let currentHoveredIllustId = "";
-    let ajaxRequest = $.ajax();
+    let getIllustPagesRequest = $.ajax();
 
     // TODO: 自动清理缓存，避免占用内存过大
     const getIllustPagesCache: Record<
@@ -109,7 +115,7 @@ export const loadIllustPreview = (
       illustType: IllustType;
     }) => {
       // 停止正在处理的获取元数据请求
-      ajaxRequest.abort();
+      getIllustPagesRequest.abort();
 
       // 更新当前鼠标悬浮作品 ID，避免异步任务结束后显示之前悬浮的作品
       currentHoveredIllustId = illustId;
@@ -134,7 +140,7 @@ export const loadIllustPreview = (
 
         // 根据作品的 ID 获取作品的页数和访问链接
         // 例如：`125424620` -> `https://i.pximg.net/img-master/img/2024/12/22/19/13/41/125424620_p0_master1200.jpg`
-        ajaxRequest = $.ajax(getIllustPagesRequestUrl(illustId), {
+        getIllustPagesRequest = $.ajax(getIllustPagesRequestUrl(illustId), {
           method: "GET",
           success: (data: GetIllustPagesResponse) => {
             if (data.error) {
@@ -183,7 +189,7 @@ export const loadIllustPreview = (
         }
 
         // 根据动图的 ID 获取动图的元数据
-        ajaxRequest = $.ajax(getUgoiraMetadataRequestUrl(illustId), {
+        getIllustPagesRequest = $.ajax(getUgoiraMetadataRequestUrl(illustId), {
           method: "GET",
           success: (data: GetUgoiraMetaResponse) => {
             if (data.error) {
@@ -318,6 +324,8 @@ export const loadIllustPreview = (
 class PreviewedIllust {
   /** 当前正在预览的作品的 ID */
   illustId = "";
+  /** 当前正在预览的作品的详细信息 */
+  illustDetails: IllustrationDetails | null = null;
   /** 当前正在预览的作品 DOM 元素 */
   illustElement: JQuery<HTMLElement> = $();
   /** 当前预览的作品是否加载完毕 */
@@ -365,6 +373,7 @@ class PreviewedIllust {
   /** 初始化预览组件 */
   reset() {
     this.illustId = "";
+    this.illustDetails = null;
     this.illustElement = $();
     this.illustLoaded = false;
 
@@ -403,6 +412,7 @@ class PreviewedIllust {
         "align-items": "center",
         "justify-content": "flex-end",
       })
+      .hide()
       .appendTo(this.previewWrapperElement);
     this.pageCountText = $(document.createElement("span"))
       .attr({ id: "pp-page-count__text" })
@@ -444,7 +454,6 @@ class PreviewedIllust {
         gap: "4px",
       })
       .append(`${downloadIcon}<span>原图</span>`)
-      .hide()
       .prependTo(this.previewWrapperHeader);
     this.previewLoadingElement = $(loadingIcon)
       .attr({ id: "pp-loading" })
@@ -506,6 +515,9 @@ class PreviewedIllust {
 
     // 初始化图片显示
     this.updatePreviewImage();
+
+    // 获取图片详情信息并展示
+    this.showIllustrationDetails();
   }
 
   bindPreviewImageEvents() {
@@ -551,7 +563,7 @@ class PreviewedIllust {
     this.previewLoadingElement.hide();
     this.previewImageElement.show();
 
-    this.downloadOriginalElement.show();
+    this.previewWrapperHeader.show();
     if (this.pageCount > 1) {
       this.pageCountElement.show();
     }
@@ -687,6 +699,8 @@ class PreviewedIllust {
     });
 
     this.bindUgoiraPreviewEvents();
+
+    this.showIllustrationDetails();
   }
 
   createUgoiraPlayer(options) {
@@ -740,6 +754,87 @@ class PreviewedIllust {
     });
   };
   //#endregion
+
+  async showIllustrationDetails() {
+    const illustrationDetails = await getIllustrationDetailsWithCache(
+      this.illustId
+    );
+
+    if (illustrationDetails && illustrationDetails.id === this.illustId) {
+      const { aiType, bookmarkUserTotal, tags } = illustrationDetails;
+      const isR18 = checkIsR18(tags);
+      const isAi = checkIsAiGenerated(aiType);
+      const isAiAssisted = checkIsAiAssisted(tags);
+
+      const illustrationDetailsElements: JQuery<HTMLElement>[] = [];
+
+      const defaultElementCss = {
+        height: "20px",
+        "border-radius": "10px",
+        color: "rgb(245, 245, 245)",
+        background: "rgba(0, 0, 0, 0.32)",
+        "font-size": "10px",
+        "line-height": "1",
+        "font-weight": "bold",
+        padding: "3px 6px",
+        display: "flex",
+        "align-items": "center",
+        gap: "4px",
+      };
+
+      if (isR18) {
+        illustrationDetailsElements.push(
+          $(document.createElement("div"))
+            .css({
+              ...defaultElementCss,
+              background: "rgb(255, 64, 96)",
+            })
+            .text("R-18")
+        );
+      }
+
+      if (isAi) {
+        illustrationDetailsElements.push(
+          $(document.createElement("div"))
+            .css({
+              ...defaultElementCss,
+              background: "rgb(29, 78, 216)",
+            })
+            .text("AI 生成")
+        );
+      } else if (isAiAssisted) {
+        illustrationDetailsElements.push(
+          $(document.createElement("div"))
+            .css({
+              ...defaultElementCss,
+              background: "rgb(109, 40, 217)",
+            })
+            .text("AI 辅助")
+        );
+      }
+
+      illustrationDetailsElements.push(
+        $(document.createElement("div"))
+          .css({
+            ...defaultElementCss,
+            background:
+              bookmarkUserTotal > 50000
+                ? "rgb(159, 18, 57)"
+                : bookmarkUserTotal > 10000
+                  ? "rgb(220, 38, 38)"
+                  : bookmarkUserTotal > 5000
+                    ? "rgb(29, 78, 216)"
+                    : bookmarkUserTotal > 1000
+                      ? "rgb(21, 128, 61)"
+                      : "rgb(71, 85, 105)",
+            "margin-right": "auto",
+          })
+          .text(`❤ ${bookmarkUserTotal}`)
+      );
+
+      this.previewWrapperHeader.prepend(illustrationDetailsElements);
+    }
+  }
 
   /** 初始化显示预览容器 */
   initPreviewWrapper() {
