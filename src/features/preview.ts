@@ -421,10 +421,10 @@ class PreviewedIllust {
       .attr({ id: "pp-page-count" })
       .css({
         height: "20px",
-        "border-radius": "10px",
+        "border-radius": "12px",
         color: "white",
         background: "rgba(0, 0, 0, 0.32)",
-        "font-size": "10px",
+        "font-size": "12px",
         "line-height": "1",
         "font-weight": "bold",
         padding: "3px 6px",
@@ -441,10 +441,10 @@ class PreviewedIllust {
       .attr({ id: "pp-download-original" })
       .css({
         height: "20px",
-        "border-radius": "10px",
+        "border-radius": "12px",
         color: "white",
         background: "rgba(0, 0, 0, 0.32)",
-        "font-size": "10px",
+        "font-size": "12px",
         "line-height": "1",
         "font-weight": "bold",
         padding: "3px 6px",
@@ -761,7 +761,8 @@ class PreviewedIllust {
     );
 
     if (illustrationDetails && illustrationDetails.id === this.illustId) {
-      const { aiType, bookmarkUserTotal, tags } = illustrationDetails;
+      const { aiType, bookmarkId, bookmarkUserTotal, tags } =
+        illustrationDetails;
       const isR18 = checkIsR18(tags);
       const isAi = checkIsAiGenerated(aiType);
       const isAiAssisted = checkIsAiAssisted(tags);
@@ -770,10 +771,10 @@ class PreviewedIllust {
 
       const defaultElementCss = {
         height: "20px",
-        "border-radius": "10px",
+        "border-radius": "12px",
         color: "rgb(245, 245, 245)",
         background: "rgba(0, 0, 0, 0.32)",
-        "font-size": "10px",
+        "font-size": "12px",
         "line-height": "1",
         "font-weight": "bold",
         padding: "3px 6px",
@@ -829,7 +830,7 @@ class PreviewedIllust {
                       : "rgb(71, 85, 105)",
             "margin-right": "auto",
           })
-          .text(`❤ ${bookmarkUserTotal}`)
+          .text(`${bookmarkId ? "💖" : "❤"} ${bookmarkUserTotal}`)
       );
 
       this.previewWrapperHeader.prepend(illustrationDetailsElements);
