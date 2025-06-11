@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             1.2.0-2025/6/11
+// @version             1.2.0-2025/6/12
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0
@@ -1191,10 +1191,10 @@ var PreviewedIllust = class {
     this.pageCountText = $(document.createElement("span")).attr({ id: "pp-page-count__text" }).text("1/1");
     this.pageCountElement = $(document.createElement("div")).attr({ id: "pp-page-count" }).css({
       height: "20px",
-      "border-radius": "10px",
+      "border-radius": "12px",
       color: "white",
       background: "rgba(0, 0, 0, 0.32)",
-      "font-size": "10px",
+      "font-size": "12px",
       "line-height": "1",
       "font-weight": "bold",
       padding: "3px 6px",
@@ -1205,10 +1205,10 @@ var PreviewedIllust = class {
     }).append(page_default).append(this.pageCountText).hide().prependTo(this.previewWrapperHeader);
     this.downloadOriginalElement = $(document.createElement("a")).attr({ id: "pp-download-original" }).css({
       height: "20px",
-      "border-radius": "10px",
+      "border-radius": "12px",
       color: "white",
       background: "rgba(0, 0, 0, 0.32)",
-      "font-size": "10px",
+      "font-size": "12px",
       "line-height": "1",
       "font-weight": "bold",
       padding: "3px 6px",
@@ -1433,17 +1433,17 @@ var PreviewedIllust = class {
       this.illustId
     );
     if (illustrationDetails && illustrationDetails.id === this.illustId) {
-      const { aiType, bookmarkUserTotal, tags } = illustrationDetails;
+      const { aiType, bookmarkId, bookmarkUserTotal, tags } = illustrationDetails;
       const isR18 = checkIsR18(tags);
       const isAi = checkIsAiGenerated(aiType);
       const isAiAssisted = checkIsAiAssisted(tags);
       const illustrationDetailsElements = [];
       const defaultElementCss = {
         height: "20px",
-        "border-radius": "10px",
+        "border-radius": "12px",
         color: "rgb(245, 245, 245)",
         background: "rgba(0, 0, 0, 0.32)",
-        "font-size": "10px",
+        "font-size": "12px",
         "line-height": "1",
         "font-weight": "bold",
         padding: "3px 6px",
@@ -1479,7 +1479,7 @@ var PreviewedIllust = class {
           ...defaultElementCss,
           background: bookmarkUserTotal > 5e4 ? "rgb(159, 18, 57)" : bookmarkUserTotal > 1e4 ? "rgb(220, 38, 38)" : bookmarkUserTotal > 5e3 ? "rgb(29, 78, 216)" : bookmarkUserTotal > 1e3 ? "rgb(21, 128, 61)" : "rgb(71, 85, 105)",
           "margin-right": "auto"
-        }).text(`\u2764 ${bookmarkUserTotal}`)
+        }).text(`${bookmarkId ? "\u{1F496}" : "\u2764"} ${bookmarkUserTotal}`)
       );
       this.previewWrapperHeader.prepend(illustrationDetailsElements);
     }
@@ -1959,7 +1959,7 @@ var loadIllustSort = (options) => {
         illustrationToolbar.style = "position: absolute; top: 154px; left: 0px; right: 0px; display: flex; align-items: center; padding: 0 4px 4px; pointer-events: none; font-size: 12px;";
         illustrationToolbar.innerHTML = `
           <div style="padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: ${bookmarkUserTotal > 5e4 ? "rgb(159, 18, 57)" : bookmarkUserTotal > 1e4 ? "rgb(220, 38, 38)" : bookmarkUserTotal > 5e3 ? "rgb(29, 78, 216)" : bookmarkUserTotal > 1e3 ? "rgb(21, 128, 61)" : "rgb(71, 85, 105)"}; font-weight: bold; line-height: 16px; user-select: none;">\u2764 ${bookmarkUserTotal}</div>
-          <div style="margin-left: auto;">${bookmarkData ? heart_filled_default : heart_default}</div>
+          <div style="margin-left: auto; display: none;">${bookmarkData ? heart_filled_default : heart_default}</div>
         `;
         const illustrationTitle = document.createElement("div");
         illustrationTitle.innerHTML = title;
