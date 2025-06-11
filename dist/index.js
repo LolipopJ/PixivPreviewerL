@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             1.1.4-2025/6/11
+// @version             1.2.0-2025/6/11
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0
@@ -20,7 +20,7 @@
 // ==/UserScript==
 
 // src/constants/index.ts
-var g_version = "1.1.4";
+var g_version = "1.2.0";
 var g_defaultSettings = {
   enablePreview: true,
   enableAnimePreview: true,
@@ -129,6 +129,16 @@ function DoLog(level = 3 /* Info */, ...msgOrElement) {
 var pause = (ms) => {
   return new Promise((resolve) => setTimeout(resolve, ms));
 };
+var convertObjectKeysFromSnakeToCamel = (obj) => {
+  function snakeToCamel(snake) {
+    return snake.replace(/_([a-z])/g, (result) => result[1].toUpperCase());
+  }
+  const newResponse = {};
+  for (const key in obj) {
+    newResponse[snakeToCamel(key)] = obj[key];
+  }
+  return newResponse;
+};
 
 // src/services/request.ts
 var xmlHttpRequest = window.GM.xmlHttpRequest;
@@ -204,8 +214,8 @@ var downloadFile = (url, filename, options = {}) => {
 var INDEX_DB_NAME = "PIXIV_PREVIEWER_L";
 var INDEX_DB_VERSION = 1;
 var ILLUSTRATION_DETAILS_CACHE_TABLE_KEY = "illustrationDetailsCache";
-var ILLUSTRATION_DETAILS_CACHE_TIME = 1e3 * 60 * 60 * 12;
-var NEW_ILLUSTRATION_NOT_CACHE_TIME = 1e3 * 60 * 60 * 6;
+var ILLUSTRATION_DETAILS_CACHE_TIME = 1e3 * 60 * 60 * 6;
+var NEW_ILLUSTRATION_NOT_CACHE_TIME = 1e3 * 60 * 60 * 1;
 var request2 = indexedDB.open(INDEX_DB_NAME, INDEX_DB_VERSION);
 var db;
 request2.onupgradeneeded = (event) => {
@@ -225,8 +235,8 @@ var cacheIllustrationDetails = (illustrations, now = /* @__PURE__ */ new Date())
   return new Promise(() => {
     const cachedIllustrationDetailsObjectStore = db.transaction(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY, "readwrite").objectStore(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY);
     illustrations.forEach((illustration) => {
-      const createDate = new Date(illustration.createDate);
-      if (now.getTime() - createDate.getTime() > NEW_ILLUSTRATION_NOT_CACHE_TIME) {
+      const uploadTimestamp = illustration.uploadTimestamp * 1e3;
+      if (now.getTime() - uploadTimestamp > NEW_ILLUSTRATION_NOT_CACHE_TIME) {
         const illustrationDetails = {
           ...illustration,
           cacheDate: now
@@ -274,7 +284,7 @@ var getCachedIllustrationDetails = (id, now = /* @__PURE__ */ new Date()) => {
 var getIllustrationDetailsWithCache = async (id, retry = false) => {
   let illustDetails = await getCachedIllustrationDetails(id);
   if (illustDetails) {
-    iLog.d(`Use cached details for illustration ${id}`, illustDetails);
+    iLog.d(`Use cached details of illustration ${id}`, illustDetails);
   } else {
     const requestUrl = `/touch/ajax/illust/details?illust_id=${id}`;
     const getIllustDetailsRes = retry ? await requestWithRetry({
@@ -288,7 +298,9 @@ var getIllustrationDetailsWithCache = async (id, retry = false) => {
       }
     }) : await request_default({ url: requestUrl });
     if (getIllustDetailsRes.status === 200) {
-      illustDetails = getIllustDetailsRes.response.body.illust_details;
+      illustDetails = convertObjectKeysFromSnakeToCamel(
+        getIllustDetailsRes.response.body.illust_details
+      );
       cacheIllustrationDetails([illustDetails]);
     } else {
       illustDetails = null;
@@ -310,14 +322,13 @@ var getUserIllustrations = async (userId) => {
     artworks
   };
 };
-var USER_ARTWORKS_CACHE_PREFIX = "PIXIV_PREVIEWER_USER_ARTWORKS_";
 var getUserIllustrationsWithCache = async (userId, { onRequesting } = {}) => {
   let userIllustrations = {
     illusts: [],
     manga: [],
     artworks: []
   };
-  const userIllustrationsCacheKey = `${USER_ARTWORKS_CACHE_PREFIX}${userId}`;
+  const userIllustrationsCacheKey = `PIXIV_PREVIEWER_CACHED_ARTWORKS_OF_USER_${userId}`;
   try {
     const userIllustrationsCacheString = sessionStorage.getItem(
       userIllustrationsCacheKey
@@ -327,7 +338,7 @@ var getUserIllustrationsWithCache = async (userId, { onRequesting } = {}) => {
     userIllustrations = JSON.parse(userIllustrationsCacheString);
   } catch (error) {
     iLog.i(
-      `Illustrations of current user is not available in session storage, re-getting...`,
+      `Get illustrations of current user from session storage failed, re-getting...`,
       error
     );
     onRequesting?.();
@@ -377,6 +388,31 @@ var debounce_default = debounce;
 // src/utils/event.ts
 var stopEventPropagation = (event) => {
   event.stopPropagation();
+};
+
+// src/utils/illustration.ts
+var checkIsR18 = (tags) => {
+  const R18_TAGS = ["r-18", "r18"];
+  for (const tag of tags) {
+    if (R18_TAGS.includes(tag.toLowerCase())) {
+      return true;
+    }
+  }
+  return false;
+};
+var checkIsUgoira = (illustType) => {
+  return illustType === 2 /* UGOIRA */;
+};
+var checkIsAiGenerated = (aiType) => {
+  return aiType === 2 /* AI */;
+};
+var checkIsAiAssisted = (tags) => {
+  for (const tag of tags) {
+    if (AI_ASSISTED_TAGS.includes(tag.toLowerCase())) {
+      return true;
+    }
+  }
+  return false;
 };
 
 // src/utils/mouse-monitor.ts
@@ -913,7 +949,7 @@ var loadIllustPreview = (options) => {
   const previewIllust = (() => {
     const previewedIllust = new PreviewedIllust();
     let currentHoveredIllustId = "";
-    let ajaxRequest = $.ajax();
+    let getIllustPagesRequest = $.ajax();
     const getIllustPagesCache = {};
     const getUgoiraMetadataCache = {};
     return ({
@@ -922,7 +958,7 @@ var loadIllustPreview = (options) => {
       previewPage = 1,
       illustType
     }) => {
-      ajaxRequest.abort();
+      getIllustPagesRequest.abort();
       currentHoveredIllustId = illustId;
       if (illustType === 2 /* UGOIRA */ && !enableAnimePreview) {
         iLog.i("\u52A8\u56FE\u9884\u89C8\u5DF2\u7981\u7528\uFF0C\u8DF3\u8FC7");
@@ -938,7 +974,7 @@ var loadIllustPreview = (options) => {
           });
           return;
         }
-        ajaxRequest = $.ajax(getIllustPagesRequestUrl(illustId), {
+        getIllustPagesRequest = $.ajax(getIllustPagesRequestUrl(illustId), {
           method: "GET",
           success: (data) => {
             if (data.error) {
@@ -978,7 +1014,7 @@ var loadIllustPreview = (options) => {
           });
           return;
         }
-        ajaxRequest = $.ajax(getUgoiraMetadataRequestUrl(illustId), {
+        getIllustPagesRequest = $.ajax(getUgoiraMetadataRequestUrl(illustId), {
           method: "GET",
           success: (data) => {
             if (data.error) {
@@ -1080,6 +1116,8 @@ var loadIllustPreview = (options) => {
 var PreviewedIllust = class {
   /** 当前正在预览的作品的 ID */
   illustId = "";
+  /** 当前正在预览的作品的详细信息 */
+  illustDetails = null;
   /** 当前正在预览的作品 DOM 元素 */
   illustElement = $();
   /** 当前预览的作品是否加载完毕 */
@@ -1120,6 +1158,7 @@ var PreviewedIllust = class {
   /** 初始化预览组件 */
   reset() {
     this.illustId = "";
+    this.illustDetails = null;
     this.illustElement = $();
     this.illustLoaded = false;
     this.regularUrls = [];
@@ -1148,7 +1187,7 @@ var PreviewedIllust = class {
       gap: "5px",
       "align-items": "center",
       "justify-content": "flex-end"
-    }).appendTo(this.previewWrapperElement);
+    }).hide().appendTo(this.previewWrapperElement);
     this.pageCountText = $(document.createElement("span")).attr({ id: "pp-page-count__text" }).text("1/1");
     this.pageCountElement = $(document.createElement("div")).attr({ id: "pp-page-count" }).css({
       height: "20px",
@@ -1177,7 +1216,7 @@ var PreviewedIllust = class {
       display: "flex",
       "align-items": "center",
       gap: "4px"
-    }).append(`${download_default}<span>\u539F\u56FE</span>`).hide().prependTo(this.previewWrapperHeader);
+    }).append(`${download_default}<span>\u539F\u56FE</span>`).prependTo(this.previewWrapperHeader);
     this.previewLoadingElement = $(loading_default).attr({ id: "pp-loading" }).css({ padding: "12px", animation: "pp-spin 1s linear infinite" }).appendTo(this.previewWrapperElement);
     this.previewImageElement = $(new Image()).attr({ id: "pp-image" }).css({
       "border-radius": `${PREVIEW_WRAPPER_BORDER_RADIUS}px`
@@ -1212,6 +1251,7 @@ var PreviewedIllust = class {
     this.preloadImages();
     this.bindPreviewImageEvents();
     this.updatePreviewImage();
+    this.showIllustrationDetails();
   }
   bindPreviewImageEvents() {
     this.previewImageElement.on("load", this.onImageLoad);
@@ -1240,7 +1280,7 @@ var PreviewedIllust = class {
     this.illustLoaded = true;
     this.previewLoadingElement.hide();
     this.previewImageElement.show();
-    this.downloadOriginalElement.show();
+    this.previewWrapperHeader.show();
     if (this.pageCount > 1) {
       this.pageCountElement.show();
     }
@@ -1343,6 +1383,7 @@ var PreviewedIllust = class {
       }
     });
     this.bindUgoiraPreviewEvents();
+    this.showIllustrationDetails();
   }
   createUgoiraPlayer(options) {
     const canvas = document.createElement("canvas");
@@ -1387,6 +1428,62 @@ var PreviewedIllust = class {
     });
   };
   //#endregion
+  async showIllustrationDetails() {
+    const illustrationDetails = await getIllustrationDetailsWithCache(
+      this.illustId
+    );
+    if (illustrationDetails && illustrationDetails.id === this.illustId) {
+      const { aiType, bookmarkUserTotal, tags } = illustrationDetails;
+      const isR18 = checkIsR18(tags);
+      const isAi = checkIsAiGenerated(aiType);
+      const isAiAssisted = checkIsAiAssisted(tags);
+      const illustrationDetailsElements = [];
+      const defaultElementCss = {
+        height: "20px",
+        "border-radius": "10px",
+        color: "rgb(245, 245, 245)",
+        background: "rgba(0, 0, 0, 0.32)",
+        "font-size": "10px",
+        "line-height": "1",
+        "font-weight": "bold",
+        padding: "3px 6px",
+        display: "flex",
+        "align-items": "center",
+        gap: "4px"
+      };
+      if (isR18) {
+        illustrationDetailsElements.push(
+          $(document.createElement("div")).css({
+            ...defaultElementCss,
+            background: "rgb(255, 64, 96)"
+          }).text("R-18")
+        );
+      }
+      if (isAi) {
+        illustrationDetailsElements.push(
+          $(document.createElement("div")).css({
+            ...defaultElementCss,
+            background: "rgb(29, 78, 216)"
+          }).text("AI \u751F\u6210")
+        );
+      } else if (isAiAssisted) {
+        illustrationDetailsElements.push(
+          $(document.createElement("div")).css({
+            ...defaultElementCss,
+            background: "rgb(109, 40, 217)"
+          }).text("AI \u8F85\u52A9")
+        );
+      }
+      illustrationDetailsElements.push(
+        $(document.createElement("div")).css({
+          ...defaultElementCss,
+          background: bookmarkUserTotal > 5e4 ? "rgb(159, 18, 57)" : bookmarkUserTotal > 1e4 ? "rgb(220, 38, 38)" : bookmarkUserTotal > 5e3 ? "rgb(29, 78, 216)" : bookmarkUserTotal > 1e3 ? "rgb(21, 128, 61)" : "rgb(71, 85, 105)",
+          "margin-right": "auto"
+        }).text(`\u2764 ${bookmarkUserTotal}`)
+      );
+      this.previewWrapperHeader.prepend(illustrationDetailsElements);
+    }
+  }
   /** 初始化显示预览容器 */
   initPreviewWrapper() {
     this.previewWrapperElement.show();
@@ -1573,16 +1670,6 @@ var heart_filled_default = '<svg viewBox="0 0 32 32" width="32" height="32">\n  
 // src/icons/play.svg
 var play_default = '<svg viewBox="0 0 24 24"\n  style="width: 48px; height: 48px; stroke: none; line-height: 0; font-size: 0px; vertical-align: middle;">\n  <circle cx="12" cy="12" r="10" style="fill: rgba(0, 0, 0, 0.32);"></circle>\n  <path d="M9,8.74841664 L9,15.2515834 C9,15.8038681 9.44771525,16.2515834 10,16.2515834\nC10.1782928,16.2515834 10.3533435,16.2039156 10.5070201,16.1135176 L16.0347118,12.8619342\nC16.510745,12.5819147 16.6696454,11.969013 16.3896259,11.4929799\nC16.3034179,11.3464262 16.1812655,11.2242738 16.0347118,11.1380658 L10.5070201,7.88648243\nC10.030987,7.60646294 9.41808527,7.76536339 9.13806578,8.24139652\nC9.04766776,8.39507316 9,8.57012386 9,8.74841664 Z" style="fill: rgb(245, 245, 245);"></path>\n</svg>';
 
-// src/utils/illustration.ts
-var checkIsAiAssisted = (tags) => {
-  for (const tag of tags) {
-    if (AI_ASSISTED_TAGS.includes(tag.toLowerCase())) {
-      return true;
-    }
-  }
-  return false;
-};
-
 // src/utils/promise.ts
 var execLimitConcurrentPromises = async (promises, limit = 48) => {
   const results = [];
@@ -1765,7 +1852,7 @@ var loadIllustSort = (options) => {
             );
             return {
               ...illustration,
-              bookmark_user_total: illustrationDetails?.bookmark_user_total ?? -1
+              bookmarkUserTotal: illustrationDetails?.bookmarkUserTotal ?? -1
             };
           });
         }
@@ -1789,12 +1876,12 @@ var loadIllustSort = (options) => {
                 }
               }
             }
-            return illustration.bookmark_user_total >= favFilter;
+            return illustration.bookmarkUserTotal >= favFilter;
           }
         );
         this.setProgress("Sorting filtered illustrations...");
         const sortedIllustrations = orderType === 0 /* BY_BOOKMARK_COUNT */ ? filteredIllustrations.sort(
-          (a, b) => b.bookmark_user_total - a.bookmark_user_total
+          (a, b) => b.bookmarkUserTotal - a.bookmarkUserTotal
         ) : filteredIllustrations;
         iLog.d("Filtered and sorted illustrations:", sortedIllustrations);
         iLog.i("Sort illustrations successfully.");
@@ -1821,8 +1908,7 @@ var loadIllustSort = (options) => {
         aiType,
         alt,
         bookmarkData,
-        bookmark_user_total,
-        // createDate,
+        bookmarkUserTotal,
         id,
         illustType,
         pageCount: pageCount2,
@@ -1833,9 +1919,9 @@ var loadIllustSort = (options) => {
         userId,
         userName
       } of this.illustrations) {
-        const isR18 = tags.includes("R-18");
-        const isUgoira = illustType === 2 /* UGOIRA */;
-        const isAi = aiType === 2 /* AI */;
+        const isR18 = checkIsR18(tags);
+        const isUgoira = checkIsUgoira(illustType);
+        const isAi = checkIsAiGenerated(aiType);
         const isAiAssisted = checkIsAiAssisted(tags);
         const listItem = document.createElement("li");
         const container = document.createElement("div");
@@ -1860,7 +1946,7 @@ var loadIllustSort = (options) => {
         illustrationMeta.style = "position: absolute; top: 0px; left: 0px; right: 0px; display: flex; align-items: flex-start; padding: 4px 4px 0; pointer-events: none; font-size: 10px;";
         illustrationMeta.innerHTML = `
           ${isR18 ? '<div style="padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: rgb(255, 64, 96); font-weight: bold; line-height: 16px; user-select: none;">R-18</div>' : ""}
-          ${isAi ? '<div style="padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: #1d4ed8; font-weight: bold; line-height: 16px; user-select: none;">AI</div>' : isAiAssisted ? '<div style="padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: #6d28d9; font-weight: bold; line-height: 16px; user-select: none;">AI-\u8F85\u52A9</div>' : ""}
+          ${isAi ? '<div style="padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: rgb(29, 78, 216); font-weight: bold; line-height: 16px; user-select: none;">AI \u751F\u6210</div>' : isAiAssisted ? '<div style="padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: rgb(109, 40, 217); font-weight: bold; line-height: 16px; user-select: none;">AI \u8F85\u52A9</div>' : ""}
           ${pageCount2 > 1 ? `
                 <div style="margin-left: auto;">
                   <div style="display: flex; justify-content: center; align-items: center; height: 20px; min-width: 20px; color: rgb(245, 245, 245); font-weight: bold; padding: 0px 6px; background: rgba(0, 0, 0, 0.32); border-radius: 10px; line-height: 10px;">
@@ -1872,7 +1958,7 @@ var loadIllustSort = (options) => {
         const illustrationToolbar = document.createElement("div");
         illustrationToolbar.style = "position: absolute; top: 154px; left: 0px; right: 0px; display: flex; align-items: center; padding: 0 4px 4px; pointer-events: none; font-size: 12px;";
         illustrationToolbar.innerHTML = `
-          <div style="padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: ${bookmark_user_total > 5e4 ? "#9f1239" : bookmark_user_total > 1e4 ? "#dc2626" : bookmark_user_total > 5e3 ? "#1d4ed8" : bookmark_user_total > 1e3 ? "#15803d" : "#475569"}; font-weight: bold; line-height: 16px; user-select: none;">\u2764 ${bookmark_user_total}</div>
+          <div style="padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: ${bookmarkUserTotal > 5e4 ? "rgb(159, 18, 57)" : bookmarkUserTotal > 1e4 ? "rgb(220, 38, 38)" : bookmarkUserTotal > 5e3 ? "rgb(29, 78, 216)" : bookmarkUserTotal > 1e3 ? "rgb(21, 128, 61)" : "rgb(71, 85, 105)"}; font-weight: bold; line-height: 16px; user-select: none;">\u2764 ${bookmarkUserTotal}</div>
           <div style="margin-left: auto;">${bookmarkData ? heart_filled_default : heart_default}</div>
         `;
         const illustrationTitle = document.createElement("div");
@@ -1968,27 +2054,27 @@ function getIllustrationsListDom(type) {
     1 /* TAG_ILLUST */,
     2 /* TAG_MANGA */
   ].includes(type)) {
-    dom = $("section").find("ul").first();
+    dom = $(TAG_PAGE_ILLUSTRATION_LIST_SELECTOR);
     if (!dom.length) {
-      dom = $(TAG_PAGE_ILLUSTRATION_LIST_SELECTOR);
+      dom = $("section").find("ul").last();
     }
   } else if ([
     3 /* BOOKMARK_NEW */,
     4 /* BOOKMARK_NEW_R18 */,
     8 /* USER_BOOKMARK */
   ].includes(type)) {
-    dom = $("section").find("ul").first();
+    dom = $(BOOKMARK_USER_PAGE_ILLUSTRATION_LIST_SELECTOR);
     if (!dom.length) {
-      dom = $(BOOKMARK_USER_PAGE_ILLUSTRATION_LIST_SELECTOR);
+      dom = $("section").find("ul").last();
     }
   } else if ([
     5 /* USER_ARTWORK */,
     6 /* USER_ILLUST */,
     7 /* USER_MANGA */
   ].includes(type)) {
-    dom = $(".__top_side_menu_body").find("ul").last();
+    dom = $(BOOKMARK_USER_PAGE_ILLUSTRATION_LIST_SELECTOR);
     if (!dom.length) {
-      dom = $(BOOKMARK_USER_PAGE_ILLUSTRATION_LIST_SELECTOR);
+      dom = $(".__top_side_menu_body").find("ul").last();
     }
   }
   if (dom.length) {
