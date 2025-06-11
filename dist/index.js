@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             1.1.4-2025/6/10
+// @version             1.1.4-2025/6/11
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0
@@ -200,6 +200,146 @@ var downloadFile = (url, filename, options = {}) => {
   });
 };
 
+// src/databases/index.ts
+var INDEX_DB_NAME = "PIXIV_PREVIEWER_L";
+var INDEX_DB_VERSION = 1;
+var ILLUSTRATION_DETAILS_CACHE_TABLE_KEY = "illustrationDetailsCache";
+var ILLUSTRATION_DETAILS_CACHE_TIME = 1e3 * 60 * 60 * 12;
+var NEW_ILLUSTRATION_NOT_CACHE_TIME = 1e3 * 60 * 60 * 6;
+var request2 = indexedDB.open(INDEX_DB_NAME, INDEX_DB_VERSION);
+var db;
+request2.onupgradeneeded = (event) => {
+  const db2 = event.target.result;
+  db2.createObjectStore(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY, {
+    keyPath: "id"
+  });
+};
+request2.onsuccess = (event) => {
+  db = event.target.result;
+  console.log("Open IndexedDB successfully:", db);
+};
+request2.onerror = (event) => {
+  iLog.e(`An error occurred while requesting IndexedDB`, event);
+};
+var cacheIllustrationDetails = (illustrations, now = /* @__PURE__ */ new Date()) => {
+  return new Promise(() => {
+    const cachedIllustrationDetailsObjectStore = db.transaction(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY, "readwrite").objectStore(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY);
+    illustrations.forEach((illustration) => {
+      const createDate = new Date(illustration.createDate);
+      if (now.getTime() - createDate.getTime() > NEW_ILLUSTRATION_NOT_CACHE_TIME) {
+        const illustrationDetails = {
+          ...illustration,
+          cacheDate: now
+        };
+        const addCachedIllustrationDetailsRequest = cachedIllustrationDetailsObjectStore.put(illustrationDetails);
+        addCachedIllustrationDetailsRequest.onerror = (event) => {
+          iLog.e(`An error occurred while caching illustration details`, event);
+        };
+      }
+    });
+  });
+};
+var getCachedIllustrationDetails = (id, now = /* @__PURE__ */ new Date()) => {
+  return new Promise((resolve) => {
+    const cachedIllustrationDetailsObjectStore = db.transaction(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY, "readwrite").objectStore(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY);
+    const getCachedIllustrationDetailsRequest = cachedIllustrationDetailsObjectStore.get(id);
+    getCachedIllustrationDetailsRequest.onsuccess = (event) => {
+      const illustrationDetails = event.target.result;
+      if (illustrationDetails) {
+        const { cacheDate } = illustrationDetails;
+        if (now.getTime() - cacheDate.getTime() <= ILLUSTRATION_DETAILS_CACHE_TIME) {
+          resolve(illustrationDetails);
+        } else {
+          cachedIllustrationDetailsObjectStore.delete(id).onerror = (event2) => {
+            iLog.e(
+              `An error occurred while deleting outdated illustration details`,
+              event2
+            );
+          };
+        }
+      }
+      resolve(null);
+    };
+    getCachedIllustrationDetailsRequest.onerror = (event) => {
+      iLog.e(
+        `An error occurred while getting cached illustration details`,
+        event
+      );
+      resolve(null);
+    };
+  });
+};
+
+// src/services/illustration.ts
+var getIllustrationDetailsWithCache = async (id, retry = false) => {
+  let illustDetails = await getCachedIllustrationDetails(id);
+  if (illustDetails) {
+    iLog.d(`Use cached details for illustration ${id}`, illustDetails);
+  } else {
+    const requestUrl = `/touch/ajax/illust/details?illust_id=${id}`;
+    const getIllustDetailsRes = retry ? await requestWithRetry({
+      url: requestUrl,
+      onRetry: (response, retryTimes) => {
+        iLog.w(
+          `Get illustration details via api \`${requestUrl}\` failed:`,
+          response,
+          `${retryTimes} times retrying...`
+        );
+      }
+    }) : await request_default({ url: requestUrl });
+    if (getIllustDetailsRes.status === 200) {
+      illustDetails = getIllustDetailsRes.response.body.illust_details;
+      cacheIllustrationDetails([illustDetails]);
+    } else {
+      illustDetails = null;
+    }
+  }
+  return illustDetails;
+};
+var getUserIllustrations = async (userId) => {
+  const response = await request_default({
+    url: `/ajax/user/${userId}/profile/all?sensitiveFilterMode=userSetting&lang=zh`
+  });
+  const responseData = response.response.body;
+  const illusts = Object.keys(responseData.illusts).reverse();
+  const manga = Object.keys(responseData.manga).reverse();
+  const artworks = [...illusts, ...manga].sort((a, b) => Number(b) - Number(a));
+  return {
+    illusts,
+    manga,
+    artworks
+  };
+};
+var USER_ARTWORKS_CACHE_PREFIX = "PIXIV_PREVIEWER_USER_ARTWORKS_";
+var getUserIllustrationsWithCache = async (userId, { onRequesting } = {}) => {
+  let userIllustrations = {
+    illusts: [],
+    manga: [],
+    artworks: []
+  };
+  const userIllustrationsCacheKey = `${USER_ARTWORKS_CACHE_PREFIX}${userId}`;
+  try {
+    const userIllustrationsCacheString = sessionStorage.getItem(
+      userIllustrationsCacheKey
+    );
+    if (!userIllustrationsCacheString)
+      throw new Error("Illustrations cache not existed.");
+    userIllustrations = JSON.parse(userIllustrationsCacheString);
+  } catch (error) {
+    iLog.i(
+      `Illustrations of current user is not available in session storage, re-getting...`,
+      error
+    );
+    onRequesting?.();
+    userIllustrations = await getUserIllustrations(userId);
+    sessionStorage.setItem(
+      userIllustrationsCacheKey,
+      JSON.stringify(userIllustrations)
+    );
+  }
+  return userIllustrations;
+};
+
 // src/services/preview.ts
 var downloadIllust = ({
   url,
@@ -218,22 +358,6 @@ var getIllustPagesRequestUrl = (id) => {
 };
 var getUgoiraMetadataRequestUrl = (id) => {
   return `/ajax/illust/${id}/ugoira_meta`;
-};
-
-// src/services/user.ts
-var getUserIllustrations = async (userId) => {
-  const response = await request_default({
-    url: `https://www.pixiv.net/ajax/user/${userId}/profile/all?sensitiveFilterMode=userSetting&lang=zh`
-  });
-  const responseData = response.response.body;
-  const illusts = Object.keys(responseData.illusts).reverse();
-  const manga = Object.keys(responseData.manga).reverse();
-  const artworks = [...illusts, ...manga].sort((a, b) => Number(b) - Number(a));
-  return {
-    illusts,
-    manga,
-    artworks
-  };
 };
 
 // src/utils/debounce.ts
@@ -1368,76 +1492,6 @@ var PreviewedIllust = class {
   }
 };
 
-// src/databases/index.ts
-var INDEX_DB_NAME = "PIXIV_PREVIEWER_L";
-var INDEX_DB_VERSION = 1;
-var ILLUSTRATION_DETAILS_CACHE_TABLE_KEY = "illustrationDetailsCache";
-var ILLUSTRATION_DETAILS_CACHE_TIME = 1e3 * 60 * 60 * 12;
-var NEW_ILLUSTRATION_NOT_CACHE_TIME = 1e3 * 60 * 60 * 6;
-var request2 = indexedDB.open(INDEX_DB_NAME, INDEX_DB_VERSION);
-var db;
-request2.onupgradeneeded = (event) => {
-  const db2 = event.target.result;
-  db2.createObjectStore(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY, {
-    keyPath: "id"
-  });
-};
-request2.onsuccess = (event) => {
-  db = event.target.result;
-  console.log("Open IndexedDB successfully:", db);
-};
-request2.onerror = (event) => {
-  iLog.e(`An error occurred while requesting IndexedDB`, event);
-};
-var cacheIllustrationDetails = (illustrations, now = /* @__PURE__ */ new Date()) => {
-  return new Promise(() => {
-    const cachedIllustrationDetailsObjectStore = db.transaction(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY, "readwrite").objectStore(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY);
-    illustrations.forEach((illustration) => {
-      const createDate = new Date(illustration.createDate);
-      if (now.getTime() - createDate.getTime() > NEW_ILLUSTRATION_NOT_CACHE_TIME) {
-        const illustrationDetails = {
-          ...illustration,
-          cacheDate: now
-        };
-        const addCachedIllustrationDetailsRequest = cachedIllustrationDetailsObjectStore.put(illustrationDetails);
-        addCachedIllustrationDetailsRequest.onerror = (event) => {
-          iLog.e(`An error occurred while caching illustration details`, event);
-        };
-      }
-    });
-  });
-};
-var getCachedIllustrationDetails = (id, now = /* @__PURE__ */ new Date()) => {
-  return new Promise((resolve) => {
-    const cachedIllustrationDetailsObjectStore = db.transaction(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY, "readwrite").objectStore(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY);
-    const getCachedIllustrationDetailsRequest = cachedIllustrationDetailsObjectStore.get(id);
-    getCachedIllustrationDetailsRequest.onsuccess = (event) => {
-      const illustrationDetails = event.target.result;
-      if (illustrationDetails) {
-        const { cacheDate } = illustrationDetails;
-        if (now.getTime() - cacheDate.getTime() <= ILLUSTRATION_DETAILS_CACHE_TIME) {
-          resolve(illustrationDetails);
-        } else {
-          cachedIllustrationDetailsObjectStore.delete(id).onerror = (event2) => {
-            iLog.e(
-              `An error occurred while deleting outdated illustration details`,
-              event2
-            );
-          };
-        }
-      }
-      resolve(void 0);
-    };
-    getCachedIllustrationDetailsRequest.onerror = (event) => {
-      iLog.e(
-        `An error occurred while getting cached illustration details`,
-        event
-      );
-      resolve(void 0);
-    };
-  });
-};
-
 // src/i18n/index.ts
 var Texts = {
   install_title: "\u6B22\u8FCE\u4F7F\u7528 Pixiv Previewer (LolipopJ Edition) v",
@@ -1551,7 +1605,6 @@ var execLimitConcurrentPromises = async (promises, limit = 48) => {
 // src/features/sort.ts
 var TAG_PAGE_ILLUSTRATION_LIST_SELECTOR = "ul.sc-98699d11-1.hHLaTl";
 var BOOKMARK_USER_PAGE_ILLUSTRATION_LIST_SELECTOR = "ul.sc-bf8cea3f-1.bCxfvI";
-var USER_ARTWORKS_CACHE_PREFIX = "PIXIV_PREVIEWER_USER_ARTWORKS_";
 var USER_TYPE_ARTWORKS_PER_PAGE = 48;
 var isInitialized2 = false;
 var loadIllustSort = (options) => {
@@ -1706,17 +1759,19 @@ var loadIllustSort = (options) => {
             this.setProgress(
               `Getting details of ${i + 1}/${illustrations.length} illustration...`
             );
-            const illustrationDetails = await getIllustrationDetailsWithCache(illustrationId);
+            const illustrationDetails = await getIllustrationDetailsWithCache(
+              illustrationId,
+              true
+            );
             return {
               ...illustration,
-              bookmark_user_total: illustrationDetails.bookmark_user_total
+              bookmark_user_total: illustrationDetails?.bookmark_user_total ?? -1
             };
           });
         }
         const detailedIllustrations = await execLimitConcurrentPromises(
           getDetailedIllustrationPromises
         );
-        cacheIllustrationDetails(detailedIllustrations);
         iLog.d("Queried detailed illustrations:", detailedIllustrations);
         this.setProgress("Filtering illustrations...");
         const filteredIllustrations = detailedIllustrations.filter(
@@ -2031,54 +2086,6 @@ function getIllustrationsFromResponse(type, response) {
     );
   }
   return [];
-}
-async function getUserIllustrationsWithCache(userId, { onRequesting } = {}) {
-  let userIllustrations = {
-    illusts: [],
-    manga: [],
-    artworks: []
-  };
-  const userIllustrationsCacheKey = `${USER_ARTWORKS_CACHE_PREFIX}${userId}`;
-  try {
-    const userIllustrationsCacheString = sessionStorage.getItem(
-      userIllustrationsCacheKey
-    );
-    if (!userIllustrationsCacheString)
-      throw new Error("Illustrations cache not existed.");
-    userIllustrations = JSON.parse(userIllustrationsCacheString);
-  } catch (error) {
-    iLog.i(
-      `Illustrations of current user is not available in session storage, re-getting...`,
-      error
-    );
-    onRequesting?.();
-    userIllustrations = await getUserIllustrations(userId);
-    sessionStorage.setItem(
-      userIllustrationsCacheKey,
-      JSON.stringify(userIllustrations)
-    );
-  }
-  return userIllustrations;
-}
-async function getIllustrationDetailsWithCache(id) {
-  let illustDetails = await getCachedIllustrationDetails(id);
-  if (illustDetails) {
-    iLog.d(`Use cached details for illustration ${id}`, illustDetails);
-  } else {
-    const requestUrl = `/touch/ajax/illust/details?illust_id=${id}`;
-    const getIllustDetailsRes = await requestWithRetry({
-      url: requestUrl,
-      onRetry: (response, retryTimes) => {
-        iLog.w(
-          `Get illustration details through \`${requestUrl}\` failed:`,
-          response,
-          `${retryTimes} times retrying...`
-        );
-      }
-    });
-    illustDetails = getIllustDetailsRes.response.body.illust_details;
-  }
-  return illustDetails;
 }
 
 // src/utils/setting.ts

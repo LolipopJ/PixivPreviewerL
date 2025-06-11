@@ -6,10 +6,6 @@ import {
   SORT_EVENT_NAME,
   SORT_NEXT_PAGE_EVENT_NAME,
 } from "../constants";
-import {
-  cacheIllustrationDetails,
-  getCachedIllustrationDetails,
-} from "../databases";
 import { AiType, IllustSortOrder, IllustSortType, IllustType } from "../enums";
 import Texts from "../i18n";
 import heartIcon from "../icons/heart.svg";
@@ -17,8 +13,9 @@ import heartFilledIcon from "../icons/heart-filled.svg";
 import pageIcon from "../icons/page.svg";
 import playIcon from "../icons/play.svg";
 import {
-  getUserIllustrations,
-  PixivStandardResponse,
+  getIllustrationDetailsWithCache,
+  getUserIllustrationsWithCache,
+  type PixivStandardResponse,
   requestWithRetry,
 } from "../services";
 import type {
@@ -45,7 +42,6 @@ type LoadIllustSortOptions = Pick<
 const TAG_PAGE_ILLUSTRATION_LIST_SELECTOR = "ul.sc-98699d11-1.hHLaTl";
 const BOOKMARK_USER_PAGE_ILLUSTRATION_LIST_SELECTOR = "ul.sc-bf8cea3f-1.bCxfvI";
 
-const USER_ARTWORKS_CACHE_PREFIX = "PIXIV_PREVIEWER_USER_ARTWORKS_";
 const USER_TYPE_ARTWORKS_PER_PAGE = 48;
 
 let isInitialized = false;
@@ -252,18 +248,20 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
             this.setProgress(
               `Getting details of ${i + 1}/${illustrations.length} illustration...`
             );
-            const illustrationDetails =
-              await getIllustrationDetailsWithCache(illustrationId);
+            const illustrationDetails = await getIllustrationDetailsWithCache(
+              illustrationId,
+              true
+            );
             return {
               ...illustration,
-              bookmark_user_total: illustrationDetails.bookmark_user_total,
+              bookmark_user_total:
+                illustrationDetails?.bookmark_user_total ?? -1,
             } as IllustrationDetails;
           });
         }
         const detailedIllustrations = await execLimitConcurrentPromises(
           getDetailedIllustrationPromises
         );
-        cacheIllustrationDetails(detailedIllustrations);
         iLog.d("Queried detailed illustrations:", detailedIllustrations);
         //#endregion
 
@@ -699,67 +697,4 @@ function getIllustrationsFromResponse(
   }
 
   return [];
-}
-
-/** 从 Session Storage 或接口获取指定用户的作品列表 */
-async function getUserIllustrationsWithCache(
-  userId: string,
-  { onRequesting }: { onRequesting?: () => void } = {}
-) {
-  let userIllustrations: Awaited<ReturnType<typeof getUserIllustrations>> = {
-    illusts: [],
-    manga: [],
-    artworks: [],
-  };
-  const userIllustrationsCacheKey = `${USER_ARTWORKS_CACHE_PREFIX}${userId}`;
-  try {
-    const userIllustrationsCacheString = sessionStorage.getItem(
-      userIllustrationsCacheKey
-    );
-    if (!userIllustrationsCacheString)
-      throw new Error("Illustrations cache not existed.");
-
-    userIllustrations = JSON.parse(userIllustrationsCacheString);
-  } catch (error) {
-    iLog.i(
-      `Illustrations of current user is not available in session storage, re-getting...`,
-      error
-    );
-    onRequesting?.();
-
-    userIllustrations = await getUserIllustrations(userId);
-    sessionStorage.setItem(
-      userIllustrationsCacheKey,
-      JSON.stringify(userIllustrations)
-    );
-  }
-  return userIllustrations;
-}
-
-async function getIllustrationDetailsWithCache(id: string) {
-  let illustDetails: IllustrationDetails =
-    await getCachedIllustrationDetails(id);
-
-  if (illustDetails) {
-    iLog.d(`Use cached details for illustration ${id}`, illustDetails);
-  } else {
-    const requestUrl = `/touch/ajax/illust/details?illust_id=${id}`;
-    const getIllustDetailsRes = await requestWithRetry({
-      url: requestUrl,
-      onRetry: (response, retryTimes) => {
-        iLog.w(
-          `Get illustration details through \`${requestUrl}\` failed:`,
-          response,
-          `${retryTimes} times retrying...`
-        );
-      },
-    });
-    illustDetails = (
-      getIllustDetailsRes.response as PixivStandardResponse<{
-        illust_details: IllustrationDetails;
-      }>
-    ).body.illust_details;
-  }
-
-  return illustDetails;
 }

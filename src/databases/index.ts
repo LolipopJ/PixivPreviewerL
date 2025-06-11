@@ -70,8 +70,8 @@ export const cacheIllustrationDetails = (
 export const getCachedIllustrationDetails = (
   id: string,
   now: Date = new Date()
-) => {
-  return new Promise<IllustrationDetailsCache | undefined>((resolve) => {
+): Promise<IllustrationDetails | null> => {
+  return new Promise((resolve) => {
     const cachedIllustrationDetailsObjectStore = db
       .transaction(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY, "readwrite")
       .objectStore(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY);
@@ -100,7 +100,7 @@ export const getCachedIllustrationDetails = (
           };
         }
       }
-      resolve(undefined);
+      resolve(null);
     };
 
     getCachedIllustrationDetailsRequest.onerror = (event) => {
@@ -108,7 +108,7 @@ export const getCachedIllustrationDetails = (
         `An error occurred while getting cached illustration details`,
         event
       );
-      resolve(undefined);
+      resolve(null);
     };
   });
 };
