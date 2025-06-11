@@ -523,9 +523,9 @@ function getIllustrationsListDom(type: IllustSortType) {
       IllustSortType.TAG_MANGA,
     ].includes(type)
   ) {
-    dom = $("section").find("ul").first();
+    dom = $(TAG_PAGE_ILLUSTRATION_LIST_SELECTOR);
     if (!dom.length) {
-      dom = $(TAG_PAGE_ILLUSTRATION_LIST_SELECTOR);
+      dom = $("section").find("ul").last();
     }
   } else if (
     [
@@ -534,9 +534,9 @@ function getIllustrationsListDom(type: IllustSortType) {
       IllustSortType.USER_BOOKMARK,
     ].includes(type)
   ) {
-    dom = $("section").find("ul").first();
+    dom = $(BOOKMARK_USER_PAGE_ILLUSTRATION_LIST_SELECTOR);
     if (!dom.length) {
-      dom = $(BOOKMARK_USER_PAGE_ILLUSTRATION_LIST_SELECTOR);
+      dom = $("section").find("ul").last();
     }
   } else if (
     [
@@ -545,9 +545,9 @@ function getIllustrationsListDom(type: IllustSortType) {
       IllustSortType.USER_MANGA,
     ].includes(type)
   ) {
-    dom = $(".__top_side_menu_body").find("ul").last();
+    dom = $(BOOKMARK_USER_PAGE_ILLUSTRATION_LIST_SELECTOR);
     if (!dom.length) {
-      dom = $(BOOKMARK_USER_PAGE_ILLUSTRATION_LIST_SELECTOR);
+      dom = $(".__top_side_menu_body").find("ul").last();
     }
   }
 
