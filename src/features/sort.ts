@@ -405,7 +405,7 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
         // TODO: 支持收藏 / 取消收藏作品
         illustrationToolbar.innerHTML = `
           <div style="padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: ${bookmarkUserTotal > 50000 ? "rgb(159, 18, 57)" : bookmarkUserTotal > 10000 ? "rgb(220, 38, 38)" : bookmarkUserTotal > 5000 ? "rgb(29, 78, 216)" : bookmarkUserTotal > 1000 ? "rgb(21, 128, 61)" : "rgb(71, 85, 105)"}; font-weight: bold; line-height: 16px; user-select: none;">❤ ${bookmarkUserTotal}</div>
-          <div style="margin-left: auto;">${bookmarkData ? heartFilledIcon : heartIcon}</div>
+          <div style="margin-left: auto; display: none;">${bookmarkData ? heartFilledIcon : heartIcon}</div>
         `;
 
         const illustrationTitle = document.createElement("div");
