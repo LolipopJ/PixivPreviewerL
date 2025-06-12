@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             1.2.1-2025/6/12
+// @version             1.2.2-2025/6/12
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0
@@ -20,7 +20,7 @@
 // ==/UserScript==
 
 // src/constants/index.ts
-var g_version = "1.2.1";
+var g_version = "1.2.2";
 var g_defaultSettings = {
   enablePreview: true,
   enableAnimePreview: true,
@@ -133,6 +133,7 @@ request.onupgradeneeded = (event) => {
 request.onsuccess = (event) => {
   db = event.target.result;
   console.log("Open IndexedDB successfully:", db);
+  deleteExpiredIllustrationDetails();
 };
 request.onerror = (event) => {
   iLog.e(`An error occurred while requesting IndexedDB`, event);
@@ -203,6 +204,22 @@ var deleteCachedIllustrationDetails = (ids) => {
     }
   });
 };
+function deleteExpiredIllustrationDetails() {
+  return new Promise((resolve) => {
+    const now = (/* @__PURE__ */ new Date()).getTime();
+    const cachedIllustrationDetailsObjectStore = db.transaction(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY, "readwrite").objectStore(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY);
+    const getAllRequest = cachedIllustrationDetailsObjectStore.getAll();
+    getAllRequest.onsuccess = (event) => {
+      const allEntries = event.target.result;
+      allEntries.forEach((entry) => {
+        if (now - entry.cacheDate.getTime() > ILLUSTRATION_DETAILS_CACHE_TIME) {
+          cachedIllustrationDetailsObjectStore.delete(entry.id);
+        }
+      });
+      resolve();
+    };
+  });
+}
 
 // src/icons/download.svg
 var download_default = '<svg t="1742281193586" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg"\n  p-id="24408" width="10" height="10">\n  <path\n    d="M1024 896v128H0v-320h128v192h768v-192h128v192zM576 554.688L810.688 320 896 405.312l-384 384-384-384L213.312 320 448 554.688V0h128v554.688z"\n    fill="#ffffff" p-id="24409"></path>\n</svg>';
