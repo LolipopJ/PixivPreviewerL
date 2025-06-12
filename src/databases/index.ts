@@ -109,3 +109,30 @@ export const getCachedIllustrationDetails = (
     };
   });
 };
+
+export const deleteCachedIllustrationDetails = (
+  ids: string[]
+): Promise<void> => {
+  return new Promise((resolve) => {
+    const cachedIllustrationDetailsObjectStore = db
+      .transaction(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY, "readwrite")
+      .objectStore(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY);
+
+    for (const id of ids) {
+      const deleteCachedIllustrationDetailsRequest =
+        cachedIllustrationDetailsObjectStore.delete(id);
+
+      deleteCachedIllustrationDetailsRequest.onsuccess = () => {
+        resolve();
+      };
+
+      deleteCachedIllustrationDetailsRequest.onerror = (event) => {
+        iLog.w(
+          `An error occurred while deleting cached details of illustration ${id}`,
+          event
+        );
+        resolve();
+      };
+    }
+  });
+};

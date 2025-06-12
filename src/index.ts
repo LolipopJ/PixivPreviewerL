@@ -7,6 +7,7 @@ import {
   SORT_NEXT_PAGE_EVENT_NAME,
   TOOLBAR_ID,
 } from "./constants";
+import { deleteCachedIllustrationDetails } from "./databases";
 import { IllustSortOrder, LogLevel, PageType } from "./enums";
 import { loadIllustPreview } from "./features/preview";
 import { loadIllustSort } from "./features/sort";
@@ -424,7 +425,21 @@ const initializePixivPreviewer = () => {
       return;
     }
 
-    // 设置按钮
+    if (g_pageType === PageType.Member) {
+      showSearchLinksForDeletedArtworks();
+    } else if (g_pageType === PageType.Artwork) {
+      // 用户来到作品详情页时，可能会对当前作品进行收藏等操作，因此主动使当前作品的缓存失效
+      const artworkId =
+        window.location.pathname.match(/\/artworks\/(\d+)/)?.[1];
+      if (artworkId) {
+        setTimeout(() => {
+          deleteCachedIllustrationDetails([artworkId]);
+        });
+      }
+    }
+
+    //#region 初始化工具栏按钮
+    // 获取工具栏按钮
     const toolBar = Pages[g_pageType].GetToolBar();
     if (toolBar) {
       DoLog(LogLevel.Elements, toolBar);
@@ -470,10 +485,7 @@ const initializePixivPreviewer = () => {
         window.dispatchEvent(sortEvent);
       });
     }
-
-    if (g_pageType === PageType.Member) {
-      showSearchLinksForDeletedArtworks();
-    }
+    //#endregion
   } catch (e) {
     DoLog(LogLevel.Error, "An error occurred while initializing:", e);
   }
