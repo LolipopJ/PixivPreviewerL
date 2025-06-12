@@ -7,7 +7,7 @@ const INDEX_DB_VERSION = 1;
 const ILLUSTRATION_DETAILS_CACHE_TABLE_KEY = "illustrationDetailsCache";
 /** 缓存过期时间 */
 const ILLUSTRATION_DETAILS_CACHE_TIME = 1000 * 60 * 60 * 6; // 6 小时
-/** 不添加缓存的新作品发布时间 */
+/** 新作品发布初期不添加缓存 */
 const NEW_ILLUSTRATION_NOT_CACHE_TIME = 1000 * 60 * 60 * 1; // 1 小时
 
 export interface IllustrationDetailsCache extends IllustrationDetails {
