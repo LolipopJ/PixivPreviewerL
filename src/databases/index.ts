@@ -28,6 +28,8 @@ request.onupgradeneeded = (event) => {
 request.onsuccess = (event) => {
   db = (event.target as IDBOpenDBRequest).result;
   console.log("Open IndexedDB successfully:", db);
+
+  deleteExpiredIllustrationDetails();
 };
 
 request.onerror = (event) => {
@@ -136,3 +138,30 @@ export const deleteCachedIllustrationDetails = (
     }
   });
 };
+
+/** 移除过期的缓存 */
+function deleteExpiredIllustrationDetails(): Promise<void> {
+  return new Promise((resolve) => {
+    const now = new Date().getTime();
+
+    const cachedIllustrationDetailsObjectStore = db
+      .transaction(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY, "readwrite")
+      .objectStore(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY);
+
+    const getAllRequest = cachedIllustrationDetailsObjectStore.getAll();
+
+    getAllRequest.onsuccess = (event) => {
+      const allEntries = (
+        event.target as IDBRequest<IllustrationDetailsCache[]>
+      ).result;
+
+      allEntries.forEach((entry) => {
+        if (now - entry.cacheDate.getTime() > ILLUSTRATION_DETAILS_CACHE_TIME) {
+          cachedIllustrationDetailsObjectStore.delete(entry.id);
+        }
+      });
+
+      resolve();
+    };
+  });
+}
