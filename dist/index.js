@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             1.2.0-2025/6/12
+// @version             1.2.1-2025/6/12
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0
@@ -20,7 +20,7 @@
 // ==/UserScript==
 
 // src/constants/index.ts
-var g_version = "1.2.0";
+var g_version = "1.2.1";
 var g_defaultSettings = {
   enablePreview: true,
   enableAnimePreview: true,
@@ -57,15 +57,6 @@ var AI_ASSISTED_TAGS = [
   "ai\u52A0\u7B46",
   "ai\u52A0\u7B14"
 ];
-
-// src/icons/download.svg
-var download_default = '<svg t="1742281193586" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg"\n  p-id="24408" width="10" height="10">\n  <path\n    d="M1024 896v128H0v-320h128v192h768v-192h128v192zM576 554.688L810.688 320 896 405.312l-384 384-384-384L213.312 320 448 554.688V0h128v554.688z"\n    fill="#ffffff" p-id="24409"></path>\n</svg>';
-
-// src/icons/loading.svg
-var loading_default = '<svg t="1742282291278" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg"\n  p-id="38665" width="48" height="48">\n  <path\n    d="M988 548c-19.9 0-36-16.1-36-36 0-59.4-11.6-117-34.6-171.3a440.45 440.45 0 0 0-94.3-139.9 437.71 437.71 0 0 0-139.9-94.3C629 83.6 571.4 72 512 72c-19.9 0-36-16.1-36-36s16.1-36 36-36c69.1 0 136.2 13.5 199.3 40.3C772.3 66 827 103 874 150c47 47 83.9 101.8 109.7 162.7 26.7 63.1 40.2 130.2 40.2 199.3 0.1 19.9-16 36-35.9 36z"\n    p-id="38666" fill="#1296db"></path>\n</svg>';
-
-// src/icons/page.svg
-var page_default = '<svg viewBox="0 0 10 10" width="10" height="10">\n  <path\n    d="M 8 3 C 8.55228 3 9 3.44772 9 4 L 9 9 C 9 9.55228 8.55228 10 8 10 L 3 10 C 2.44772 10 2 9.55228 2 9 L 6 9 C 7.10457 9 8 8.10457 8 7 L 8 3 Z M 1 1 L 6 1 C 6.55228 1 7 1.44772 7 2 L 7 7 C 7 7.55228 6.55228 8 6 8 L 1 8 C 0.447715 8 0 7.55228 0 7 L 0 2 C 0 1.44772 0.447715 1 1 1 Z"\n    fill="#ffffff"></path>\n</svg>';
 
 // src/utils/logger.ts
 var ILog = class {
@@ -125,110 +116,25 @@ function DoLog(level = 3 /* Info */, ...msgOrElement) {
   }
 }
 
-// src/utils/utils.ts
-var pause = (ms) => {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-};
-var convertObjectKeysFromSnakeToCamel = (obj) => {
-  function snakeToCamel(snake) {
-    return snake.replace(/_([a-z])/g, (result) => result[1].toUpperCase());
-  }
-  const newResponse = {};
-  for (const key in obj) {
-    newResponse[snakeToCamel(key)] = obj[key];
-  }
-  return newResponse;
-};
-
-// src/services/request.ts
-var xmlHttpRequest = window.GM.xmlHttpRequest;
-var request = (options) => {
-  const { headers, ...restOptions } = options;
-  return xmlHttpRequest({
-    responseType: "json",
-    ...restOptions,
-    headers: {
-      referer: "https://www.pixiv.net/",
-      ...headers
-    }
-  });
-};
-var requestWithRetry = async (options) => {
-  const {
-    retryDelay = 1e4,
-    maxRetryTimes = Infinity,
-    onRetry,
-    ...restOptions
-  } = options;
-  let response;
-  let retryTimes = 0;
-  while (retryTimes < maxRetryTimes) {
-    response = await request(restOptions);
-    if (response.status === 200) {
-      const responseData = response.response;
-      if (!responseData.error) {
-        return response;
-      }
-    }
-    retryTimes += 1;
-    onRetry?.(response, retryTimes);
-    await pause(retryDelay);
-  }
-  throw new Error(
-    `Request for ${restOptions.url} failed: ${response.responseText}`
-  );
-};
-var request_default = request;
-
-// src/services/download.ts
-var downloadFile = (url, filename, options = {}) => {
-  const { onload, onerror, ...restOptions } = options;
-  request_default({
-    ...restOptions,
-    url,
-    method: "GET",
-    responseType: "blob",
-    onload: (resp) => {
-      onload?.(resp);
-      const blob = new Blob([resp.response], {
-        // @ts-expect-error: specified in request options
-        type: resp.responseType
-      });
-      const blobUrl = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = blobUrl;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(blobUrl);
-    },
-    onerror: (resp) => {
-      onerror?.(resp);
-      iLog.e(`Download ${filename} from ${url} failed: ${resp.responseText}`);
-    }
-  });
-};
-
 // src/databases/index.ts
 var INDEX_DB_NAME = "PIXIV_PREVIEWER_L";
 var INDEX_DB_VERSION = 1;
 var ILLUSTRATION_DETAILS_CACHE_TABLE_KEY = "illustrationDetailsCache";
 var ILLUSTRATION_DETAILS_CACHE_TIME = 1e3 * 60 * 60 * 6;
 var NEW_ILLUSTRATION_NOT_CACHE_TIME = 1e3 * 60 * 60 * 1;
-var request2 = indexedDB.open(INDEX_DB_NAME, INDEX_DB_VERSION);
+var request = indexedDB.open(INDEX_DB_NAME, INDEX_DB_VERSION);
 var db;
-request2.onupgradeneeded = (event) => {
+request.onupgradeneeded = (event) => {
   const db2 = event.target.result;
   db2.createObjectStore(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY, {
     keyPath: "id"
   });
 };
-request2.onsuccess = (event) => {
+request.onsuccess = (event) => {
   db = event.target.result;
   console.log("Open IndexedDB successfully:", db);
 };
-request2.onerror = (event) => {
+request.onerror = (event) => {
   iLog.e(`An error occurred while requesting IndexedDB`, event);
 };
 var cacheIllustrationDetails = (illustrations, now = /* @__PURE__ */ new Date()) => {
@@ -277,6 +183,118 @@ var getCachedIllustrationDetails = (id, now = /* @__PURE__ */ new Date()) => {
       );
       resolve(null);
     };
+  });
+};
+var deleteCachedIllustrationDetails = (ids) => {
+  return new Promise((resolve) => {
+    const cachedIllustrationDetailsObjectStore = db.transaction(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY, "readwrite").objectStore(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY);
+    for (const id of ids) {
+      const deleteCachedIllustrationDetailsRequest = cachedIllustrationDetailsObjectStore.delete(id);
+      deleteCachedIllustrationDetailsRequest.onsuccess = () => {
+        resolve();
+      };
+      deleteCachedIllustrationDetailsRequest.onerror = (event) => {
+        iLog.w(
+          `An error occurred while deleting cached details of illustration ${id}`,
+          event
+        );
+        resolve();
+      };
+    }
+  });
+};
+
+// src/icons/download.svg
+var download_default = '<svg t="1742281193586" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg"\n  p-id="24408" width="10" height="10">\n  <path\n    d="M1024 896v128H0v-320h128v192h768v-192h128v192zM576 554.688L810.688 320 896 405.312l-384 384-384-384L213.312 320 448 554.688V0h128v554.688z"\n    fill="#ffffff" p-id="24409"></path>\n</svg>';
+
+// src/icons/loading.svg
+var loading_default = '<svg t="1742282291278" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg"\n  p-id="38665" width="48" height="48">\n  <path\n    d="M988 548c-19.9 0-36-16.1-36-36 0-59.4-11.6-117-34.6-171.3a440.45 440.45 0 0 0-94.3-139.9 437.71 437.71 0 0 0-139.9-94.3C629 83.6 571.4 72 512 72c-19.9 0-36-16.1-36-36s16.1-36 36-36c69.1 0 136.2 13.5 199.3 40.3C772.3 66 827 103 874 150c47 47 83.9 101.8 109.7 162.7 26.7 63.1 40.2 130.2 40.2 199.3 0.1 19.9-16 36-35.9 36z"\n    p-id="38666" fill="#1296db"></path>\n</svg>';
+
+// src/icons/page.svg
+var page_default = '<svg viewBox="0 0 10 10" width="10" height="10">\n  <path\n    d="M 8 3 C 8.55228 3 9 3.44772 9 4 L 9 9 C 9 9.55228 8.55228 10 8 10 L 3 10 C 2.44772 10 2 9.55228 2 9 L 6 9 C 7.10457 9 8 8.10457 8 7 L 8 3 Z M 1 1 L 6 1 C 6.55228 1 7 1.44772 7 2 L 7 7 C 7 7.55228 6.55228 8 6 8 L 1 8 C 0.447715 8 0 7.55228 0 7 L 0 2 C 0 1.44772 0.447715 1 1 1 Z"\n    fill="#ffffff"></path>\n</svg>';
+
+// src/utils/utils.ts
+var pause = (ms) => {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+};
+var convertObjectKeysFromSnakeToCamel = (obj) => {
+  function snakeToCamel(snake) {
+    return snake.replace(/_([a-z])/g, (result) => result[1].toUpperCase());
+  }
+  const newResponse = {};
+  for (const key in obj) {
+    newResponse[snakeToCamel(key)] = obj[key];
+  }
+  return newResponse;
+};
+
+// src/services/request.ts
+var xmlHttpRequest = window.GM.xmlHttpRequest;
+var request2 = (options) => {
+  const { headers, ...restOptions } = options;
+  return xmlHttpRequest({
+    responseType: "json",
+    ...restOptions,
+    headers: {
+      referer: "https://www.pixiv.net/",
+      ...headers
+    }
+  });
+};
+var requestWithRetry = async (options) => {
+  const {
+    retryDelay = 1e4,
+    maxRetryTimes = Infinity,
+    onRetry,
+    ...restOptions
+  } = options;
+  let response;
+  let retryTimes = 0;
+  while (retryTimes < maxRetryTimes) {
+    response = await request2(restOptions);
+    if (response.status === 200) {
+      const responseData = response.response;
+      if (!responseData.error) {
+        return response;
+      }
+    }
+    retryTimes += 1;
+    onRetry?.(response, retryTimes);
+    await pause(retryDelay);
+  }
+  throw new Error(
+    `Request for ${restOptions.url} failed: ${response.responseText}`
+  );
+};
+var request_default = request2;
+
+// src/services/download.ts
+var downloadFile = (url, filename, options = {}) => {
+  const { onload, onerror, ...restOptions } = options;
+  request_default({
+    ...restOptions,
+    url,
+    method: "GET",
+    responseType: "blob",
+    onload: (resp) => {
+      onload?.(resp);
+      const blob = new Blob([resp.response], {
+        // @ts-expect-error: specified in request options
+        type: resp.responseType
+      });
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
+    },
+    onerror: (resp) => {
+      onerror?.(resp);
+      iLog.e(`Download ${filename} from ${url} failed: ${resp.responseText}`);
+    }
   });
 };
 
@@ -2542,6 +2560,16 @@ var initializePixivPreviewer = () => {
       DoLog(3 /* Info */, "Unsupported page.");
       return;
     }
+    if (g_pageType === 3 /* Member */) {
+      showSearchLinksForDeletedArtworks();
+    } else if (g_pageType === 10 /* Artwork */) {
+      const artworkId = window.location.pathname.match(/\/artworks\/(\d+)/)?.[1];
+      if (artworkId) {
+        setTimeout(() => {
+          deleteCachedIllustrationDetails([artworkId]);
+        });
+      }
+    }
     const toolBar = Pages[g_pageType].GetToolBar();
     if (toolBar) {
       DoLog(4 /* Elements */, toolBar);
@@ -2578,9 +2606,6 @@ var initializePixivPreviewer = () => {
         const sortEvent = new Event(SORT_NEXT_PAGE_EVENT_NAME);
         window.dispatchEvent(sortEvent);
       });
-    }
-    if (g_pageType === 3 /* Member */) {
-      showSearchLinksForDeletedArtworks();
     }
   } catch (e) {
     DoLog(1 /* Error */, "An error occurred while initializing:", e);
