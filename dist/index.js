@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             1.2.2-2025/6/12
+// @version             1.2.2-2025/6/24
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0
@@ -1169,6 +1169,8 @@ var PreviewedIllust = class {
   previewWrapperElement = $();
   /** 预览容器顶部栏 DOM */
   previewWrapperHeader = $();
+  /** 当前预览作品的元数据 */
+  illustMeta = $();
   /** 当前预览的是第几张图片标记 DOM */
   pageCountElement = $();
   pageCountText = $();
@@ -1210,9 +1212,7 @@ var PreviewedIllust = class {
       "backdrop-filter": "blur(4px)",
       "text-align": "center"
     }).hide().appendTo($("body"));
-    this.previewWrapperHeader = $(document.createElement("div")).attr({
-      id: "pp-wrapper__header"
-    }).css({
+    this.previewWrapperHeader = $(document.createElement("div")).css({
       position: "absolute",
       top: "0px",
       left: "0px",
@@ -1220,11 +1220,16 @@ var PreviewedIllust = class {
       padding: "5px",
       display: "flex",
       gap: "5px",
-      "align-items": "center",
-      "justify-content": "flex-end"
+      "align-items": "center"
     }).hide().appendTo(this.previewWrapperElement);
-    this.pageCountText = $(document.createElement("span")).attr({ id: "pp-page-count__text" }).text("1/1");
-    this.pageCountElement = $(document.createElement("div")).attr({ id: "pp-page-count" }).css({
+    this.illustMeta = $(document.createElement("div")).css({
+      display: "flex",
+      gap: "5px",
+      "align-items": "center",
+      "margin-right": "auto"
+    }).appendTo(this.previewWrapperHeader);
+    this.pageCountText = $(document.createElement("span")).text("1/1");
+    this.pageCountElement = $(document.createElement("div")).css({
       height: "20px",
       "border-radius": "12px",
       color: "white",
@@ -1237,8 +1242,8 @@ var PreviewedIllust = class {
       display: "flex",
       "align-items": "center",
       gap: "4px"
-    }).append(page_default).append(this.pageCountText).hide().prependTo(this.previewWrapperHeader);
-    this.downloadOriginalElement = $(document.createElement("a")).attr({ id: "pp-download-original" }).css({
+    }).append(page_default).append(this.pageCountText).hide().appendTo(this.previewWrapperHeader);
+    this.downloadOriginalElement = $(document.createElement("a")).css({
       height: "20px",
       "border-radius": "12px",
       color: "white",
@@ -1251,9 +1256,9 @@ var PreviewedIllust = class {
       display: "flex",
       "align-items": "center",
       gap: "4px"
-    }).append(`${download_default}<span>\u539F\u56FE</span>`).prependTo(this.previewWrapperHeader);
-    this.previewLoadingElement = $(loading_default).attr({ id: "pp-loading" }).css({ padding: "12px", animation: "pp-spin 1s linear infinite" }).appendTo(this.previewWrapperElement);
-    this.previewImageElement = $(new Image()).attr({ id: "pp-image" }).css({
+    }).append(`${download_default}<span>\u539F\u56FE</span>`).appendTo(this.previewWrapperHeader);
+    this.previewLoadingElement = $(loading_default).css({ padding: "12px", animation: "pp-spin 1s linear infinite" }).appendTo(this.previewWrapperElement);
+    this.previewImageElement = $(new Image()).css({
       "border-radius": `${PREVIEW_WRAPPER_BORDER_RADIUS}px`
     }).hide().appendTo(this.previewWrapperElement);
     this.#images.forEach((image) => {
@@ -1512,11 +1517,10 @@ var PreviewedIllust = class {
       illustrationDetailsElements.push(
         $(document.createElement("div")).css({
           ...defaultElementCss,
-          background: bookmarkUserTotal > 5e4 ? "rgb(159, 18, 57)" : bookmarkUserTotal > 1e4 ? "rgb(220, 38, 38)" : bookmarkUserTotal > 5e3 ? "rgb(29, 78, 216)" : bookmarkUserTotal > 1e3 ? "rgb(21, 128, 61)" : "rgb(71, 85, 105)",
-          "margin-right": "auto"
-        }).text(`${bookmarkId ? "\u{1F496}" : "\u2764"} ${bookmarkUserTotal}`)
+          background: bookmarkUserTotal > 5e4 ? "rgb(159, 18, 57)" : bookmarkUserTotal > 1e4 ? "rgb(220, 38, 38)" : bookmarkUserTotal > 5e3 ? "rgb(29, 78, 216)" : bookmarkUserTotal > 1e3 ? "rgb(21, 128, 61)" : "rgb(71, 85, 105)"
+        }).text(`${bookmarkId ? "\u2764\uFE0F" : "\u2764"} ${bookmarkUserTotal}`)
       );
-      this.previewWrapperHeader.prepend(illustrationDetailsElements);
+      this.illustMeta.prepend(illustrationDetailsElements);
     }
   }
   /** 初始化显示预览容器 */

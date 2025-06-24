@@ -344,6 +344,8 @@ class PreviewedIllust {
   previewWrapperElement: JQuery<HTMLElement> = $();
   /** 预览容器顶部栏 DOM */
   previewWrapperHeader: JQuery<HTMLElement> = $();
+  /** 当前预览作品的元数据 */
+  illustMeta: JQuery<HTMLElement> = $();
   /** 当前预览的是第几张图片标记 DOM */
   pageCountElement: JQuery<HTMLElement> = $();
   pageCountText: JQuery<HTMLElement> = $();
@@ -398,9 +400,6 @@ class PreviewedIllust {
       .hide()
       .appendTo($("body"));
     this.previewWrapperHeader = $(document.createElement("div"))
-      .attr({
-        id: "pp-wrapper__header",
-      })
       .css({
         position: "absolute",
         top: "0px",
@@ -410,15 +409,19 @@ class PreviewedIllust {
         display: "flex",
         gap: "5px",
         "align-items": "center",
-        "justify-content": "flex-end",
       })
       .hide()
       .appendTo(this.previewWrapperElement);
-    this.pageCountText = $(document.createElement("span"))
-      .attr({ id: "pp-page-count__text" })
-      .text("1/1");
+    this.illustMeta = $(document.createElement("div"))
+      .css({
+        display: "flex",
+        gap: "5px",
+        "align-items": "center",
+        "margin-right": "auto",
+      })
+      .appendTo(this.previewWrapperHeader);
+    this.pageCountText = $(document.createElement("span")).text("1/1");
     this.pageCountElement = $(document.createElement("div"))
-      .attr({ id: "pp-page-count" })
       .css({
         height: "20px",
         "border-radius": "12px",
@@ -436,9 +439,8 @@ class PreviewedIllust {
       .append(pageIcon)
       .append(this.pageCountText)
       .hide()
-      .prependTo(this.previewWrapperHeader);
+      .appendTo(this.previewWrapperHeader);
     this.downloadOriginalElement = $(document.createElement("a"))
-      .attr({ id: "pp-download-original" })
       .css({
         height: "20px",
         "border-radius": "12px",
@@ -454,13 +456,11 @@ class PreviewedIllust {
         gap: "4px",
       })
       .append(`${downloadIcon}<span>原图</span>`)
-      .prependTo(this.previewWrapperHeader);
+      .appendTo(this.previewWrapperHeader);
     this.previewLoadingElement = $(loadingIcon)
-      .attr({ id: "pp-loading" })
       .css({ padding: "12px", animation: "pp-spin 1s linear infinite" })
       .appendTo(this.previewWrapperElement);
     this.previewImageElement = $(new Image())
-      .attr({ id: "pp-image" })
       .css({
         "border-radius": `${PREVIEW_WRAPPER_BORDER_RADIUS}px`,
       })
@@ -828,12 +828,11 @@ class PreviewedIllust {
                     : bookmarkUserTotal > 1000
                       ? "rgb(21, 128, 61)"
                       : "rgb(71, 85, 105)",
-            "margin-right": "auto",
           })
-          .text(`${bookmarkId ? "💖" : "❤"} ${bookmarkUserTotal}`)
+          .text(`${bookmarkId ? "❤️" : "❤"} ${bookmarkUserTotal}`)
       );
 
-      this.previewWrapperHeader.prepend(illustrationDetailsElements);
+      this.illustMeta.append(illustrationDetailsElements);
     }
   }
 
