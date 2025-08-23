@@ -68,6 +68,7 @@ const Texts = {
   label_sort: "排序",
   label_sorting: "排序中",
   label_nextPage: "下一页",
+  label_hideFav: "过滤收藏",
 };
 
 export default Texts;

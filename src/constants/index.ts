@@ -47,6 +47,8 @@ export const SORT_EVENT_NAME = "PIXIV_PREVIEWER_RUN_SORT";
 export const SORT_NEXT_PAGE_BUTTON_ID = "pp-sort-next-page";
 /** 下一页事件名称 */
 export const SORT_NEXT_PAGE_EVENT_NAME = "PIXIV_PREVIEWER_JUMP_TO_NEXT_PAGE";
+/** 隐藏已收藏作品按钮 */
+export const HIDE_FAVORITES_BUTTON_ID = "pp-hide-favorites";
 
 /** AI 辅助标签列表，全小写 */
 export const AI_ASSISTED_TAGS = [

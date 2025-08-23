@@ -1,6 +1,7 @@
 import {
   g_defaultSettings,
   g_version,
+  HIDE_FAVORITES_BUTTON_ID,
   SORT_BUTTON_ID,
   SORT_EVENT_NAME,
   SORT_NEXT_PAGE_BUTTON_ID,
@@ -9,6 +10,7 @@ import {
 } from "./constants";
 import { deleteCachedIllustrationDetails } from "./databases";
 import { IllustSortOrder, LogLevel, PageType } from "./enums";
+import { hideFavorites } from "./features/hide-favorites";
 import { loadIllustPreview } from "./features/preview";
 import { loadIllustSort } from "./features/sort";
 import Texts from "./i18n";
@@ -483,6 +485,25 @@ const initializePixivPreviewer = () => {
       $(newButton).on("click", () => {
         const sortEvent = new Event(SORT_NEXT_PAGE_EVENT_NAME);
         window.dispatchEvent(sortEvent);
+      });
+    }
+    //#endregion
+
+    // 添加过滤已收藏作品按钮
+    if (!$(`#${HIDE_FAVORITES_BUTTON_ID}`).length) {
+      const newListItem = document.createElement("div");
+      newListItem.title = "Hide favorite illustrations";
+      newListItem.innerHTML = "";
+      const newButton = document.createElement("button");
+      newButton.id = HIDE_FAVORITES_BUTTON_ID;
+      newButton.style.cssText =
+        "box-sizing: border-box; background-color: rgba(0,0,0,0.32); color: #fff; margin-top: 5px; opacity: 0.8; cursor: pointer; border: none; padding: 0px; border-radius: 24px; width: 48px; height: 48px; font-size: 12px; font-weight: bold;";
+      newButton.innerHTML = Texts.label_hideFav;
+      newListItem.appendChild(newButton);
+      toolBar.appendChild(newListItem);
+
+      $(newButton).on("click", () => {
+        hideFavorites();
       });
     }
     //#endregion
