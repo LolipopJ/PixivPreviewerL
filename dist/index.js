@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             1.2.2-2025/6/24
+// @version             1.3.0-2025/8/23
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0
@@ -20,7 +20,7 @@
 // ==/UserScript==
 
 // src/constants/index.ts
-var g_version = "1.2.2";
+var g_version = "1.3.0";
 var g_defaultSettings = {
   enablePreview: true,
   enableAnimePreview: true,
@@ -46,6 +46,7 @@ var SORT_BUTTON_ID = "pp-sort";
 var SORT_EVENT_NAME = "PIXIV_PREVIEWER_RUN_SORT";
 var SORT_NEXT_PAGE_BUTTON_ID = "pp-sort-next-page";
 var SORT_NEXT_PAGE_EVENT_NAME = "PIXIV_PREVIEWER_JUMP_TO_NEXT_PAGE";
+var HIDE_FAVORITES_BUTTON_ID = "pp-hide-favorites";
 var AI_ASSISTED_TAGS = [
   "ai\u30A4\u30E9\u30B9\u30C8",
   "ai-generated",
@@ -220,6 +221,21 @@ function deleteExpiredIllustrationDetails() {
     };
   });
 }
+
+// src/features/hide-favorites.ts
+var isHidden = false;
+var hideFavorites = () => {
+  const svgs = $("svg");
+  const favoriteSvgs = svgs.filter(function() {
+    return $(this).css("color") === "rgb(255, 64, 96)";
+  });
+  favoriteSvgs.each(function() {
+    const listItem = $(this).closest("li");
+    listItem.hide();
+    listItem.attr("data-pp-hidden", "true");
+  });
+  isHidden = true;
+};
 
 // src/icons/download.svg
 var download_default = '<svg t="1742281193586" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg"\n  p-id="24408" width="10" height="10">\n  <path\n    d="M1024 896v128H0v-320h128v192h768v-192h128v192zM576 554.688L810.688 320 896 405.312l-384 384-384-384L213.312 320 448 554.688V0h128v554.688z"\n    fill="#ffffff" p-id="24409"></path>\n</svg>';
@@ -1520,7 +1536,7 @@ var PreviewedIllust = class {
           background: bookmarkUserTotal > 5e4 ? "rgb(159, 18, 57)" : bookmarkUserTotal > 1e4 ? "rgb(220, 38, 38)" : bookmarkUserTotal > 5e3 ? "rgb(29, 78, 216)" : bookmarkUserTotal > 1e3 ? "rgb(21, 128, 61)" : "rgb(71, 85, 105)"
         }).text(`${bookmarkId ? "\u2764\uFE0F" : "\u2764"} ${bookmarkUserTotal}`)
       );
-      this.illustMeta.prepend(illustrationDetailsElements);
+      this.illustMeta.append(illustrationDetailsElements);
     }
   }
   /** 初始化显示预览容器 */
@@ -1696,7 +1712,8 @@ var Texts = {
   sort_fullSizeThumb: "\u5168\u5C3A\u5BF8\u7F29\u7565\u56FE\uFF08\u641C\u7D22\u9875\u3001\u7528\u6237\u9875\uFF09",
   label_sort: "\u6392\u5E8F",
   label_sorting: "\u6392\u5E8F\u4E2D",
-  label_nextPage: "\u4E0B\u4E00\u9875"
+  label_nextPage: "\u4E0B\u4E00\u9875",
+  label_hideFav: "\u8FC7\u6EE4\u6536\u85CF"
 };
 var i18n_default = Texts;
 
@@ -2626,6 +2643,20 @@ var initializePixivPreviewer = () => {
       $(newButton).on("click", () => {
         const sortEvent = new Event(SORT_NEXT_PAGE_EVENT_NAME);
         window.dispatchEvent(sortEvent);
+      });
+    }
+    if (!$(`#${HIDE_FAVORITES_BUTTON_ID}`).length) {
+      const newListItem = document.createElement("div");
+      newListItem.title = "Hide favorite illustrations";
+      newListItem.innerHTML = "";
+      const newButton = document.createElement("button");
+      newButton.id = HIDE_FAVORITES_BUTTON_ID;
+      newButton.style.cssText = "box-sizing: border-box; background-color: rgba(0,0,0,0.32); color: #fff; margin-top: 5px; opacity: 0.8; cursor: pointer; border: none; padding: 0px; border-radius: 24px; width: 48px; height: 48px; font-size: 12px; font-weight: bold;";
+      newButton.innerHTML = i18n_default.label_hideFav;
+      newListItem.appendChild(newButton);
+      toolBar.appendChild(newListItem);
+      $(newButton).on("click", () => {
+        hideFavorites();
       });
     }
   } catch (e) {
