@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             1.3.0-2025/8/23
+// @version             1.3.1-2025/8/28
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0
@@ -20,7 +20,7 @@
 // ==/UserScript==
 
 // src/constants/index.ts
-var g_version = "1.3.0";
+var g_version = "1.3.1";
 var g_defaultSettings = {
   enablePreview: true,
   enableAnimePreview: true,
@@ -225,15 +225,24 @@ function deleteExpiredIllustrationDetails() {
 // src/features/hide-favorites.ts
 var isHidden = false;
 var hideFavorites = () => {
-  const svgs = $("svg");
-  const favoriteSvgs = svgs.filter(function() {
-    return $(this).css("color") === "rgb(255, 64, 96)";
-  });
-  favoriteSvgs.each(function() {
-    const listItem = $(this).closest("li");
-    listItem.hide();
-    listItem.attr("data-pp-hidden", "true");
-  });
+  if (/^https?:\/\/www.pixiv.net(\/en)?\/ranking.php.*/.test(location.href)) {
+    const bookmarks = $("div._one-click-bookmark.on");
+    bookmarks.each(function() {
+      const sectionItem = $(this).closest("section.ranking-item");
+      sectionItem.hide();
+      sectionItem.attr("data-pp-fav-hidden", "true");
+    });
+  } else {
+    const svgs = $("svg");
+    const favoriteSvgs = svgs.filter(function() {
+      return $(this).css("color") === "rgb(255, 64, 96)";
+    });
+    favoriteSvgs.each(function() {
+      const listItem = $(this).closest("li");
+      listItem.hide();
+      listItem.attr("data-pp-fav-hidden", "true");
+    });
+  }
   isHidden = true;
 };
 
