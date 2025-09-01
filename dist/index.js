@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             1.3.1-2025/8/28
+// @version             1.3.2-2025/9/1
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0
@@ -20,7 +20,7 @@
 // ==/UserScript==
 
 // src/constants/index.ts
-var g_version = "1.3.1";
+var g_version = "1.3.2";
 var g_defaultSettings = {
   enablePreview: true,
   enableAnimePreview: true,
@@ -1498,6 +1498,7 @@ var PreviewedIllust = class {
       this.illustId
     );
     if (illustrationDetails && illustrationDetails.id === this.illustId) {
+      this.illustMeta.empty();
       const { aiType, bookmarkId, bookmarkUserTotal, tags } = illustrationDetails;
       const isR18 = checkIsR18(tags);
       const isAi = checkIsAiGenerated(aiType);
