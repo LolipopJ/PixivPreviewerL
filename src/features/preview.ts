@@ -761,6 +761,8 @@ class PreviewedIllust {
     );
 
     if (illustrationDetails && illustrationDetails.id === this.illustId) {
+      this.illustMeta.empty();
+
       const { aiType, bookmarkId, bookmarkUserTotal, tags } =
         illustrationDetails;
       const isR18 = checkIsR18(tags);
