@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             1.3.2-2025/9/1
+// @version             1.3.3-2025/10/16
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0
@@ -20,7 +20,7 @@
 // ==/UserScript==
 
 // src/constants/index.ts
-var g_version = "1.3.2";
+var g_version = "1.3.3";
 var g_defaultSettings = {
   enablePreview: true,
   enableAnimePreview: true,
@@ -1110,10 +1110,6 @@ var loadIllustPreview = (options) => {
   const onMouseOverIllust = (target) => {
     const { illustId, previewPage, illustType, illustLinkDom } = getIllustMetadata(target) || {};
     if (illustId === void 0 || illustType === void 0) {
-      return;
-    }
-    const pathname = location.pathname;
-    if (illustId === /^\/artworks\/(\d+)$/.exec(pathname)?.[1]) {
       return;
     }
     if (linkBlank) {

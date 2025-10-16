@@ -235,12 +235,6 @@ export const loadIllustPreview = (
       return;
     }
 
-    const pathname = location.pathname;
-    if (illustId === /^\/artworks\/(\d+)$/.exec(pathname)?.[1]) {
-      // 跳过预览作品页当前正查看的作品
-      return;
-    }
-
     if (linkBlank) {
       // 设置在新标签打开作品详情页
       illustLinkDom.attr({ target: "_blank", rel: "external" });
