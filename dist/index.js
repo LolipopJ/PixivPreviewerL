@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             1.3.3-2025/10/16
+// @version             1.3.4-2025/10/31
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0
@@ -20,7 +20,7 @@
 // ==/UserScript==
 
 // src/constants/index.ts
-var g_version = "1.3.3";
+var g_version = "1.3.4";
 var g_defaultSettings = {
   enablePreview: true,
   enableAnimePreview: true,
@@ -225,24 +225,15 @@ function deleteExpiredIllustrationDetails() {
 // src/features/hide-favorites.ts
 var isHidden = false;
 var hideFavorites = () => {
-  if (/^https?:\/\/www.pixiv.net(\/en)?\/ranking.php.*/.test(location.href)) {
-    const bookmarks = $("div._one-click-bookmark.on");
-    bookmarks.each(function() {
-      const sectionItem = $(this).closest("section.ranking-item");
-      sectionItem.hide();
-      sectionItem.attr("data-pp-fav-hidden", "true");
-    });
-  } else {
-    const svgs = $("svg");
-    const favoriteSvgs = svgs.filter(function() {
-      return $(this).css("color") === "rgb(255, 64, 96)";
-    });
-    favoriteSvgs.each(function() {
-      const listItem = $(this).closest("li");
-      listItem.hide();
-      listItem.attr("data-pp-fav-hidden", "true");
-    });
-  }
+  const svgs = $("svg");
+  const favoriteSvgs = svgs.filter(function() {
+    return $(this).css("color") === "rgb(255, 64, 96)";
+  });
+  favoriteSvgs.each(function() {
+    const listItem = $(this).closest("li");
+    listItem.hide();
+    listItem.attr("data-pp-fav-hidden", "true");
+  });
   isHidden = true;
 };
 
@@ -2281,9 +2272,7 @@ var Pages = {
         url
       );
     },
-    GetToolBar: function() {
-      return findToolbarCommon();
-    }
+    GetToolBar: getToolbar
   },
   [1 /* BookMarkNew */]: {
     PageTypeString: "BookMarkNewPage",
@@ -2292,111 +2281,82 @@ var Pages = {
         url
       );
     },
-    GetToolBar: function() {
-      return findToolbarCommon();
-    }
+    GetToolBar: getToolbar
   },
   [2 /* Discovery */]: {
     PageTypeString: "DiscoveryPage",
     CheckUrl: function(url) {
       return /^https?:\/\/www.pixiv.net(\/en)?\/discovery.*/.test(url);
     },
-    GetToolBar: function() {
-      return findToolbarCommon();
-    }
+    GetToolBar: getToolbar
   },
   [3 /* Member */]: {
     PageTypeString: "MemberPage/MemberIllustPage/MemberBookMark",
     CheckUrl: function(url) {
       return /^https?:\/\/www.pixiv.net(\/en)?\/users\/\d+/.test(url);
     },
-    GetToolBar: function() {
-      return findToolbarCommon();
-    }
+    GetToolBar: getToolbar
   },
   [4 /* Home */]: {
     PageTypeString: "HomePage",
     CheckUrl: function(url) {
       return /https?:\/\/www.pixiv.net(\/en)?\/?$/.test(url) || /https?:\/\/www.pixiv.net(\/en)?\/illustration\/?$/.test(url) || /https?:\/\/www.pixiv.net(\/en)?\/manga\/?$/.test(url) || /https?:\/\/www.pixiv.net(\/en)?\/cate_r18\.php$/.test(url);
     },
-    GetToolBar: function() {
-      return findToolbarCommon();
-    }
+    GetToolBar: getToolbar
   },
   [5 /* Ranking */]: {
     PageTypeString: "RankingPage",
     CheckUrl: function(url) {
       return /^https?:\/\/www.pixiv.net(\/en)?\/ranking.php.*/.test(url);
     },
-    GetToolBar: function() {
-      return findToolbarOld();
-    }
+    GetToolBar: getToolbar
   },
   [6 /* NewIllust */]: {
     PageTypeString: "NewIllustPage",
     CheckUrl: function(url) {
       return /^https?:\/\/www.pixiv.net(\/en)?\/new_illust.php.*/.test(url);
     },
-    GetToolBar: function() {
-      return findToolbarCommon();
-    }
+    GetToolBar: getToolbar
   },
   [7 /* R18 */]: {
     PageTypeString: "R18Page",
     CheckUrl: function(url) {
       return /^https?:\/\/www.pixiv.net(\/en)?\/cate_r18.php.*/.test(url);
     },
-    GetToolBar: function() {
-      return findToolbarCommon();
-    }
+    GetToolBar: getToolbar
   },
-  [8 /* BookMark */]: {
-    PageTypeString: "BookMarkPage",
-    CheckUrl: function(url) {
-      return /^https:\/\/www.pixiv.net(\/en)?\/bookmark.php\/?$/.test(url);
-    },
-    GetToolBar: function() {
-      return findToolbarOld();
-    }
-  },
-  [9 /* Stacc */]: {
+  [8 /* Stacc */]: {
     PageTypeString: "StaccPage",
     CheckUrl: function(url) {
       return /^https:\/\/www.pixiv.net(\/en)?\/stacc.*/.test(url);
     },
     GetToolBar: function() {
-      return findToolbarOld();
+      return getToolbarOld();
     }
   },
-  [10 /* Artwork */]: {
+  [9 /* Artwork */]: {
     PageTypeString: "ArtworkPage",
     CheckUrl: function(url) {
       return /^https:\/\/www.pixiv.net(\/en)?\/artworks\/.*/.test(url);
     },
-    GetToolBar: function() {
-      return findToolbarCommon();
-    }
+    GetToolBar: getToolbar
   },
-  [11 /* NovelSearch */]: {
+  [10 /* NovelSearch */]: {
     PageTypeString: "NovelSearchPage",
     CheckUrl: function(url) {
       return /^https:\/\/www.pixiv.net(\/en)?\/tags\/.*\/novels/.test(url);
     },
-    GetToolBar: function() {
-      return findToolbarCommon();
-    }
+    GetToolBar: getToolbar
   },
-  [12 /* SearchTop */]: {
+  [11 /* SearchTop */]: {
     PageTypeString: "SearchTopPage",
     CheckUrl: function(url) {
       return /^https?:\/\/www.pixiv.net(\/en)?\/tags\/[^/*]/.test(url);
     },
-    GetToolBar: function() {
-      return findToolbarCommon();
-    }
+    GetToolBar: getToolbar
   }
 };
-function findToolbarCommon() {
+function getToolbar() {
   const toolbar = $(`#${TOOLBAR_ID}`);
   if (toolbar.length > 0) {
     return toolbar.get(0);
@@ -2406,7 +2366,7 @@ function findToolbarCommon() {
   );
   return $(`#${TOOLBAR_ID}`).get(0);
 }
-function findToolbarOld() {
+function getToolbarOld() {
   return $("._toolmenu").get(0);
 }
 function showSearchLinksForDeletedArtworks() {
@@ -2606,7 +2566,7 @@ var initializePixivPreviewer = () => {
     }
     if (g_pageType === 3 /* Member */) {
       showSearchLinksForDeletedArtworks();
-    } else if (g_pageType === 10 /* Artwork */) {
+    } else if (g_pageType === 9 /* Artwork */) {
       const artworkId = window.location.pathname.match(/\/artworks\/(\d+)/)?.[1];
       if (artworkId) {
         setTimeout(() => {
