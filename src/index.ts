@@ -48,9 +48,7 @@ const Pages: Record<
         url
       );
     },
-    GetToolBar: function () {
-      return findToolbarCommon();
-    },
+    GetToolBar: getToolbar,
   },
   [PageType.BookMarkNew]: {
     PageTypeString: "BookMarkNewPage",
@@ -59,27 +57,21 @@ const Pages: Record<
         url
       );
     },
-    GetToolBar: function () {
-      return findToolbarCommon();
-    },
+    GetToolBar: getToolbar,
   },
   [PageType.Discovery]: {
     PageTypeString: "DiscoveryPage",
     CheckUrl: function (url) {
       return /^https?:\/\/www.pixiv.net(\/en)?\/discovery.*/.test(url);
     },
-    GetToolBar: function () {
-      return findToolbarCommon();
-    },
+    GetToolBar: getToolbar,
   },
   [PageType.Member]: {
     PageTypeString: "MemberPage/MemberIllustPage/MemberBookMark",
     CheckUrl: function (url) {
       return /^https?:\/\/www.pixiv.net(\/en)?\/users\/\d+/.test(url);
     },
-    GetToolBar: function () {
-      return findToolbarCommon();
-    },
+    GetToolBar: getToolbar,
   },
   [PageType.Home]: {
     PageTypeString: "HomePage",
@@ -91,45 +83,28 @@ const Pages: Record<
         /https?:\/\/www.pixiv.net(\/en)?\/cate_r18\.php$/.test(url)
       );
     },
-    GetToolBar: function () {
-      return findToolbarCommon();
-    },
+    GetToolBar: getToolbar,
   },
   [PageType.Ranking]: {
     PageTypeString: "RankingPage",
     CheckUrl: function (url) {
       return /^https?:\/\/www.pixiv.net(\/en)?\/ranking.php.*/.test(url);
     },
-    GetToolBar: function () {
-      return findToolbarOld();
-    },
+    GetToolBar: getToolbar,
   },
   [PageType.NewIllust]: {
     PageTypeString: "NewIllustPage",
     CheckUrl: function (url) {
       return /^https?:\/\/www.pixiv.net(\/en)?\/new_illust.php.*/.test(url);
     },
-    GetToolBar: function () {
-      return findToolbarCommon();
-    },
+    GetToolBar: getToolbar,
   },
   [PageType.R18]: {
     PageTypeString: "R18Page",
     CheckUrl: function (url) {
       return /^https?:\/\/www.pixiv.net(\/en)?\/cate_r18.php.*/.test(url);
     },
-    GetToolBar: function () {
-      return findToolbarCommon();
-    },
-  },
-  [PageType.BookMark]: {
-    PageTypeString: "BookMarkPage",
-    CheckUrl: function (url) {
-      return /^https:\/\/www.pixiv.net(\/en)?\/bookmark.php\/?$/.test(url);
-    },
-    GetToolBar: function () {
-      return findToolbarOld();
-    },
+    GetToolBar: getToolbar,
   },
   [PageType.Stacc]: {
     PageTypeString: "StaccPage",
@@ -137,7 +112,7 @@ const Pages: Record<
       return /^https:\/\/www.pixiv.net(\/en)?\/stacc.*/.test(url);
     },
     GetToolBar: function () {
-      return findToolbarOld();
+      return getToolbarOld();
     },
   },
   [PageType.Artwork]: {
@@ -145,31 +120,25 @@ const Pages: Record<
     CheckUrl: function (url) {
       return /^https:\/\/www.pixiv.net(\/en)?\/artworks\/.*/.test(url);
     },
-    GetToolBar: function () {
-      return findToolbarCommon();
-    },
+    GetToolBar: getToolbar,
   },
   [PageType.NovelSearch]: {
     PageTypeString: "NovelSearchPage",
     CheckUrl: function (url) {
       return /^https:\/\/www.pixiv.net(\/en)?\/tags\/.*\/novels/.test(url);
     },
-    GetToolBar: function () {
-      return findToolbarCommon();
-    },
+    GetToolBar: getToolbar,
   },
   [PageType.SearchTop]: {
     PageTypeString: "SearchTopPage",
     CheckUrl: function (url) {
       return /^https?:\/\/www.pixiv.net(\/en)?\/tags\/[^/*]/.test(url);
     },
-    GetToolBar: function () {
-      return findToolbarCommon();
-    },
+    GetToolBar: getToolbar,
   },
 };
 
-function findToolbarCommon() {
+function getToolbar() {
   const toolbar = $(`#${TOOLBAR_ID}`);
   if (toolbar.length > 0) {
     return toolbar.get(0);
@@ -180,7 +149,7 @@ function findToolbarCommon() {
   return $(`#${TOOLBAR_ID}`).get(0);
 }
 
-function findToolbarOld() {
+function getToolbarOld() {
   return $("._toolmenu").get(0);
 }
 

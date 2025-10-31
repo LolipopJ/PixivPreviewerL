@@ -35,7 +35,7 @@ export enum AiType {
 export enum PageType {
   // 搜索（不包含小说搜索）
   Search,
-  // 关注的新作品
+  // 收藏页
   BookMarkNew,
   // 发现
   Discovery,
@@ -49,8 +49,6 @@ export enum PageType {
   NewIllust,
   // R18
   R18,
-  // 自己的收藏页
-  BookMark,
   // 动态
   Stacc,
   // 作品详情页（处理动图预览及下载）
