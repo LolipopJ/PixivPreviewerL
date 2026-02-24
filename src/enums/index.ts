@@ -33,7 +33,7 @@ export enum AiType {
 
 // 页面相关的一些预定义，包括处理页面元素等
 export enum PageType {
-  // 搜索（不包含小说搜索）
+  // 搜索
   Search,
   // 收藏页
   BookMarkNew,
@@ -67,6 +67,10 @@ export enum IllustSortType {
   TAG_ILLUST,
   /** @link https://www.pixiv.net/tags/%E5%A4%A9%E7%AB%A5%E3%82%A2%E3%83%AA%E3%82%B9/manga */
   TAG_MANGA,
+  /** @link https://www.pixiv.net/search?q=%E5%A4%A9%E7%AB%A5%E3%82%A2%E3%83%AA%E3%82%B9&s_mode=tag&type=illust_ugoira */
+  SEARCH_ILLUST,
+  /** @link https://www.pixiv.net/search?q=%E5%A4%A9%E7%AB%A5%E3%82%A2%E3%83%AA%E3%82%B9&s_mode=tag&type=manga */
+  SEARCH_MANGA,
   /** @link https://www.pixiv.net/bookmark_new_illust.php */
   BOOKMARK_NEW,
   /** @link https://www.pixiv.net/bookmark_new_illust_r18.php */

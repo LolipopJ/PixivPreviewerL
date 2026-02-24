@@ -19,7 +19,13 @@ export default defineConfig({
     js: `// ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           ${packageJson.homepage}
-// @version             ${packageJson.version}-${new Date().toLocaleDateString()}
+// @version             ${packageJson.version}-${new Date()
+      .toLocaleDateString(undefined, {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      })
+      .replace(/\//g, "")}
 // @description         ${packageJson.description}
 // @author              ${packageJson.author}
 // @license             ${packageJson.license}

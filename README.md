@@ -38,10 +38,11 @@
   - [x] Feature: 预览窗口添加显示当前作品的收藏量等关键信息
 - [ ] 作品排序功能
   - [x] Feature：功能覆盖页面
-    - [x] 标签搜索
+    - [x] 按标签搜索
       - [x] 顶部：<https://www.pixiv.net/tags/%E5%A4%A9%E7%AB%A5%E3%82%A2%E3%83%AA%E3%82%B9/artworks>
       - [x] 插画：<https://www.pixiv.net/tags/%E5%A4%A9%E7%AB%A5%E3%82%A2%E3%83%AA%E3%82%B9/illustrations>
       - [x] 漫画：<https://www.pixiv.net/tags/%E5%A4%A9%E7%AB%A5%E3%82%A2%E3%83%AA%E3%82%B9/manga>
+    - [x] 搜索：<https://www.pixiv.net/search?q=%E5%A4%A9%E7%AB%A5%E3%82%A2%E3%83%AA%E3%82%B9&s_mode=tag&type=illust_ugoira>
     - [x] 关注用户的新作品
       - [x] 全部：<https://www.pixiv.net/bookmark_new_illust.php>
       - [x] 限制级：<https://www.pixiv.net/bookmark_new_illust_r18.php>
@@ -57,7 +58,6 @@
   - [ ] Feature：支持收藏 / 取消收藏作品
   - [ ] Feature：对收藏快速增长的作品显示特殊标记
   - [x] Feature：请求失败自动重试
-  - [ ] Perf：排序的结果分批展示，滚动到底部时渲染后续内容
 - [x] 其它能力
   - [x] 迁移设置到 Tampermonkey 面板
 

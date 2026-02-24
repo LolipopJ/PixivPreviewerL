@@ -44,8 +44,10 @@ const Pages: Record<
     PageTypeString: "SearchPage",
     CheckUrl: function (url) {
       // 没有 /artworks 的页面不支持
-      return /^https?:\/\/www.pixiv.net(\/en)?\/tags\/.+\/(artworks|illustrations|manga)/.test(
-        url
+      return (
+        /^https?:\/\/www.pixiv.net(\/en)?\/tags\/.+\/(artworks|illustrations|manga)/.test(
+          url
+        ) || /^https?:\/\/www.pixiv.net(\/en)?\/search/.test(url)
       );
     },
     GetToolBar: getToolbar,

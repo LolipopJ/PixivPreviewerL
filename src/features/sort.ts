@@ -40,8 +40,7 @@ type LoadIllustSortOptions = Pick<
   | "aiAssistedFilter"
 > & { csrfToken: string };
 
-const TAG_PAGE_ILLUSTRATION_LIST_SELECTOR = "ul.sc-98699d11-1.hHLaTl";
-const BOOKMARK_USER_PAGE_ILLUSTRATION_LIST_SELECTOR = "ul.sc-bf8cea3f-1.bCxfvI";
+const BOOKMARK_USER_PAGE_ILLUSTRATION_LIST_SELECTOR = "ul.sc-e83d358-1.gIHHFW";
 
 const USER_TYPE_ARTWORKS_PER_PAGE = 48;
 
@@ -85,7 +84,7 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
     illustrations: (IllustrationListItem & { bookmarkUserTotal: number })[];
     sorting: boolean = false;
     nextSortPage: number;
-    listElement: JQuery<HTMLUListElement> = $();
+    listElement: JQuery<HTMLElement> = $();
 
     progressElement = $();
     progressText = $();
@@ -347,6 +346,7 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
         const isAiAssisted = checkIsAiAssisted(tags);
 
         const listItem = document.createElement("li");
+        listItem.className = "col-span-2";
 
         const container = document.createElement("div");
         container.style = "width: 184px;";
@@ -452,7 +452,7 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
         });
       }
 
-      this.listElement.find("li").remove();
+      this.listElement.children().remove();
       this.listElement.append(fragment);
     }
   }
@@ -465,20 +465,18 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
     }
 
     const url = new URL(location.href);
-    const { pathname, searchParams } = url;
-
     const {
       type,
       api,
       searchParams: defaultSearchParams,
-    } = getSortOptionsFromPathname(pathname);
+    } = getSortOptionsFromUrl(url);
     if (type === undefined) {
       iLog.w("Current page doesn't support sorting illustrations.");
       return;
     }
 
     const mergedSearchParams = new URLSearchParams(defaultSearchParams);
-    searchParams.forEach((value, key) => {
+    url.searchParams.forEach((value, key) => {
       mergedSearchParams.set(key, value);
     });
 
@@ -515,15 +513,17 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
 
 /** 获取作品节点 li 的父节点 ul */
 function getIllustrationsListDom(type: IllustSortType) {
-  let dom: JQuery<HTMLUListElement>;
+  let dom: JQuery<HTMLElement>;
   if (
     [
       IllustSortType.TAG_ARTWORK,
       IllustSortType.TAG_ILLUST,
       IllustSortType.TAG_MANGA,
+      IllustSortType.SEARCH_ILLUST,
+      IllustSortType.SEARCH_MANGA,
     ].includes(type)
   ) {
-    dom = $(TAG_PAGE_ILLUSTRATION_LIST_SELECTOR);
+    dom = $('div[data-ga4-label="works_content"]').children("div").last();
     if (!dom.length) {
       dom = $("section").find("ul").last();
     }
@@ -561,7 +561,9 @@ function getIllustrationsListDom(type: IllustSortType) {
 }
 
 /** 根据当前路由获取接口参数 */
-function getSortOptionsFromPathname(pathname: string) {
+function getSortOptionsFromUrl(url: URL) {
+  const { pathname, searchParams } = url;
+
   let type: IllustSortType;
   let api: string;
   let defaultSearchParams: string;
@@ -586,6 +588,22 @@ function getSortOptionsFromPathname(pathname: string) {
         break;
       case "manga":
         type = IllustSortType.TAG_MANGA;
+        api = `/ajax/search/manga/${tagName}`;
+        defaultSearchParams = `word=${tagName}&order=date_d&mode=all&p=1&csw=0&s_mode=s_tag_full&type=manga&lang=zh`;
+        break;
+    }
+  } else if ((match = pathname.match(/\/search/))) {
+    const tagName = searchParams.get("q");
+    const filterType = searchParams.get("type");
+
+    switch (filterType) {
+      case "illust_ugoira":
+        type = IllustSortType.SEARCH_ILLUST;
+        api = `/ajax/search/illustrations/${tagName}`;
+        defaultSearchParams = `word=${tagName}&order=date_d&mode=all&p=1&csw=0&s_mode=s_tag_full&type=illust_and_ugoira&lang=zh`;
+        break;
+      case "manga":
+        type = IllustSortType.SEARCH_MANGA;
         api = `/ajax/search/manga/${tagName}`;
         defaultSearchParams = `word=${tagName}&order=date_d&mode=all&p=1&csw=0&s_mode=s_tag_full&type=manga&lang=zh`;
         break;
@@ -651,7 +669,10 @@ function getIllustrationsFromResponse(
         }>
       ).body.illustManga.data ?? []
     );
-  } else if (type === IllustSortType.TAG_ILLUST) {
+  } else if (
+    type === IllustSortType.TAG_ILLUST ||
+    type === IllustSortType.SEARCH_ILLUST
+  ) {
     return (
       (
         response as PixivStandardResponse<{
@@ -659,7 +680,10 @@ function getIllustrationsFromResponse(
         }>
       ).body.illust.data ?? []
     );
-  } else if (type === IllustSortType.TAG_MANGA) {
+  } else if (
+    type === IllustSortType.TAG_MANGA ||
+    type === IllustSortType.SEARCH_MANGA
+  ) {
     return (
       (
         response as PixivStandardResponse<{
