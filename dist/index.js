@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             1.4.0-20260224
+// @version             1.4.1-20260224
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0
@@ -20,7 +20,7 @@
 // ==/UserScript==
 
 // src/constants/index.ts
-var g_version = "1.4.0";
+var g_version = "1.4.1";
 var g_defaultSettings = {
   enablePreview: true,
   enableAnimePreview: true,
@@ -230,7 +230,7 @@ var hideFavorites = () => {
     return $(this).css("color") === "rgb(255, 64, 96)";
   });
   favoriteSvgs.each(function() {
-    const listItem = $(this).closest("li");
+    const listItem = $(this).closest("li, div.col-span-2");
     listItem.hide();
     listItem.attr("data-pp-fav-hidden", "true");
   });
