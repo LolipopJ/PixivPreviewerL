@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             1.3.4-2025/10/31
+// @version             1.4.0-20260224
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0
@@ -20,7 +20,7 @@
 // ==/UserScript==
 
 // src/constants/index.ts
-var g_version = "1.3.4";
+var g_version = "1.4.0";
 var g_defaultSettings = {
   enablePreview: true,
   enableAnimePreview: true,
@@ -238,13 +238,13 @@ var hideFavorites = () => {
 };
 
 // src/icons/download.svg
-var download_default = '<svg t="1742281193586" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg"\n  p-id="24408" width="10" height="10">\n  <path\n    d="M1024 896v128H0v-320h128v192h768v-192h128v192zM576 554.688L810.688 320 896 405.312l-384 384-384-384L213.312 320 448 554.688V0h128v554.688z"\n    fill="#ffffff" p-id="24409"></path>\n</svg>';
+var download_default = '<svg t="1742281193586" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg"\r\n  p-id="24408" width="10" height="10">\r\n  <path\r\n    d="M1024 896v128H0v-320h128v192h768v-192h128v192zM576 554.688L810.688 320 896 405.312l-384 384-384-384L213.312 320 448 554.688V0h128v554.688z"\r\n    fill="#ffffff" p-id="24409"></path>\r\n</svg>';
 
 // src/icons/loading.svg
-var loading_default = '<svg t="1742282291278" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg"\n  p-id="38665" width="48" height="48">\n  <path\n    d="M988 548c-19.9 0-36-16.1-36-36 0-59.4-11.6-117-34.6-171.3a440.45 440.45 0 0 0-94.3-139.9 437.71 437.71 0 0 0-139.9-94.3C629 83.6 571.4 72 512 72c-19.9 0-36-16.1-36-36s16.1-36 36-36c69.1 0 136.2 13.5 199.3 40.3C772.3 66 827 103 874 150c47 47 83.9 101.8 109.7 162.7 26.7 63.1 40.2 130.2 40.2 199.3 0.1 19.9-16 36-35.9 36z"\n    p-id="38666" fill="#1296db"></path>\n</svg>';
+var loading_default = '<svg t="1742282291278" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg"\r\n  p-id="38665" width="48" height="48">\r\n  <path\r\n    d="M988 548c-19.9 0-36-16.1-36-36 0-59.4-11.6-117-34.6-171.3a440.45 440.45 0 0 0-94.3-139.9 437.71 437.71 0 0 0-139.9-94.3C629 83.6 571.4 72 512 72c-19.9 0-36-16.1-36-36s16.1-36 36-36c69.1 0 136.2 13.5 199.3 40.3C772.3 66 827 103 874 150c47 47 83.9 101.8 109.7 162.7 26.7 63.1 40.2 130.2 40.2 199.3 0.1 19.9-16 36-35.9 36z"\r\n    p-id="38666" fill="#1296db"></path>\r\n</svg>';
 
 // src/icons/page.svg
-var page_default = '<svg viewBox="0 0 10 10" width="10" height="10">\n  <path\n    d="M 8 3 C 8.55228 3 9 3.44772 9 4 L 9 9 C 9 9.55228 8.55228 10 8 10 L 3 10 C 2.44772 10 2 9.55228 2 9 L 6 9 C 7.10457 9 8 8.10457 8 7 L 8 3 Z M 1 1 L 6 1 C 6.55228 1 7 1.44772 7 2 L 7 7 C 7 7.55228 6.55228 8 6 8 L 1 8 C 0.447715 8 0 7.55228 0 7 L 0 2 C 0 1.44772 0.447715 1 1 1 Z"\n    fill="#ffffff"></path>\n</svg>';
+var page_default = '<svg viewBox="0 0 10 10" width="10" height="10">\r\n  <path\r\n    d="M 8 3 C 8.55228 3 9 3.44772 9 4 L 9 9 C 9 9.55228 8.55228 10 8 10 L 3 10 C 2.44772 10 2 9.55228 2 9 L 6 9 C 7.10457 9 8 8.10457 8 7 L 8 3 Z M 1 1 L 6 1 C 6.55228 1 7 1.44772 7 2 L 7 7 C 7 7.55228 6.55228 8 6 8 L 1 8 C 0.447715 8 0 7.55228 0 7 L 0 2 C 0 1.44772 0.447715 1 1 1 Z"\r\n    fill="#ffffff"></path>\r\n</svg>';
 
 // src/utils/utils.ts
 var pause = (ms) => {
@@ -1715,13 +1715,13 @@ var Texts = {
 var i18n_default = Texts;
 
 // src/icons/heart.svg
-var heart_default = '<svg viewBox="0 0 32 32" width="32" height="32">\n  <path d="\nM21,5.5 C24.8659932,5.5 28,8.63400675 28,12.5 C28,18.2694439 24.2975093,23.1517313 17.2206059,27.1100183\nC16.4622493,27.5342993 15.5379984,27.5343235 14.779626,27.110148 C7.70250208,23.1517462 4,18.2694529 4,12.5\nC4,8.63400691 7.13400681,5.5 11,5.5 C12.829814,5.5 14.6210123,6.4144028 16,7.8282366\nC17.3789877,6.4144028 19.170186,5.5 21,5.5 Z"></path>\n  <path d="M16,11.3317089 C15.0857201,9.28334665 13.0491506,7.5 11,7.5\nC8.23857625,7.5 6,9.73857647 6,12.5 C6,17.4386065 9.2519779,21.7268174 15.7559337,25.3646328\nC15.9076021,25.4494645 16.092439,25.4494644 16.2441073,25.3646326 C22.7480325,21.7268037 26,17.4385986 26,12.5\nC26,9.73857625 23.7614237,7.5 21,7.5 C18.9508494,7.5 16.9142799,9.28334665 16,11.3317089 Z" style="fill: #fafafa;">\n  </path>\n</svg>';
+var heart_default = '<svg viewBox="0 0 32 32" width="32" height="32">\r\n  <path d="\r\nM21,5.5 C24.8659932,5.5 28,8.63400675 28,12.5 C28,18.2694439 24.2975093,23.1517313 17.2206059,27.1100183\r\nC16.4622493,27.5342993 15.5379984,27.5343235 14.779626,27.110148 C7.70250208,23.1517462 4,18.2694529 4,12.5\r\nC4,8.63400691 7.13400681,5.5 11,5.5 C12.829814,5.5 14.6210123,6.4144028 16,7.8282366\r\nC17.3789877,6.4144028 19.170186,5.5 21,5.5 Z"></path>\r\n  <path d="M16,11.3317089 C15.0857201,9.28334665 13.0491506,7.5 11,7.5\r\nC8.23857625,7.5 6,9.73857647 6,12.5 C6,17.4386065 9.2519779,21.7268174 15.7559337,25.3646328\r\nC15.9076021,25.4494645 16.092439,25.4494644 16.2441073,25.3646326 C22.7480325,21.7268037 26,17.4385986 26,12.5\r\nC26,9.73857625 23.7614237,7.5 21,7.5 C18.9508494,7.5 16.9142799,9.28334665 16,11.3317089 Z" style="fill: #fafafa;">\r\n  </path>\r\n</svg>';
 
 // src/icons/heart-filled.svg
-var heart_filled_default = '<svg viewBox="0 0 32 32" width="32" height="32">\n  <path d="\nM21,5.5 C24.8659932,5.5 28,8.63400675 28,12.5 C28,18.2694439 24.2975093,23.1517313 17.2206059,27.1100183\nC16.4622493,27.5342993 15.5379984,27.5343235 14.779626,27.110148 C7.70250208,23.1517462 4,18.2694529 4,12.5\nC4,8.63400691 7.13400681,5.5 11,5.5 C12.829814,5.5 14.6210123,6.4144028 16,7.8282366\nC17.3789877,6.4144028 19.170186,5.5 21,5.5 Z"></path>\n  <path d="M16,11.3317089 C15.0857201,9.28334665 13.0491506,7.5 11,7.5\nC8.23857625,7.5 6,9.73857647 6,12.5 C6,17.4386065 9.2519779,21.7268174 15.7559337,25.3646328\nC15.9076021,25.4494645 16.092439,25.4494644 16.2441073,25.3646326 C22.7480325,21.7268037 26,17.4385986 26,12.5\nC26,9.73857625 23.7614237,7.5 21,7.5 C18.9508494,7.5 16.9142799,9.28334665 16,11.3317089 Z" style="fill: #dc2626;">\n  </path>\n</svg>';
+var heart_filled_default = '<svg viewBox="0 0 32 32" width="32" height="32">\r\n  <path d="\r\nM21,5.5 C24.8659932,5.5 28,8.63400675 28,12.5 C28,18.2694439 24.2975093,23.1517313 17.2206059,27.1100183\r\nC16.4622493,27.5342993 15.5379984,27.5343235 14.779626,27.110148 C7.70250208,23.1517462 4,18.2694529 4,12.5\r\nC4,8.63400691 7.13400681,5.5 11,5.5 C12.829814,5.5 14.6210123,6.4144028 16,7.8282366\r\nC17.3789877,6.4144028 19.170186,5.5 21,5.5 Z"></path>\r\n  <path d="M16,11.3317089 C15.0857201,9.28334665 13.0491506,7.5 11,7.5\r\nC8.23857625,7.5 6,9.73857647 6,12.5 C6,17.4386065 9.2519779,21.7268174 15.7559337,25.3646328\r\nC15.9076021,25.4494645 16.092439,25.4494644 16.2441073,25.3646326 C22.7480325,21.7268037 26,17.4385986 26,12.5\r\nC26,9.73857625 23.7614237,7.5 21,7.5 C18.9508494,7.5 16.9142799,9.28334665 16,11.3317089 Z" style="fill: #dc2626;">\r\n  </path>\r\n</svg>';
 
 // src/icons/play.svg
-var play_default = '<svg viewBox="0 0 24 24"\n  style="width: 48px; height: 48px; stroke: none; line-height: 0; font-size: 0px; vertical-align: middle;">\n  <circle cx="12" cy="12" r="10" style="fill: rgba(0, 0, 0, 0.32);"></circle>\n  <path d="M9,8.74841664 L9,15.2515834 C9,15.8038681 9.44771525,16.2515834 10,16.2515834\nC10.1782928,16.2515834 10.3533435,16.2039156 10.5070201,16.1135176 L16.0347118,12.8619342\nC16.510745,12.5819147 16.6696454,11.969013 16.3896259,11.4929799\nC16.3034179,11.3464262 16.1812655,11.2242738 16.0347118,11.1380658 L10.5070201,7.88648243\nC10.030987,7.60646294 9.41808527,7.76536339 9.13806578,8.24139652\nC9.04766776,8.39507316 9,8.57012386 9,8.74841664 Z" style="fill: rgb(245, 245, 245);"></path>\n</svg>';
+var play_default = '<svg viewBox="0 0 24 24"\r\n  style="width: 48px; height: 48px; stroke: none; line-height: 0; font-size: 0px; vertical-align: middle;">\r\n  <circle cx="12" cy="12" r="10" style="fill: rgba(0, 0, 0, 0.32);"></circle>\r\n  <path d="M9,8.74841664 L9,15.2515834 C9,15.8038681 9.44771525,16.2515834 10,16.2515834\r\nC10.1782928,16.2515834 10.3533435,16.2039156 10.5070201,16.1135176 L16.0347118,12.8619342\r\nC16.510745,12.5819147 16.6696454,11.969013 16.3896259,11.4929799\r\nC16.3034179,11.3464262 16.1812655,11.2242738 16.0347118,11.1380658 L10.5070201,7.88648243\r\nC10.030987,7.60646294 9.41808527,7.76536339 9.13806578,8.24139652\r\nC9.04766776,8.39507316 9,8.57012386 9,8.74841664 Z" style="fill: rgb(245, 245, 245);"></path>\r\n</svg>';
 
 // src/utils/promise.ts
 var execLimitConcurrentPromises = async (promises, limit = 48) => {
@@ -1743,8 +1743,7 @@ var execLimitConcurrentPromises = async (promises, limit = 48) => {
 };
 
 // src/features/sort.ts
-var TAG_PAGE_ILLUSTRATION_LIST_SELECTOR = "ul.sc-98699d11-1.hHLaTl";
-var BOOKMARK_USER_PAGE_ILLUSTRATION_LIST_SELECTOR = "ul.sc-bf8cea3f-1.bCxfvI";
+var BOOKMARK_USER_PAGE_ILLUSTRATION_LIST_SELECTOR = "ul.sc-e83d358-1.gIHHFW";
 var USER_TYPE_ARTWORKS_PER_PAGE = 48;
 var isInitialized2 = false;
 var loadIllustSort = (options) => {
@@ -1834,9 +1833,9 @@ var loadIllustSort = (options) => {
         for (let page = startPage; page < startPage + pageCount; page += 1) {
           searchParams.set("p", String(page));
           if ([
-            5 /* USER_ARTWORK */,
-            6 /* USER_ILLUST */,
-            7 /* USER_MANGA */
+            7 /* USER_ARTWORK */,
+            8 /* USER_ILLUST */,
+            9 /* USER_MANGA */
           ].includes(type)) {
             searchParams.set("is_first_page", page > 1 ? "0" : "1");
             searchParams.delete("ids[]");
@@ -1850,17 +1849,17 @@ var loadIllustSort = (options) => {
             const fromIndex = (page - 1) * USER_TYPE_ARTWORKS_PER_PAGE;
             const toIndex = page * USER_TYPE_ARTWORKS_PER_PAGE;
             switch (type) {
-              case 5 /* USER_ARTWORK */:
+              case 7 /* USER_ARTWORK */:
                 userIllustrations.artworks.slice(fromIndex, toIndex).forEach((id) => searchParams.append("ids[]", id));
                 break;
-              case 6 /* USER_ILLUST */:
+              case 8 /* USER_ILLUST */:
                 userIllustrations.illusts.slice(fromIndex, toIndex).forEach((id) => searchParams.append("ids[]", id));
                 break;
-              case 7 /* USER_MANGA */:
+              case 9 /* USER_MANGA */:
                 userIllustrations.manga.slice(fromIndex, toIndex).forEach((id) => searchParams.append("ids[]", id));
                 break;
             }
-          } else if ([8 /* USER_BOOKMARK */].includes(type)) {
+          } else if ([10 /* USER_BOOKMARK */].includes(type)) {
             searchParams.set(
               "offset",
               String((page - 1) * USER_TYPE_ARTWORKS_PER_PAGE)
@@ -1977,6 +1976,7 @@ var loadIllustSort = (options) => {
         const isAi = checkIsAiGenerated(aiType);
         const isAiAssisted = checkIsAiAssisted(tags);
         const listItem = document.createElement("li");
+        listItem.className = "col-span-2";
         const container = document.createElement("div");
         container.style = "width: 184px;";
         const illustrationAnchor = document.createElement("a");
@@ -2039,18 +2039,18 @@ var loadIllustSort = (options) => {
         fragment.appendChild(listItem);
       }
       if ([
-        3 /* BOOKMARK_NEW */,
-        4 /* BOOKMARK_NEW_R18 */,
-        5 /* USER_ARTWORK */,
-        6 /* USER_ILLUST */,
-        7 /* USER_MANGA */,
-        8 /* USER_BOOKMARK */
+        5 /* BOOKMARK_NEW */,
+        6 /* BOOKMARK_NEW_R18 */,
+        7 /* USER_ARTWORK */,
+        8 /* USER_ILLUST */,
+        9 /* USER_MANGA */,
+        10 /* USER_BOOKMARK */
       ].includes(this.type)) {
         this.listElement.css({
           gap: "24px"
         });
       }
-      this.listElement.find("li").remove();
+      this.listElement.children().remove();
       this.listElement.append(fragment);
     }
   }
@@ -2061,18 +2061,17 @@ var loadIllustSort = (options) => {
       return;
     }
     const url = new URL(location.href);
-    const { pathname, searchParams } = url;
     const {
       type,
       api,
       searchParams: defaultSearchParams
-    } = getSortOptionsFromPathname(pathname);
+    } = getSortOptionsFromUrl(url);
     if (type === void 0) {
       iLog.w("Current page doesn't support sorting illustrations.");
       return;
     }
     const mergedSearchParams = new URLSearchParams(defaultSearchParams);
-    searchParams.forEach((value, key) => {
+    url.searchParams.forEach((value, key) => {
       mergedSearchParams.set(key, value);
     });
     illustSorter.reset({
@@ -2105,25 +2104,27 @@ function getIllustrationsListDom(type) {
   if ([
     0 /* TAG_ARTWORK */,
     1 /* TAG_ILLUST */,
-    2 /* TAG_MANGA */
+    2 /* TAG_MANGA */,
+    3 /* SEARCH_ILLUST */,
+    4 /* SEARCH_MANGA */
   ].includes(type)) {
-    dom = $(TAG_PAGE_ILLUSTRATION_LIST_SELECTOR);
+    dom = $('div[data-ga4-label="works_content"]').children("div").last();
     if (!dom.length) {
       dom = $("section").find("ul").last();
     }
   } else if ([
-    3 /* BOOKMARK_NEW */,
-    4 /* BOOKMARK_NEW_R18 */,
-    8 /* USER_BOOKMARK */
+    5 /* BOOKMARK_NEW */,
+    6 /* BOOKMARK_NEW_R18 */,
+    10 /* USER_BOOKMARK */
   ].includes(type)) {
     dom = $(BOOKMARK_USER_PAGE_ILLUSTRATION_LIST_SELECTOR);
     if (!dom.length) {
       dom = $("section").find("ul").last();
     }
   } else if ([
-    5 /* USER_ARTWORK */,
-    6 /* USER_ILLUST */,
-    7 /* USER_MANGA */
+    7 /* USER_ARTWORK */,
+    8 /* USER_ILLUST */,
+    9 /* USER_MANGA */
   ].includes(type)) {
     dom = $(BOOKMARK_USER_PAGE_ILLUSTRATION_LIST_SELECTOR);
     if (!dom.length) {
@@ -2138,7 +2139,8 @@ function getIllustrationsListDom(type) {
     );
   }
 }
-function getSortOptionsFromPathname(pathname) {
+function getSortOptionsFromUrl(url) {
+  const { pathname, searchParams } = url;
   let type;
   let api;
   let defaultSearchParams;
@@ -2163,19 +2165,34 @@ function getSortOptionsFromPathname(pathname) {
         defaultSearchParams = `word=${tagName}&order=date_d&mode=all&p=1&csw=0&s_mode=s_tag_full&type=manga&lang=zh`;
         break;
     }
+  } else if (match = pathname.match(/\/search/)) {
+    const tagName = searchParams.get("q");
+    const filterType = searchParams.get("type");
+    switch (filterType) {
+      case "illust_ugoira":
+        type = 3 /* SEARCH_ILLUST */;
+        api = `/ajax/search/illustrations/${tagName}`;
+        defaultSearchParams = `word=${tagName}&order=date_d&mode=all&p=1&csw=0&s_mode=s_tag_full&type=illust_and_ugoira&lang=zh`;
+        break;
+      case "manga":
+        type = 4 /* SEARCH_MANGA */;
+        api = `/ajax/search/manga/${tagName}`;
+        defaultSearchParams = `word=${tagName}&order=date_d&mode=all&p=1&csw=0&s_mode=s_tag_full&type=manga&lang=zh`;
+        break;
+    }
   } else if (match = pathname.match(/\/bookmark_new_illust(_r18)?\.php$/)) {
     const isR18 = !!match[1];
     api = "/ajax/follow_latest/illust";
     if (isR18) {
-      type = 3 /* BOOKMARK_NEW */;
+      type = 5 /* BOOKMARK_NEW */;
       defaultSearchParams = "mode=r18&lang=zh";
     } else {
-      type = 4 /* BOOKMARK_NEW_R18 */;
+      type = 6 /* BOOKMARK_NEW_R18 */;
       defaultSearchParams = "mode=all&lang=zh";
     }
   } else if (match = pathname.match(/\/users\/(\d+)\/bookmarks\/artworks$/)) {
     const userId = match[1];
-    type = 8 /* USER_BOOKMARK */;
+    type = 10 /* USER_BOOKMARK */;
     api = `/ajax/user/${userId}/illusts/bookmarks`;
     defaultSearchParams = `tag=&offset=0&limit=${USER_TYPE_ARTWORKS_PER_PAGE}&rest=show&lang=zh`;
   } else if (match = pathname.match(/\/users\/(\d+)\/(artworks|illustrations|manga)$/)) {
@@ -2184,15 +2201,15 @@ function getSortOptionsFromPathname(pathname) {
     api = `/ajax/user/${userId}/profile/illusts`;
     switch (filterType) {
       case "artworks":
-        type = 5 /* USER_ARTWORK */;
+        type = 7 /* USER_ARTWORK */;
         defaultSearchParams = `work_category=illustManga&is_first_page=1&sensitiveFilterMode=userSetting&user_id=${userId}&lang=zh`;
         break;
       case "illustrations":
-        type = 6 /* USER_ILLUST */;
+        type = 8 /* USER_ILLUST */;
         defaultSearchParams = `work_category=illust&is_first_page=1&sensitiveFilterMode=userSetting&user_id=${userId}&lang=zh`;
         break;
       case "manga":
-        type = 7 /* USER_MANGA */;
+        type = 9 /* USER_MANGA */;
         defaultSearchParams = `work_category=manga&is_first_page=1&sensitiveFilterMode=userSetting&user_id=${userId}&lang=zh`;
         break;
     }
@@ -2206,19 +2223,19 @@ function getSortOptionsFromPathname(pathname) {
 function getIllustrationsFromResponse(type, response) {
   if (type === 0 /* TAG_ARTWORK */) {
     return response.body.illustManga.data ?? [];
-  } else if (type === 1 /* TAG_ILLUST */) {
+  } else if (type === 1 /* TAG_ILLUST */ || type === 3 /* SEARCH_ILLUST */) {
     return response.body.illust.data ?? [];
-  } else if (type === 2 /* TAG_MANGA */) {
+  } else if (type === 2 /* TAG_MANGA */ || type === 4 /* SEARCH_MANGA */) {
     return response.body.manga.data ?? [];
-  } else if ([3 /* BOOKMARK_NEW */, 4 /* BOOKMARK_NEW_R18 */].includes(
+  } else if ([5 /* BOOKMARK_NEW */, 6 /* BOOKMARK_NEW_R18 */].includes(
     type
   )) {
     return response.body.thumbnails.illust ?? [];
   } else if ([
-    5 /* USER_ARTWORK */,
-    6 /* USER_ILLUST */,
-    7 /* USER_MANGA */,
-    8 /* USER_BOOKMARK */
+    7 /* USER_ARTWORK */,
+    8 /* USER_ILLUST */,
+    9 /* USER_MANGA */,
+    10 /* USER_BOOKMARK */
   ].includes(type)) {
     return Object.values(
       response.body.works
@@ -2270,7 +2287,7 @@ var Pages = {
     CheckUrl: function(url) {
       return /^https?:\/\/www.pixiv.net(\/en)?\/tags\/.+\/(artworks|illustrations|manga)/.test(
         url
-      );
+      ) || /^https?:\/\/www.pixiv.net(\/en)?\/search/.test(url);
     },
     GetToolBar: getToolbar
   },
