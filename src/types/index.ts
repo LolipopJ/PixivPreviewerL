@@ -31,6 +31,12 @@ export interface GlobalSettings {
   version: string;
 }
 
+export type RequestResponse<T> = {
+  body: T;
+  error: boolean;
+  message: string;
+};
+
 export interface IllustrationListItem {
   /** AI 生成类型 */
   aiType: AiType;

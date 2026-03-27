@@ -792,6 +792,7 @@ class PreviewedIllust {
   };
   //#endregion
 
+  //#region 预览组件通用能力
   async showIllustrationDetails() {
     const illustrationDetails = await getIllustrationDetailsWithCache(
       this.illustId
@@ -932,37 +933,66 @@ class PreviewedIllust {
     const screenWidth = document.documentElement.clientWidth;
     const screenHeight = document.documentElement.clientHeight;
 
-    /** 预览容器是否显示在鼠标左侧 */
-    const isShowLeft = mousePosX > screenWidth / 2;
-    /** 预览容器是否显示在鼠标上方 */
-    const isShowTop = mousePosY > screenHeight / 2;
+    const DIST = PREVIEW_WRAPPER_DISTANCE_TO_MOUSE;
 
-    /** 预览作品宽高比 */
-    const illustRatio = illustWidth / illustHeight;
+    // 如果没有尺寸信息或为 0，直接使用默认位置和不缩放
+    if (!illustWidth || !illustHeight) {
+      const defaultPos = {
+        left: `${mousePosX + DIST}px`,
+        top: `${mousePosY}px`,
+      };
+      this.previewWrapperElement.css(defaultPos);
+      this.previewImageElement.css({ width: "", height: "" });
+      return;
+    }
 
-    /** 鼠标到左（右）边的距离 */
-    const screenRestWidth = isShowLeft
-      ? mousePosX - PREVIEW_WRAPPER_DISTANCE_TO_MOUSE
-      : screenWidth - mousePosX - PREVIEW_WRAPPER_DISTANCE_TO_MOUSE;
-    /** 显示预览容器的可用空间宽高比 */
-    const screenRestRatio = screenRestWidth / screenHeight;
+    // 计算四个方向的可用区域，并计算图片按比例适配后的面积
+    type Side = "left" | "right" | "top" | "bottom";
+    const candidates: { side: Side; availW: number; availH: number }[] = [
+      {
+        side: "left",
+        availW: Math.max(0, mousePosX - DIST),
+        availH: screenHeight,
+      },
+      {
+        side: "right",
+        availW: Math.max(0, screenWidth - mousePosX - DIST),
+        availH: screenHeight,
+      },
+      {
+        side: "top",
+        availW: screenWidth,
+        availH: Math.max(0, mousePosY - DIST),
+      },
+      {
+        side: "bottom",
+        availW: screenWidth,
+        availH: Math.max(0, screenHeight - mousePosY - DIST),
+      },
+    ];
 
-    /** 作品缩放后是否占满可视区域高度，宽度自适应；若否，则作品缩放后占满剩余宽度，高度自适应 */
-    const isFitToFullHeight = screenRestRatio > illustRatio;
+    let best: { side: Side; fitW: number; fitH: number; area: number } | null =
+      null;
 
-    let fitToScreenScale = 1;
-    if (this.illustLoaded) {
-      // 当前预览的是实际作品，进行缩放处理
-      if (isFitToFullHeight) {
-        // 作品高度缩放占满可视区域，宽度自适应
-        fitToScreenScale = Number((screenHeight / illustHeight).toFixed(3));
-      } else {
-        // 作品宽度缩放占满鼠标左（右）边区域，高度自适应
-        fitToScreenScale = Number((screenRestWidth / illustWidth).toFixed(3));
+    for (const c of candidates) {
+      let scale = 1;
+      if (this.illustLoaded) {
+        const sx = c.availW / illustWidth;
+        const sy = c.availH / illustHeight;
+        // 使用能完全容纳在可用区域的最大比例
+        scale = Number(Math.min(sx, sy).toFixed(3));
+      }
+      const fitW = Math.max(0, Math.floor(illustWidth * scale));
+      const fitH = Math.max(0, Math.floor(illustHeight * scale));
+      const area = fitW * fitH;
+
+      if (!best || area > best.area) {
+        best = { side: c.side, fitW, fitH, area };
       }
     }
-    const previewImageFitWidth = Math.floor(illustWidth * fitToScreenScale);
-    const previewImageFitHeight = Math.floor(illustHeight * fitToScreenScale);
+
+    const previewImageFitWidth = best?.fitW ?? 0;
+    const previewImageFitHeight = best?.fitH ?? 0;
 
     const previewWrapperElementPos = {
       left: "",
@@ -970,44 +1000,72 @@ class PreviewedIllust {
       top: "",
       bottom: "",
     };
-    // 设置预览容器的水平位置
-    if (isShowLeft) {
-      previewWrapperElementPos.right = `${screenWidth - mousePosX + PREVIEW_WRAPPER_DISTANCE_TO_MOUSE}px`;
-    } else {
-      previewWrapperElementPos.left = `${mousePosX + PREVIEW_WRAPPER_DISTANCE_TO_MOUSE}px`;
-    }
-    // 设置预览容器的垂直位置
-    if (this.illustLoaded) {
-      if (isFitToFullHeight) {
-        // 图片高度占满可视区域
-        previewWrapperElementPos.top = "0px";
-      } else {
-        // 图片宽度占满鼠标到左（右）边的距离
-        /** 鼠标到顶（底）边的距离 */
-        const screenRestHeight = isShowTop
-          ? mousePosY
-          : screenHeight - mousePosY;
-        if (previewImageFitHeight > screenRestHeight) {
-          // 垂直方向上，图片高度大于鼠标到顶（底）边的距离，设置预览容器贴顶（底）边
-          if (isShowTop) {
-            previewWrapperElementPos.top = "0px";
-          } else {
-            previewWrapperElementPos.bottom = "0px";
-          }
-        } else {
-          // 垂直方向上，图片高度小于鼠标到顶（底）边的距离，设置预览容器跟随鼠标
-          if (isShowTop) {
-            previewWrapperElementPos.bottom = `${screenHeight - mousePosY}px`;
-          } else {
-            previewWrapperElementPos.top = `${mousePosY}px`;
-          }
-        }
+
+    // 根据选中的方向设置位置，并尽量保证不超出屏幕
+    const clamp = (v: number, lo: number, hi: number) =>
+      Math.max(lo, Math.min(v, hi));
+
+    switch (best?.side) {
+      case "right": {
+        const left = clamp(
+          mousePosX + DIST,
+          0,
+          Math.max(0, screenWidth - previewImageFitWidth)
+        );
+        const top = clamp(
+          Math.floor(mousePosY - previewImageFitHeight / 2),
+          0,
+          Math.max(0, screenHeight - previewImageFitHeight)
+        );
+        previewWrapperElementPos.left = `${left}px`;
+        previewWrapperElementPos.top = `${top}px`;
+        break;
       }
-    } else {
-      if (isShowTop) {
-        previewWrapperElementPos.bottom = `${screenHeight - mousePosY}px`;
-      } else {
-        previewWrapperElementPos.top = `${mousePosY}px`;
+      case "left": {
+        const left = clamp(
+          mousePosX - DIST - previewImageFitWidth,
+          0,
+          Math.max(0, screenWidth - previewImageFitWidth)
+        );
+        const top = clamp(
+          Math.floor(mousePosY - previewImageFitHeight / 2),
+          0,
+          Math.max(0, screenHeight - previewImageFitHeight)
+        );
+        previewWrapperElementPos.left = `${left}px`;
+        previewWrapperElementPos.top = `${top}px`;
+        break;
+      }
+      case "top": {
+        const left = clamp(
+          Math.floor(mousePosX - previewImageFitWidth / 2),
+          0,
+          Math.max(0, screenWidth - previewImageFitWidth)
+        );
+        const top = clamp(
+          mousePosY - DIST - previewImageFitHeight,
+          0,
+          Math.max(0, screenHeight - previewImageFitHeight)
+        );
+        previewWrapperElementPos.left = `${left}px`;
+        previewWrapperElementPos.top = `${top}px`;
+        break;
+      }
+      case "bottom":
+      default: {
+        const left = clamp(
+          Math.floor(mousePosX - previewImageFitWidth / 2),
+          0,
+          Math.max(0, screenWidth - previewImageFitWidth)
+        );
+        const top = clamp(
+          mousePosY + DIST,
+          0,
+          Math.max(0, screenHeight - previewImageFitHeight)
+        );
+        previewWrapperElementPos.left = `${left}px`;
+        previewWrapperElementPos.top = `${top}px`;
+        break;
       }
     }
 
@@ -1017,6 +1075,7 @@ class PreviewedIllust {
       height: `${previewImageFitHeight}px`,
     });
   }
+  //#endregion
 }
 
 export default loadIllustPreview;
