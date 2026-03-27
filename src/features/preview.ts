@@ -352,6 +352,8 @@ class PreviewedIllust {
 
   /** 预加载图片的列表 */
   #images: (HTMLImageElement | undefined)[] = [];
+  /** 下载按钮重置定时器 */
+  #downloadResetTimeout: ReturnType<typeof setTimeout> | null = null;
   /** 保存的鼠标位置 */
   #prevMousePos: [number, number] = [0, 0];
   /** 当前预览图片的实际尺寸 */
@@ -470,6 +472,10 @@ class PreviewedIllust {
     this.#prevMousePos = [0, 0];
     this.#currentIllustSize = [0, 0];
     this.#currentUgoiraPlayer?.stop();
+    if (this.#downloadResetTimeout !== null) {
+      clearTimeout(this.#downloadResetTimeout);
+      this.#downloadResetTimeout = null;
+    }
 
     // 取消所有绑定的监听事件
     this.unbindPreviewImageEvents();
@@ -584,6 +590,7 @@ class PreviewedIllust {
     } else {
       this.currentPage = 1;
     }
+    this.resetDownloadButton();
     this.updatePreviewImage();
 
     this.preloadImages();
@@ -595,7 +602,23 @@ class PreviewedIllust {
     } else {
       this.currentPage = this.pageCount;
     }
+    this.resetDownloadButton();
     this.updatePreviewImage();
+  }
+
+  resetDownloadButton() {
+    if (this.#downloadResetTimeout !== null) {
+      clearTimeout(this.#downloadResetTimeout);
+      this.#downloadResetTimeout = null;
+    }
+    const textSpan = this.downloadOriginalElement.find("span");
+    textSpan.text("原图");
+    this.downloadOriginalElement.css({
+      pointerEvents: "",
+      backgroundImage: "",
+      backgroundSize: "",
+      backgroundRepeat: "",
+    });
   }
 
   preloadImages(
@@ -651,7 +674,8 @@ class PreviewedIllust {
   onDownloadImage = (onClickEvent: JQuery.ClickEvent) => {
     onClickEvent.preventDefault();
 
-    const currentImageOriginalUrl = this.originalUrls[this.currentPage - 1];
+    const downloadPage = this.currentPage;
+    const currentImageOriginalUrl = this.originalUrls[downloadPage - 1];
     const currentImageFilename =
       currentImageOriginalUrl.split("/").pop() || "illust.jpg";
 
@@ -661,7 +685,7 @@ class PreviewedIllust {
     this.downloadOriginalElement.css({
       pointerEvents: "none",
       backgroundImage:
-        "linear-gradient(to right, rgba(34,197,94,0.28), rgba(34,197,94,0.28))",
+        "linear-gradient(to right, rgba(0,150,250,0.28), rgba(0,150,250,0.28))",
       backgroundSize: "0% 100%",
       backgroundRepeat: "no-repeat",
     });
@@ -672,6 +696,8 @@ class PreviewedIllust {
       filename: currentImageFilename,
       options: {
         onprogress: (ev) => {
+          if (this.currentPage !== downloadPage) return;
+
           try {
             const loaded = ev.loaded ?? 0;
             const total = ev.total ?? 0;
@@ -689,6 +715,8 @@ class PreviewedIllust {
           }
         },
         onload: () => {
+          if (this.currentPage !== downloadPage) return;
+
           textSpan.text("已下载");
           this.downloadOriginalElement.css({
             backgroundImage: "",
@@ -696,8 +724,9 @@ class PreviewedIllust {
             pointerEvents: "",
           });
 
-          setTimeout(() => {
+          this.#downloadResetTimeout = setTimeout(() => {
             textSpan.text(originalText);
+            this.#downloadResetTimeout = null;
           }, 3000);
         },
       },
