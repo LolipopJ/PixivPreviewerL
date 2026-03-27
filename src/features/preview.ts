@@ -48,15 +48,8 @@ export const loadIllustPreview = (
    * @returns 作品的元数据
    */
   const getIllustMetadata = (target: JQuery<HTMLElement>) => {
-    let imgLink = target;
-    while (!imgLink.is("A")) {
-      imgLink = imgLink.parent();
-
-      if (!imgLink.length) {
-        // iLog.v("未能找到当前作品的链接元素");
-        return null;
-      }
-    }
+    const imgLink = target.closest("a");
+    if (!imgLink.length) return null;
 
     const illustHref = imgLink.attr("href");
     const illustHrefMatch = illustHref?.match(/\/artworks\/(\d+)(#(\d+))?/);
@@ -268,7 +261,7 @@ export const loadIllustPreview = (
       onMouseOverIllust,
       mouseHoverDebounceWait
     );
-    let prevTarget: JQuery<HTMLElement>;
+    let prevTarget: EventTarget | null = null;
 
     return (mouseMoveEvent: JQuery.MouseMoveEvent) => {
       if (mouseMoveEvent.ctrlKey || mouseMoveEvent.metaKey) {
@@ -276,15 +269,15 @@ export const loadIllustPreview = (
         return;
       }
 
-      const currentTarget = $(
-        mouseMoveEvent.target
-      ) as unknown as JQuery<HTMLElement>;
-      if (currentTarget.is(prevTarget)) {
+      if (mouseMoveEvent.target === prevTarget) {
         // 鼠标在同一个 DOM 元素上移动时，跳过
         return;
       }
-      prevTarget = currentTarget;
+      prevTarget = mouseMoveEvent.target;
 
+      const currentTarget = $(
+        mouseMoveEvent.target
+      ) as unknown as JQuery<HTMLElement>;
       debouncedOnMouseOverIllust(currentTarget);
     };
   })();
@@ -314,6 +307,20 @@ export const loadIllustPreview = (
 
   isInitialized = true;
 };
+
+const DETAIL_BADGE_CSS = {
+  height: "20px",
+  "border-radius": "12px",
+  color: "rgb(245, 245, 245)",
+  background: "rgba(0, 0, 0, 0.32)",
+  "font-size": "12px",
+  "line-height": "1",
+  "font-weight": "bold",
+  padding: "3px 6px",
+  display: "flex",
+  "align-items": "center",
+  gap: "4px",
+} as const;
 
 class PreviewedIllust {
   /** 当前正在预览的作品的 ID */
@@ -838,25 +845,11 @@ class PreviewedIllust {
 
       const illustrationDetailsElements: JQuery<HTMLElement>[] = [];
 
-      const defaultElementCss = {
-        height: "20px",
-        "border-radius": "12px",
-        color: "rgb(245, 245, 245)",
-        background: "rgba(0, 0, 0, 0.32)",
-        "font-size": "12px",
-        "line-height": "1",
-        "font-weight": "bold",
-        padding: "3px 6px",
-        display: "flex",
-        "align-items": "center",
-        gap: "4px",
-      };
-
       if (isR18) {
         illustrationDetailsElements.push(
           $(document.createElement("div"))
             .css({
-              ...defaultElementCss,
+              ...DETAIL_BADGE_CSS,
               background: "rgb(255, 64, 96)",
             })
             .text("R-18")
@@ -867,7 +860,7 @@ class PreviewedIllust {
         illustrationDetailsElements.push(
           $(document.createElement("div"))
             .css({
-              ...defaultElementCss,
+              ...DETAIL_BADGE_CSS,
               background: "rgb(29, 78, 216)",
             })
             .text("AI 生成")
@@ -876,7 +869,7 @@ class PreviewedIllust {
         illustrationDetailsElements.push(
           $(document.createElement("div"))
             .css({
-              ...defaultElementCss,
+              ...DETAIL_BADGE_CSS,
               background: "rgb(109, 40, 217)",
             })
             .text("AI 辅助")
@@ -886,7 +879,7 @@ class PreviewedIllust {
       illustrationDetailsElements.push(
         $(document.createElement("div"))
           .css({
-            ...defaultElementCss,
+            ...DETAIL_BADGE_CSS,
             background:
               bookmarkUserTotal > 50000
                 ? "rgb(159, 18, 57)"
@@ -1023,82 +1016,43 @@ class PreviewedIllust {
     const previewImageFitWidth = best?.fitW ?? 0;
     const previewImageFitHeight = best?.fitH ?? 0;
 
-    const previewWrapperElementPos = {
-      left: "",
-      right: "",
-      top: "",
-      bottom: "",
-    };
-
-    // 根据选中的方向设置位置，并尽量保证不超出屏幕
+    // 根据选中的方向计算锚点位置，并保证不超出屏幕
     const clamp = (v: number, lo: number, hi: number) =>
       Math.max(lo, Math.min(v, hi));
 
-    switch (best?.side) {
-      case "right": {
-        const left = clamp(
-          mousePosX + DIST,
-          0,
-          Math.max(0, screenWidth - previewImageFitWidth)
-        );
-        const top = clamp(
-          Math.floor(mousePosY - previewImageFitHeight / 2),
-          0,
-          Math.max(0, screenHeight - previewImageFitHeight)
-        );
-        previewWrapperElementPos.left = `${left}px`;
-        previewWrapperElementPos.top = `${top}px`;
-        break;
-      }
-      case "left": {
-        const left = clamp(
-          mousePosX - DIST - previewImageFitWidth,
-          0,
-          Math.max(0, screenWidth - previewImageFitWidth)
-        );
-        const top = clamp(
-          Math.floor(mousePosY - previewImageFitHeight / 2),
-          0,
-          Math.max(0, screenHeight - previewImageFitHeight)
-        );
-        previewWrapperElementPos.left = `${left}px`;
-        previewWrapperElementPos.top = `${top}px`;
-        break;
-      }
-      case "top": {
-        const left = clamp(
-          Math.floor(mousePosX - previewImageFitWidth / 2),
-          0,
-          Math.max(0, screenWidth - previewImageFitWidth)
-        );
-        const top = clamp(
-          mousePosY - DIST - previewImageFitHeight,
-          0,
-          Math.max(0, screenHeight - previewImageFitHeight)
-        );
-        previewWrapperElementPos.left = `${left}px`;
-        previewWrapperElementPos.top = `${top}px`;
-        break;
-      }
-      case "bottom":
-      default: {
-        const left = clamp(
-          Math.floor(mousePosX - previewImageFitWidth / 2),
-          0,
-          Math.max(0, screenWidth - previewImageFitWidth)
-        );
-        const top = clamp(
-          mousePosY + DIST,
-          0,
-          Math.max(0, screenHeight - previewImageFitHeight)
-        );
-        previewWrapperElementPos.left = `${left}px`;
-        previewWrapperElementPos.top = `${top}px`;
-        break;
-      }
-    }
+    const side = best?.side ?? "bottom";
+    const isHorizontal = side === "left" || side === "right";
 
-    this.previewWrapperElement.css(previewWrapperElementPos);
+    // 水平方向：锚点 X 基于鼠标偏移，Y 居中；垂直方向：反之
+    const anchorX = isHorizontal
+      ? side === "right"
+        ? mousePosX + DIST
+        : mousePosX - DIST - previewImageFitWidth
+      : Math.floor(mousePosX - previewImageFitWidth / 2);
+
+    const anchorY = isHorizontal
+      ? Math.floor(mousePosY - previewImageFitHeight / 2)
+      : side === "bottom"
+        ? mousePosY + DIST
+        : mousePosY - DIST - previewImageFitHeight;
+
+    const left = clamp(
+      anchorX,
+      0,
+      Math.max(0, screenWidth - previewImageFitWidth)
+    );
+    const top = clamp(
+      anchorY,
+      0,
+      Math.max(0, screenHeight - previewImageFitHeight)
+    );
+
+    this.previewWrapperElement.css({
+      left: `${left}px`,
+      top: `${top}px`,
+      right: "",
+      bottom: "",
+    });
     this.previewImageElement.css({
       width: `${previewImageFitWidth}px`,
       height: `${previewImageFitHeight}px`,
