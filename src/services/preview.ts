@@ -14,7 +14,8 @@ export const downloadIllust = ({
 }) => {
   downloadFile(url, filename, {
     ...options,
-    onerror: () => {
+    onerror: function (this, resp) {
+      options.onerror?.call(this, resp);
       window.open(url, "__blank");
     },
   });

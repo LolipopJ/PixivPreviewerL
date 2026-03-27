@@ -12,9 +12,8 @@ export const downloadFile = (
     url,
     method: "GET",
     responseType: "blob",
-    onload: (resp) => {
-      // @ts-expect-error: unhandled
-      onload?.(resp);
+    onload: function (this, resp) {
+      onload?.call(this, resp);
 
       const blob = new Blob([resp.response], {
         // @ts-expect-error: specified in request options
@@ -29,9 +28,8 @@ export const downloadFile = (
       document.body.removeChild(a);
       URL.revokeObjectURL(blobUrl);
     },
-    onerror: (resp) => {
-      // @ts-expect-error: unhandled
-      onerror?.(resp);
+    onerror: function (this, resp) {
+      onerror?.call(this, resp);
 
       iLog.e(`Download ${filename} from ${url} failed: ${resp.responseText}`);
     },

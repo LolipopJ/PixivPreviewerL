@@ -655,9 +655,52 @@ class PreviewedIllust {
     const currentImageFilename =
       currentImageOriginalUrl.split("/").pop() || "illust.jpg";
 
+    const textSpan = this.downloadOriginalElement.find("span");
+    const originalText = textSpan.text();
+
+    this.downloadOriginalElement.css({
+      pointerEvents: "none",
+      backgroundImage:
+        "linear-gradient(to right, rgba(34,197,94,0.28), rgba(34,197,94,0.28))",
+      backgroundSize: "0% 100%",
+      backgroundRepeat: "no-repeat",
+    });
+    textSpan.text("下载中");
+
     downloadIllust({
       url: currentImageOriginalUrl,
       filename: currentImageFilename,
+      options: {
+        onprogress: (ev) => {
+          try {
+            const loaded = ev.loaded ?? 0;
+            const total = ev.total ?? 0;
+            let percent = 0;
+            if (total && total > 0) {
+              percent = Math.min(100, Math.round((loaded / total) * 100));
+            }
+            this.downloadOriginalElement.css({
+              backgroundSize: `${percent}% 100%`,
+            });
+          } catch (e) {
+            console.error(
+              `An error occurred in download progress callback: ${e}`
+            );
+          }
+        },
+        onload: () => {
+          textSpan.text("已下载");
+          this.downloadOriginalElement.css({
+            backgroundImage: "",
+            backgroundSize: "",
+            pointerEvents: "",
+          });
+
+          setTimeout(() => {
+            textSpan.text(originalText);
+          }, 3000);
+        },
+      },
     });
   };
   //#endregion
