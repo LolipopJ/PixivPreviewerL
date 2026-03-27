@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             1.4.1-20260224
+// @version             1.4.2-20260327
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0
@@ -20,7 +20,7 @@
 // ==/UserScript==
 
 // src/constants/index.ts
-var g_version = "1.4.1";
+var g_version = "1.4.2";
 var g_defaultSettings = {
   enablePreview: true,
   enableAnimePreview: true,
@@ -238,13 +238,13 @@ var hideFavorites = () => {
 };
 
 // src/icons/download.svg
-var download_default = '<svg t="1742281193586" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg"\r\n  p-id="24408" width="10" height="10">\r\n  <path\r\n    d="M1024 896v128H0v-320h128v192h768v-192h128v192zM576 554.688L810.688 320 896 405.312l-384 384-384-384L213.312 320 448 554.688V0h128v554.688z"\r\n    fill="#ffffff" p-id="24409"></path>\r\n</svg>';
+var download_default = '<svg t="1742281193586" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg"\n  p-id="24408" width="10" height="10">\n  <path\n    d="M1024 896v128H0v-320h128v192h768v-192h128v192zM576 554.688L810.688 320 896 405.312l-384 384-384-384L213.312 320 448 554.688V0h128v554.688z"\n    fill="#ffffff" p-id="24409"></path>\n</svg>';
 
 // src/icons/loading.svg
-var loading_default = '<svg t="1742282291278" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg"\r\n  p-id="38665" width="48" height="48">\r\n  <path\r\n    d="M988 548c-19.9 0-36-16.1-36-36 0-59.4-11.6-117-34.6-171.3a440.45 440.45 0 0 0-94.3-139.9 437.71 437.71 0 0 0-139.9-94.3C629 83.6 571.4 72 512 72c-19.9 0-36-16.1-36-36s16.1-36 36-36c69.1 0 136.2 13.5 199.3 40.3C772.3 66 827 103 874 150c47 47 83.9 101.8 109.7 162.7 26.7 63.1 40.2 130.2 40.2 199.3 0.1 19.9-16 36-35.9 36z"\r\n    p-id="38666" fill="#1296db"></path>\r\n</svg>';
+var loading_default = '<svg t="1742282291278" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg"\n  p-id="38665" width="48" height="48">\n  <path\n    d="M988 548c-19.9 0-36-16.1-36-36 0-59.4-11.6-117-34.6-171.3a440.45 440.45 0 0 0-94.3-139.9 437.71 437.71 0 0 0-139.9-94.3C629 83.6 571.4 72 512 72c-19.9 0-36-16.1-36-36s16.1-36 36-36c69.1 0 136.2 13.5 199.3 40.3C772.3 66 827 103 874 150c47 47 83.9 101.8 109.7 162.7 26.7 63.1 40.2 130.2 40.2 199.3 0.1 19.9-16 36-35.9 36z"\n    p-id="38666" fill="#1296db"></path>\n</svg>';
 
 // src/icons/page.svg
-var page_default = '<svg viewBox="0 0 10 10" width="10" height="10">\r\n  <path\r\n    d="M 8 3 C 8.55228 3 9 3.44772 9 4 L 9 9 C 9 9.55228 8.55228 10 8 10 L 3 10 C 2.44772 10 2 9.55228 2 9 L 6 9 C 7.10457 9 8 8.10457 8 7 L 8 3 Z M 1 1 L 6 1 C 6.55228 1 7 1.44772 7 2 L 7 7 C 7 7.55228 6.55228 8 6 8 L 1 8 C 0.447715 8 0 7.55228 0 7 L 0 2 C 0 1.44772 0.447715 1 1 1 Z"\r\n    fill="#ffffff"></path>\r\n</svg>';
+var page_default = '<svg viewBox="0 0 10 10" width="10" height="10">\n  <path\n    d="M 8 3 C 8.55228 3 9 3.44772 9 4 L 9 9 C 9 9.55228 8.55228 10 8 10 L 3 10 C 2.44772 10 2 9.55228 2 9 L 6 9 C 7.10457 9 8 8.10457 8 7 L 8 3 Z M 1 1 L 6 1 C 6.55228 1 7 1.44772 7 2 L 7 7 C 7 7.55228 6.55228 8 6 8 L 1 8 C 0.447715 8 0 7.55228 0 7 L 0 2 C 0 1.44772 0.447715 1 1 1 Z"\n    fill="#ffffff"></path>\n</svg>';
 
 // src/utils/utils.ts
 var pause = (ms) => {
@@ -309,8 +309,8 @@ var downloadFile = (url, filename, options = {}) => {
     url,
     method: "GET",
     responseType: "blob",
-    onload: (resp) => {
-      onload?.(resp);
+    onload: function(resp) {
+      onload?.call(this, resp);
       const blob = new Blob([resp.response], {
         // @ts-expect-error: specified in request options
         type: resp.responseType
@@ -324,8 +324,8 @@ var downloadFile = (url, filename, options = {}) => {
       document.body.removeChild(a);
       URL.revokeObjectURL(blobUrl);
     },
-    onerror: (resp) => {
-      onerror?.(resp);
+    onerror: function(resp) {
+      onerror?.call(this, resp);
       iLog.e(`Download ${filename} from ${url} failed: ${resp.responseText}`);
     }
   });
@@ -410,7 +410,8 @@ var downloadIllust = ({
 }) => {
   downloadFile(url, filename, {
     ...options,
-    onerror: () => {
+    onerror: function(resp) {
+      options.onerror?.call(this, resp);
       window.open(url, "__blank");
     }
   });
@@ -1407,9 +1408,48 @@ var PreviewedIllust = class {
     onClickEvent.preventDefault();
     const currentImageOriginalUrl = this.originalUrls[this.currentPage - 1];
     const currentImageFilename = currentImageOriginalUrl.split("/").pop() || "illust.jpg";
+    const textSpan = this.downloadOriginalElement.find("span");
+    const originalText = textSpan.text();
+    this.downloadOriginalElement.css({
+      pointerEvents: "none",
+      backgroundImage: "linear-gradient(to right, rgba(34,197,94,0.28), rgba(34,197,94,0.28))",
+      backgroundSize: "0% 100%",
+      backgroundRepeat: "no-repeat"
+    });
+    textSpan.text("\u4E0B\u8F7D\u4E2D");
     downloadIllust({
       url: currentImageOriginalUrl,
-      filename: currentImageFilename
+      filename: currentImageFilename,
+      options: {
+        onprogress: (ev) => {
+          try {
+            const loaded = ev.loaded ?? 0;
+            const total = ev.total ?? 0;
+            let percent = 0;
+            if (total && total > 0) {
+              percent = Math.min(100, Math.round(loaded / total * 100));
+            }
+            this.downloadOriginalElement.css({
+              backgroundSize: `${percent}% 100%`
+            });
+          } catch (e) {
+            console.error(
+              `An error occurred in download progress callback: ${e}`
+            );
+          }
+        },
+        onload: () => {
+          textSpan.text("\u5DF2\u4E0B\u8F7D");
+          this.downloadOriginalElement.css({
+            backgroundImage: "",
+            backgroundSize: "",
+            pointerEvents: ""
+          });
+          setTimeout(() => {
+            textSpan.text(originalText);
+          }, 3e3);
+        }
+      }
     });
   };
   //#endregion
@@ -1480,6 +1520,7 @@ var PreviewedIllust = class {
     });
   };
   //#endregion
+  //#region 预览组件通用能力
   async showIllustrationDetails() {
     const illustrationDetails = await getIllustrationDetailsWithCache(
       this.illustId
@@ -1580,57 +1621,123 @@ var PreviewedIllust = class {
     const [illustWidth, illustHeight] = this.#currentIllustSize;
     const screenWidth = document.documentElement.clientWidth;
     const screenHeight = document.documentElement.clientHeight;
-    const isShowLeft = mousePosX > screenWidth / 2;
-    const isShowTop = mousePosY > screenHeight / 2;
-    const illustRatio = illustWidth / illustHeight;
-    const screenRestWidth = isShowLeft ? mousePosX - PREVIEW_WRAPPER_DISTANCE_TO_MOUSE : screenWidth - mousePosX - PREVIEW_WRAPPER_DISTANCE_TO_MOUSE;
-    const screenRestRatio = screenRestWidth / screenHeight;
-    const isFitToFullHeight = screenRestRatio > illustRatio;
-    let fitToScreenScale = 1;
-    if (this.illustLoaded) {
-      if (isFitToFullHeight) {
-        fitToScreenScale = Number((screenHeight / illustHeight).toFixed(3));
-      } else {
-        fitToScreenScale = Number((screenRestWidth / illustWidth).toFixed(3));
+    const DIST = PREVIEW_WRAPPER_DISTANCE_TO_MOUSE;
+    if (!illustWidth || !illustHeight) {
+      const defaultPos = {
+        left: `${mousePosX + DIST}px`,
+        top: `${mousePosY}px`
+      };
+      this.previewWrapperElement.css(defaultPos);
+      this.previewImageElement.css({ width: "", height: "" });
+      return;
+    }
+    const candidates = [
+      {
+        side: "left",
+        availW: Math.max(0, mousePosX - DIST),
+        availH: screenHeight
+      },
+      {
+        side: "right",
+        availW: Math.max(0, screenWidth - mousePosX - DIST),
+        availH: screenHeight
+      },
+      {
+        side: "top",
+        availW: screenWidth,
+        availH: Math.max(0, mousePosY - DIST)
+      },
+      {
+        side: "bottom",
+        availW: screenWidth,
+        availH: Math.max(0, screenHeight - mousePosY - DIST)
+      }
+    ];
+    let best = null;
+    for (const c of candidates) {
+      let scale = 1;
+      if (this.illustLoaded) {
+        const sx = c.availW / illustWidth;
+        const sy = c.availH / illustHeight;
+        scale = Number(Math.min(sx, sy).toFixed(3));
+      }
+      const fitW = Math.max(0, Math.floor(illustWidth * scale));
+      const fitH = Math.max(0, Math.floor(illustHeight * scale));
+      const area = fitW * fitH;
+      if (!best || area > best.area) {
+        best = { side: c.side, fitW, fitH, area };
       }
     }
-    const previewImageFitWidth = Math.floor(illustWidth * fitToScreenScale);
-    const previewImageFitHeight = Math.floor(illustHeight * fitToScreenScale);
+    const previewImageFitWidth = best?.fitW ?? 0;
+    const previewImageFitHeight = best?.fitH ?? 0;
     const previewWrapperElementPos = {
       left: "",
       right: "",
       top: "",
       bottom: ""
     };
-    if (isShowLeft) {
-      previewWrapperElementPos.right = `${screenWidth - mousePosX + PREVIEW_WRAPPER_DISTANCE_TO_MOUSE}px`;
-    } else {
-      previewWrapperElementPos.left = `${mousePosX + PREVIEW_WRAPPER_DISTANCE_TO_MOUSE}px`;
-    }
-    if (this.illustLoaded) {
-      if (isFitToFullHeight) {
-        previewWrapperElementPos.top = "0px";
-      } else {
-        const screenRestHeight = isShowTop ? mousePosY : screenHeight - mousePosY;
-        if (previewImageFitHeight > screenRestHeight) {
-          if (isShowTop) {
-            previewWrapperElementPos.top = "0px";
-          } else {
-            previewWrapperElementPos.bottom = "0px";
-          }
-        } else {
-          if (isShowTop) {
-            previewWrapperElementPos.bottom = `${screenHeight - mousePosY}px`;
-          } else {
-            previewWrapperElementPos.top = `${mousePosY}px`;
-          }
-        }
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(v, hi));
+    switch (best?.side) {
+      case "right": {
+        const left = clamp(
+          mousePosX + DIST,
+          0,
+          Math.max(0, screenWidth - previewImageFitWidth)
+        );
+        const top = clamp(
+          Math.floor(mousePosY - previewImageFitHeight / 2),
+          0,
+          Math.max(0, screenHeight - previewImageFitHeight)
+        );
+        previewWrapperElementPos.left = `${left}px`;
+        previewWrapperElementPos.top = `${top}px`;
+        break;
       }
-    } else {
-      if (isShowTop) {
-        previewWrapperElementPos.bottom = `${screenHeight - mousePosY}px`;
-      } else {
-        previewWrapperElementPos.top = `${mousePosY}px`;
+      case "left": {
+        const left = clamp(
+          mousePosX - DIST - previewImageFitWidth,
+          0,
+          Math.max(0, screenWidth - previewImageFitWidth)
+        );
+        const top = clamp(
+          Math.floor(mousePosY - previewImageFitHeight / 2),
+          0,
+          Math.max(0, screenHeight - previewImageFitHeight)
+        );
+        previewWrapperElementPos.left = `${left}px`;
+        previewWrapperElementPos.top = `${top}px`;
+        break;
+      }
+      case "top": {
+        const left = clamp(
+          Math.floor(mousePosX - previewImageFitWidth / 2),
+          0,
+          Math.max(0, screenWidth - previewImageFitWidth)
+        );
+        const top = clamp(
+          mousePosY - DIST - previewImageFitHeight,
+          0,
+          Math.max(0, screenHeight - previewImageFitHeight)
+        );
+        previewWrapperElementPos.left = `${left}px`;
+        previewWrapperElementPos.top = `${top}px`;
+        break;
+      }
+      case "bottom":
+      default: {
+        const left = clamp(
+          Math.floor(mousePosX - previewImageFitWidth / 2),
+          0,
+          Math.max(0, screenWidth - previewImageFitWidth)
+        );
+        const top = clamp(
+          mousePosY + DIST,
+          0,
+          Math.max(0, screenHeight - previewImageFitHeight)
+        );
+        previewWrapperElementPos.left = `${left}px`;
+        previewWrapperElementPos.top = `${top}px`;
+        break;
       }
     }
     this.previewWrapperElement.css(previewWrapperElementPos);
@@ -1639,6 +1746,7 @@ var PreviewedIllust = class {
       height: `${previewImageFitHeight}px`
     });
   }
+  //#endregion
 };
 
 // src/i18n/index.ts
@@ -1715,13 +1823,13 @@ var Texts = {
 var i18n_default = Texts;
 
 // src/icons/heart.svg
-var heart_default = '<svg viewBox="0 0 32 32" width="32" height="32">\r\n  <path d="\r\nM21,5.5 C24.8659932,5.5 28,8.63400675 28,12.5 C28,18.2694439 24.2975093,23.1517313 17.2206059,27.1100183\r\nC16.4622493,27.5342993 15.5379984,27.5343235 14.779626,27.110148 C7.70250208,23.1517462 4,18.2694529 4,12.5\r\nC4,8.63400691 7.13400681,5.5 11,5.5 C12.829814,5.5 14.6210123,6.4144028 16,7.8282366\r\nC17.3789877,6.4144028 19.170186,5.5 21,5.5 Z"></path>\r\n  <path d="M16,11.3317089 C15.0857201,9.28334665 13.0491506,7.5 11,7.5\r\nC8.23857625,7.5 6,9.73857647 6,12.5 C6,17.4386065 9.2519779,21.7268174 15.7559337,25.3646328\r\nC15.9076021,25.4494645 16.092439,25.4494644 16.2441073,25.3646326 C22.7480325,21.7268037 26,17.4385986 26,12.5\r\nC26,9.73857625 23.7614237,7.5 21,7.5 C18.9508494,7.5 16.9142799,9.28334665 16,11.3317089 Z" style="fill: #fafafa;">\r\n  </path>\r\n</svg>';
+var heart_default = '<svg viewBox="0 0 32 32" width="32" height="32">\n  <path d="\nM21,5.5 C24.8659932,5.5 28,8.63400675 28,12.5 C28,18.2694439 24.2975093,23.1517313 17.2206059,27.1100183\nC16.4622493,27.5342993 15.5379984,27.5343235 14.779626,27.110148 C7.70250208,23.1517462 4,18.2694529 4,12.5\nC4,8.63400691 7.13400681,5.5 11,5.5 C12.829814,5.5 14.6210123,6.4144028 16,7.8282366\nC17.3789877,6.4144028 19.170186,5.5 21,5.5 Z"></path>\n  <path d="M16,11.3317089 C15.0857201,9.28334665 13.0491506,7.5 11,7.5\nC8.23857625,7.5 6,9.73857647 6,12.5 C6,17.4386065 9.2519779,21.7268174 15.7559337,25.3646328\nC15.9076021,25.4494645 16.092439,25.4494644 16.2441073,25.3646326 C22.7480325,21.7268037 26,17.4385986 26,12.5\nC26,9.73857625 23.7614237,7.5 21,7.5 C18.9508494,7.5 16.9142799,9.28334665 16,11.3317089 Z" style="fill: #fafafa;">\n  </path>\n</svg>';
 
 // src/icons/heart-filled.svg
-var heart_filled_default = '<svg viewBox="0 0 32 32" width="32" height="32">\r\n  <path d="\r\nM21,5.5 C24.8659932,5.5 28,8.63400675 28,12.5 C28,18.2694439 24.2975093,23.1517313 17.2206059,27.1100183\r\nC16.4622493,27.5342993 15.5379984,27.5343235 14.779626,27.110148 C7.70250208,23.1517462 4,18.2694529 4,12.5\r\nC4,8.63400691 7.13400681,5.5 11,5.5 C12.829814,5.5 14.6210123,6.4144028 16,7.8282366\r\nC17.3789877,6.4144028 19.170186,5.5 21,5.5 Z"></path>\r\n  <path d="M16,11.3317089 C15.0857201,9.28334665 13.0491506,7.5 11,7.5\r\nC8.23857625,7.5 6,9.73857647 6,12.5 C6,17.4386065 9.2519779,21.7268174 15.7559337,25.3646328\r\nC15.9076021,25.4494645 16.092439,25.4494644 16.2441073,25.3646326 C22.7480325,21.7268037 26,17.4385986 26,12.5\r\nC26,9.73857625 23.7614237,7.5 21,7.5 C18.9508494,7.5 16.9142799,9.28334665 16,11.3317089 Z" style="fill: #dc2626;">\r\n  </path>\r\n</svg>';
+var heart_filled_default = '<svg viewBox="0 0 32 32" width="32" height="32">\n  <path d="\nM21,5.5 C24.8659932,5.5 28,8.63400675 28,12.5 C28,18.2694439 24.2975093,23.1517313 17.2206059,27.1100183\nC16.4622493,27.5342993 15.5379984,27.5343235 14.779626,27.110148 C7.70250208,23.1517462 4,18.2694529 4,12.5\nC4,8.63400691 7.13400681,5.5 11,5.5 C12.829814,5.5 14.6210123,6.4144028 16,7.8282366\nC17.3789877,6.4144028 19.170186,5.5 21,5.5 Z"></path>\n  <path d="M16,11.3317089 C15.0857201,9.28334665 13.0491506,7.5 11,7.5\nC8.23857625,7.5 6,9.73857647 6,12.5 C6,17.4386065 9.2519779,21.7268174 15.7559337,25.3646328\nC15.9076021,25.4494645 16.092439,25.4494644 16.2441073,25.3646326 C22.7480325,21.7268037 26,17.4385986 26,12.5\nC26,9.73857625 23.7614237,7.5 21,7.5 C18.9508494,7.5 16.9142799,9.28334665 16,11.3317089 Z" style="fill: #dc2626;">\n  </path>\n</svg>';
 
 // src/icons/play.svg
-var play_default = '<svg viewBox="0 0 24 24"\r\n  style="width: 48px; height: 48px; stroke: none; line-height: 0; font-size: 0px; vertical-align: middle;">\r\n  <circle cx="12" cy="12" r="10" style="fill: rgba(0, 0, 0, 0.32);"></circle>\r\n  <path d="M9,8.74841664 L9,15.2515834 C9,15.8038681 9.44771525,16.2515834 10,16.2515834\r\nC10.1782928,16.2515834 10.3533435,16.2039156 10.5070201,16.1135176 L16.0347118,12.8619342\r\nC16.510745,12.5819147 16.6696454,11.969013 16.3896259,11.4929799\r\nC16.3034179,11.3464262 16.1812655,11.2242738 16.0347118,11.1380658 L10.5070201,7.88648243\r\nC10.030987,7.60646294 9.41808527,7.76536339 9.13806578,8.24139652\r\nC9.04766776,8.39507316 9,8.57012386 9,8.74841664 Z" style="fill: rgb(245, 245, 245);"></path>\r\n</svg>';
+var play_default = '<svg viewBox="0 0 24 24"\n  style="width: 48px; height: 48px; stroke: none; line-height: 0; font-size: 0px; vertical-align: middle;">\n  <circle cx="12" cy="12" r="10" style="fill: rgba(0, 0, 0, 0.32);"></circle>\n  <path d="M9,8.74841664 L9,15.2515834 C9,15.8038681 9.44771525,16.2515834 10,16.2515834\nC10.1782928,16.2515834 10.3533435,16.2039156 10.5070201,16.1135176 L16.0347118,12.8619342\nC16.510745,12.5819147 16.6696454,11.969013 16.3896259,11.4929799\nC16.3034179,11.3464262 16.1812655,11.2242738 16.0347118,11.1380658 L10.5070201,7.88648243\nC10.030987,7.60646294 9.41808527,7.76536339 9.13806578,8.24139652\nC9.04766776,8.39507316 9,8.57012386 9,8.74841664 Z" style="fill: rgb(245, 245, 245);"></path>\n</svg>';
 
 // src/utils/promise.ts
 var execLimitConcurrentPromises = async (promises, limit = 48) => {
