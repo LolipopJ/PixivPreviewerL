@@ -1,12 +1,19 @@
 {
   "compilerOptions": {
-    "target": "ES2022",
-    "module": "esnext",
-    "esModuleInterop": true,
+    "target": "esnext",
+    "lib": ["es2023", "dom"],
+    "moduleDetection": "force",
+    "module": "preserve",
     "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "types": ["jquery", "node", "tampermonkey"],
+    "strict": true,
+    "noUnusedLocals": true,
+    "declaration": true,
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "lib": ["esnext", "dom"]
   },
   "include": ["src/"],
   "exclude": ["node_modules/", "dist/"]

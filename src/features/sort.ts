@@ -137,7 +137,9 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
         this.sortButtonElement.text(Texts.label_sort);
       } catch (error) {
         iLog.e(`An error occurred while resetting sorter:`, error);
-        throw new Error(error);
+        throw new Error(String(error), {
+          cause: error,
+        });
       }
     }
 
@@ -568,7 +570,7 @@ function getSortOptionsFromUrl(url: URL) {
   let api: string;
   let defaultSearchParams: string;
 
-  let match: RegExpMatchArray;
+  let match: RegExpMatchArray | null;
   if (
     (match = pathname.match(/\/tags\/(.+)\/(artworks|illustrations|manga)$/))
   ) {

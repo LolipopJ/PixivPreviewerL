@@ -1,6 +1,6 @@
 import { iLog } from "../utils/logger";
 import { downloadFile } from "./download";
-import { PixivStandardResponse } from "./request";
+import type { PixivStandardResponse } from "./request";
 
 /** 下载作品 */
 export const downloadIllust = ({

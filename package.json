@@ -1,11 +1,12 @@
 {
   "name": "pixiv-previewer-l",
   "version": "1.4.2",
+  "type": "module",
   "description": "Original project: https://github.com/Ocrosoft/PixivPreviewer.",
   "private": true,
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsup",
+    "build": "tsdown",
     "lint": "eslint src --fix",
     "prettier": "prettier . --write"
   },
@@ -24,14 +25,14 @@
     "@types/jquery": "^4.0.0",
     "@types/node": "^24.12.2",
     "@types/tampermonkey": "^5.0.5",
-    "esbuild-plugin-svg": "^0.1.0",
     "eslint": "^10.2.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.5",
     "eslint-plugin-simple-import-sort": "^13.0.0",
     "globals": "^17.4.0",
     "prettier": "^3.8.1",
-    "tsup": "^8.5.1",
+    "rollup-plugin-svg": "^2.0.0",
+    "tsdown": "^0.21.7",
     "typescript": "^6.0.2",
     "typescript-eslint": "^8.58.0"
   }

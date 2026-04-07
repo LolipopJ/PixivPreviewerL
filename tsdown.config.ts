@@ -1,16 +1,15 @@
-import svg from "esbuild-plugin-svg";
-import { defineConfig } from "tsup";
+import svg from "rollup-plugin-svg";
+import { defineConfig } from "tsdown";
 
-import packageJson from "./package.json";
+import packageJson from "./package.json" with { type: "json" };
 
 export default defineConfig({
   entry: ["src/index.ts"],
   target: ["chrome107"],
   minify: false,
-  splitting: false,
   clean: true,
   platform: "browser",
-  esbuildPlugins: [svg()],
+  plugins: [svg()],
   env: {
     VERSION: packageJson.version,
     BUG_REPORT_PAGE: packageJson.bugs.url,
@@ -44,4 +43,6 @@ export default defineConfig({
 // @run-at              document-end
 // ==/UserScript==`,
   },
+  format: "cjs",
+  dts: false,
 });

@@ -26,7 +26,7 @@
 
 ## 安装
 
-如果您想获取跟我一样的体验，那么请看插件页面 [PixivPreviewerL](https://greasyfork.org/zh-CN/scripts/533844)。或者直接在 Tampermonkey 上导入已经打包好的插件代码：[`dist/index.js`](./dist/index.js)。
+如果您想获取跟我一样的体验，那么请看插件页面 [PixivPreviewerL](https://greasyfork.org/zh-CN/scripts/533844)。或者直接在 Tampermonkey 上导入已经打包好的插件代码：[`dist/index.cjs`](./dist/index.cjs)。
 
 [Pixiv Plus](https://greasyfork.org/en/scripts/34153) 是另一个我在浏览器上的必备插件，在兼容它的同时，对此插件的维护开发也将避免做与它重复的工作。您可以放心地同时启用这两个插件。
 
@@ -83,9 +83,8 @@ yarn lint     # 修复代码质量与格式问题
 yarn prettier # 修复代码的格式问题
 ```
 
-打包为可发布文件 `dist/index.js`：
+打包为可发布文件 `dist/index.cjs`：
 
 ```bash
 yarn build
-yarn build --watch # 持续构建产物
 ```

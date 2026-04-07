@@ -14,7 +14,7 @@ import { hideFavorites } from "./features/hide-favorites";
 import { loadIllustPreview } from "./features/preview";
 import { loadIllustSort } from "./features/sort";
 import Texts from "./i18n";
-import { GlobalSettings } from "./types";
+import type { GlobalSettings } from "./types";
 import { DoLog, iLog } from "./utils/logger";
 import {
   getSettings,

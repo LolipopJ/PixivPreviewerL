@@ -1,8 +1,8 @@
 import { IllustSortOrder } from "../enums";
-import { GlobalSettings } from "../types";
+import type { GlobalSettings } from "../types";
 
 /** 版本号，发生改变时将会弹窗 */
-export const g_version = process.env.VERSION;
+export const g_version = process.env.VERSION ?? "0.0.0";
 
 /** 默认设置 */
 export const g_defaultSettings: GlobalSettings = {
