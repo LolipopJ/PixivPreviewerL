@@ -24,6 +24,7 @@ import {
   checkIsAiAssisted,
   checkIsAiGenerated,
   checkIsR18,
+  checkIsUgoiraUsingTags,
 } from "../utils/illustration";
 import { iLog } from "../utils/logger";
 import mouseMonitor from "../utils/mouse-monitor";
@@ -852,9 +853,7 @@ class PreviewedIllust {
       const isR18 = checkIsR18(tags);
       const isAi = checkIsAiGenerated(aiType);
       const isAiAssisted = checkIsAiAssisted(tags);
-
       const illustrationDetailsElements: JQuery<HTMLElement>[] = [];
-
       if (isR18) {
         illustrationDetailsElements.push(
           $(document.createElement("div"))
@@ -865,7 +864,6 @@ class PreviewedIllust {
             .text("R-18")
         );
       }
-
       if (isAi) {
         illustrationDetailsElements.push(
           $(document.createElement("div"))
@@ -885,7 +883,6 @@ class PreviewedIllust {
             .text("AI 辅助")
         );
       }
-
       illustrationDetailsElements.push(
         $(document.createElement("div"))
           .css({
@@ -903,8 +900,12 @@ class PreviewedIllust {
           })
           .text(`${bookmarkId ? "❤️" : "❤"} ${bookmarkUserTotal}`)
       );
-
       this.illustMeta.append(illustrationDetailsElements);
+
+      const isUgoira = checkIsUgoiraUsingTags(tags);
+      if (isUgoira) {
+        this.downloadOriginalElement.hide();
+      }
     }
   }
 

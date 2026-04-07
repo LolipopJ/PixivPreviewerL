@@ -27,3 +27,7 @@ export const checkIsAiAssisted = (tags: string[]) => {
   }
   return false;
 };
+
+export const checkIsUgoiraUsingTags = (tags: string[]) => {
+  return tags.includes("うごイラ");
+};
