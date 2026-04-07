@@ -399,6 +399,7 @@ class PreviewedIllust {
         background: "rgba(31, 31, 31, 0.8)",
         "backdrop-filter": "blur(4px)",
         "text-align": "center",
+        "pointer-events": "none",
       })
       .hide()
       .appendTo($("body"));
@@ -535,7 +536,10 @@ class PreviewedIllust {
     // 监听点击下载按钮事件
     this.downloadOriginalElement.on("click", this.onDownloadImage);
 
-    // 监听鼠标滚动切换图片事件
+    // 监听切换窗口可穿透事件，避免鼠标快速移动时预览窗口闪烁
+    $(document).on("keydown", this.onCtrlKeyDown);
+    $(document).on("keyup", this.onCtrlKeyUp);
+    // 监听鼠标滚轮切换图片事件
     $(document).on("wheel", this.onPreviewImageMouseWheel);
     // 监听方向键切换图片事件
     $(document).on("keydown", this.onPreviewImageKeyDown);
@@ -550,6 +554,8 @@ class PreviewedIllust {
     this.previewImageElement.off();
     this.downloadOriginalElement.off();
 
+    $(document).off("keydown", this.onCtrlKeyDown);
+    $(document).off("keyup", this.onCtrlKeyUp);
     $(document).off("wheel", this.onPreviewImageMouseWheel);
     $(document).off("keydown", this.onPreviewImageKeyDown);
     $(document).off("mousemove", this.onMouseMove);
@@ -793,11 +799,15 @@ class PreviewedIllust {
   bindUgoiraPreviewEvents() {
     $(this.#currentUgoiraPlayer).on("frameLoaded", this.onUgoiraFrameLoaded);
     $(document).on("mousemove", this.onMouseMove);
+    $(document).on("keydown", this.onCtrlKeyDown);
+    $(document).on("keyup", this.onCtrlKeyUp);
   }
 
   unbindUgoiraPreviewEvents() {
     $(this.#currentUgoiraPlayer).off();
     $(document).off("mousemove", this.onMouseMove);
+    $(document).off("keydown", this.onCtrlKeyDown);
+    $(document).off("keyup", this.onCtrlKeyUp);
   }
 
   onUgoiraFrameLoaded = (ev, frame) => {
@@ -911,6 +921,26 @@ class PreviewedIllust {
   preventPageZoom = (mouseWheelEvent: WheelEvent) => {
     if (mouseWheelEvent.ctrlKey || mouseWheelEvent.metaKey) {
       mouseWheelEvent.preventDefault();
+    }
+  };
+
+  /**
+   * 按下 Ctrl 或 Meta 键时，预览容器接收鼠标事件
+   * @param keyDownEvent
+   */
+  onCtrlKeyDown = (keyDownEvent: JQuery.KeyDownEvent) => {
+    if (keyDownEvent.key === "Control" || keyDownEvent.key === "Meta") {
+      this.previewWrapperElement.css({ "pointer-events": "auto" });
+    }
+  };
+
+  /**
+   * 松开 Ctrl 或 Meta 键时，鼠标事件穿透预览容器，避免鼠标快速移动时预览窗口闪烁
+   * @param keyUpEvent
+   */
+  onCtrlKeyUp = (keyUpEvent: JQuery.KeyUpEvent) => {
+    if (keyUpEvent.key === "Control" || keyUpEvent.key === "Meta") {
+      this.previewWrapperElement.css({ "pointer-events": "none" });
     }
   };
 
