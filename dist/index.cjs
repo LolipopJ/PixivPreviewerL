@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             1.4.3-20260407
+// @version             1.4.3-20260427
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0
@@ -477,6 +477,9 @@ const checkIsAiGenerated = (aiType) => {
 const checkIsAiAssisted = (tags) => {
 	for (const tag of tags) if (AI_ASSISTED_TAGS.includes(tag.toLowerCase())) return true;
 	return false;
+};
+const checkIsUgoiraUsingTags = (tags) => {
+	return tags.includes("うごイラ");
 };
 
 //#endregion
@@ -989,7 +992,7 @@ const loadIllustPreview = (options) => {
 	const onMouseOverIllust = (target) => {
 		const { illustId, previewPage, illustType, illustLinkDom } = getIllustMetadata(target) || {};
 		if (illustId === void 0 || illustType === void 0) return;
-		if (linkBlank) {
+		if (linkBlank && illustLinkDom) {
 			illustLinkDom.attr({
 				target: "_blank",
 				rel: "external"
@@ -1206,8 +1209,6 @@ var PreviewedIllust = class {
 		this.previewImageElement.on("load", this.onImageLoad);
 		this.previewImageElement.on("click", this.onPreviewImageMouseClick);
 		this.downloadOriginalElement.on("click", this.onDownloadImage);
-		$(document).on("keydown", this.onCtrlKeyDown);
-		$(document).on("keyup", this.onCtrlKeyUp);
 		$(document).on("wheel", this.onPreviewImageMouseWheel);
 		$(document).on("keydown", this.onPreviewImageKeyDown);
 		$(document).on("mousemove", this.onMouseMove);
@@ -1216,8 +1217,6 @@ var PreviewedIllust = class {
 	unbindPreviewImageEvents() {
 		this.previewImageElement.off();
 		this.downloadOriginalElement.off();
-		$(document).off("keydown", this.onCtrlKeyDown);
-		$(document).off("keyup", this.onCtrlKeyUp);
 		$(document).off("wheel", this.onPreviewImageMouseWheel);
 		$(document).off("keydown", this.onPreviewImageKeyDown);
 		$(document).off("mousemove", this.onMouseMove);
@@ -1379,14 +1378,10 @@ var PreviewedIllust = class {
 	bindUgoiraPreviewEvents() {
 		$(this.#currentUgoiraPlayer).on("frameLoaded", this.onUgoiraFrameLoaded);
 		$(document).on("mousemove", this.onMouseMove);
-		$(document).on("keydown", this.onCtrlKeyDown);
-		$(document).on("keyup", this.onCtrlKeyUp);
 	}
 	unbindUgoiraPreviewEvents() {
 		$(this.#currentUgoiraPlayer).off();
 		$(document).off("mousemove", this.onMouseMove);
-		$(document).off("keydown", this.onCtrlKeyDown);
-		$(document).off("keyup", this.onCtrlKeyUp);
 	}
 	onUgoiraFrameLoaded = (ev, frame) => {
 		if (frame !== 0) return;
@@ -1431,6 +1426,7 @@ var PreviewedIllust = class {
 				background: bookmarkUserTotal > 5e4 ? "rgb(159, 18, 57)" : bookmarkUserTotal > 1e4 ? "rgb(220, 38, 38)" : bookmarkUserTotal > 5e3 ? "rgb(29, 78, 216)" : bookmarkUserTotal > 1e3 ? "rgb(21, 128, 61)" : "rgb(71, 85, 105)"
 			}).text(`${bookmarkId ? "❤️" : "❤"} ${bookmarkUserTotal}`));
 			this.illustMeta.append(illustrationDetailsElements);
+			if (checkIsUgoiraUsingTags(tags)) this.downloadOriginalElement.hide();
 		}
 	}
 	/** 初始化显示预览容器 */
@@ -1444,25 +1440,15 @@ var PreviewedIllust = class {
 		if (mouseWheelEvent.ctrlKey || mouseWheelEvent.metaKey) mouseWheelEvent.preventDefault();
 	};
 	/**
-	* 按下 Ctrl 或 Meta 键时，预览容器接收鼠标事件
-	* @param keyDownEvent
-	*/
-	onCtrlKeyDown = (keyDownEvent) => {
-		if (keyDownEvent.key === "Control" || keyDownEvent.key === "Meta") this.previewWrapperElement.css({ "pointer-events": "auto" });
-	};
-	/**
-	* 松开 Ctrl 或 Meta 键时，鼠标事件穿透预览容器，避免鼠标快速移动时预览窗口闪烁
-	* @param keyUpEvent
-	*/
-	onCtrlKeyUp = (keyUpEvent) => {
-		if (keyUpEvent.key === "Control" || keyUpEvent.key === "Meta") this.previewWrapperElement.css({ "pointer-events": "none" });
-	};
-	/**
 	* 根据鼠标移动调整预览容器位置与显隐
 	* @param mouseMoveEvent
 	*/
 	onMouseMove = (mouseMoveEvent) => {
-		if (mouseMoveEvent.ctrlKey || mouseMoveEvent.metaKey) return;
+		if (mouseMoveEvent.ctrlKey || mouseMoveEvent.metaKey) {
+			this.previewWrapperElement.css({ "pointer-events": "auto" });
+			return;
+		}
+		this.previewWrapperElement.css({ "pointer-events": "none" });
 		if ($(mouseMoveEvent.target).is(this.illustElement)) this.adjustPreviewWrapper({ baseOnMousePos: true });
 		else this.reset();
 	};

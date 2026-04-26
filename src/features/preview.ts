@@ -229,7 +229,7 @@ export const loadIllustPreview = (
       return;
     }
 
-    if (linkBlank) {
+    if (linkBlank && illustLinkDom) {
       // 设置在新标签打开作品详情页
       illustLinkDom.attr({ target: "_blank", rel: "external" });
       illustLinkDom.off("click", stopEventPropagation);
@@ -537,9 +537,6 @@ class PreviewedIllust {
     // 监听点击下载按钮事件
     this.downloadOriginalElement.on("click", this.onDownloadImage);
 
-    // 监听切换窗口可穿透事件，避免鼠标快速移动时预览窗口闪烁
-    $(document).on("keydown", this.onCtrlKeyDown);
-    $(document).on("keyup", this.onCtrlKeyUp);
     // 监听鼠标滚轮切换图片事件
     $(document).on("wheel", this.onPreviewImageMouseWheel);
     // 监听方向键切换图片事件
@@ -555,8 +552,6 @@ class PreviewedIllust {
     this.previewImageElement.off();
     this.downloadOriginalElement.off();
 
-    $(document).off("keydown", this.onCtrlKeyDown);
-    $(document).off("keyup", this.onCtrlKeyUp);
     $(document).off("wheel", this.onPreviewImageMouseWheel);
     $(document).off("keydown", this.onPreviewImageKeyDown);
     $(document).off("mousemove", this.onMouseMove);
@@ -800,15 +795,11 @@ class PreviewedIllust {
   bindUgoiraPreviewEvents() {
     $(this.#currentUgoiraPlayer).on("frameLoaded", this.onUgoiraFrameLoaded);
     $(document).on("mousemove", this.onMouseMove);
-    $(document).on("keydown", this.onCtrlKeyDown);
-    $(document).on("keyup", this.onCtrlKeyUp);
   }
 
   unbindUgoiraPreviewEvents() {
     $(this.#currentUgoiraPlayer).off();
     $(document).off("mousemove", this.onMouseMove);
-    $(document).off("keydown", this.onCtrlKeyDown);
-    $(document).off("keyup", this.onCtrlKeyUp);
   }
 
   onUgoiraFrameLoaded = (ev, frame) => {
@@ -926,33 +917,16 @@ class PreviewedIllust {
   };
 
   /**
-   * 按下 Ctrl 或 Meta 键时，预览容器接收鼠标事件
-   * @param keyDownEvent
-   */
-  onCtrlKeyDown = (keyDownEvent: JQuery.KeyDownEvent) => {
-    if (keyDownEvent.key === "Control" || keyDownEvent.key === "Meta") {
-      this.previewWrapperElement.css({ "pointer-events": "auto" });
-    }
-  };
-
-  /**
-   * 松开 Ctrl 或 Meta 键时，鼠标事件穿透预览容器，避免鼠标快速移动时预览窗口闪烁
-   * @param keyUpEvent
-   */
-  onCtrlKeyUp = (keyUpEvent: JQuery.KeyUpEvent) => {
-    if (keyUpEvent.key === "Control" || keyUpEvent.key === "Meta") {
-      this.previewWrapperElement.css({ "pointer-events": "none" });
-    }
-  };
-
-  /**
    * 根据鼠标移动调整预览容器位置与显隐
    * @param mouseMoveEvent
    */
   onMouseMove = (mouseMoveEvent: JQuery.MouseMoveEvent) => {
     if (mouseMoveEvent.ctrlKey || mouseMoveEvent.metaKey) {
+      this.previewWrapperElement.css({ "pointer-events": "auto" });
       return;
     }
+    // 避免鼠标快速移动时预览窗口闪烁
+    this.previewWrapperElement.css({ "pointer-events": "none" });
 
     const currentElement = $(mouseMoveEvent.target);
     if (currentElement.is(this.illustElement)) {
