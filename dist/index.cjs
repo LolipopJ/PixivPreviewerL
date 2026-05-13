@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             1.4.3-20260427
+// @version             1.4.4-20260513
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0
@@ -98,7 +98,7 @@ let IllustSortOrder = /* @__PURE__ */ function(IllustSortOrder) {
 //#endregion
 //#region src/constants/index.ts
 /** 版本号，发生改变时将会弹窗 */
-const g_version = "1.4.3";
+const g_version = "1.4.4";
 /** 默认设置 */
 const g_defaultSettings = {
 	enablePreview: true,
@@ -890,10 +890,14 @@ const loadIllustPreview = (options) => {
 		if (!imgLink.length) return null;
 		const illustHrefMatch = imgLink.attr("href")?.match(/\/artworks\/(\d+)(#(\d+))?/);
 		if (!illustHrefMatch) return null;
+		const illustId = illustHrefMatch[1];
+		const previewPage = Number(illustHrefMatch[3] ?? 1);
+		const ugoiraSvg = imgLink.children("div:first").find("svg:first");
+		const playIcon = imgLink.children("div:first").find("pixiv-icon[name=\"24/Play\"]");
 		return {
-			illustId: illustHrefMatch[1],
-			previewPage: Number(illustHrefMatch[3] ?? 1),
-			illustType: imgLink.children("div:first").find("svg:first").length || imgLink.hasClass("ugoku-illust") ? IllustType.UGOIRA : IllustType.ILLUST,
+			illustId,
+			previewPage,
+			illustType: ugoiraSvg.length || playIcon.length || imgLink.hasClass("ugoku-illust") ? IllustType.UGOIRA : IllustType.ILLUST,
 			illustLinkDom: imgLink
 		};
 	};
@@ -2271,7 +2275,7 @@ const initializePixivPreviewer = () => {
 	try {
 		g_settings = registerSettingsMenu();
 		iLog.i("Start to initialize Pixiv Previewer with global settings:", g_settings);
-		if (g_settings.version !== "1.4.3") ShowUpgradeMessage();
+		if (g_settings.version !== "1.4.4") ShowUpgradeMessage();
 		if (g_settings.enablePreview) loadIllustPreview(g_settings);
 		$.get(location.href, function(data) {
 			const matched = data.match(/token\\":\\"([a-z0-9]{32})/);
