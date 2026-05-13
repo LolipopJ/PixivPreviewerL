@@ -62,8 +62,11 @@ export const loadIllustPreview = (
     const previewPage = Number(illustHrefMatch[3] ?? 1);
 
     const ugoiraSvg = imgLink.children("div:first").find("svg:first");
+    const playIcon = imgLink
+      .children("div:first")
+      .find('pixiv-icon[name="24/Play"]');
     const illustType =
-      ugoiraSvg.length || imgLink.hasClass("ugoku-illust")
+      ugoiraSvg.length || playIcon.length || imgLink.hasClass("ugoku-illust")
         ? IllustType.UGOIRA
         : // 合并漫画类型作品 IllustType.MANGA 为 IllustType.ILLUST 统一处理
           IllustType.ILLUST;
