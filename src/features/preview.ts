@@ -307,6 +307,12 @@ export const loadIllustPreview = (
 ._layout-thumbnail img + div {
   pointer-events: none;
 }`);
+    // https://www.pixiv.net/ranking.php?content=ugoira 排行榜动图页面
+    // 会在动图封面上插入一个 svg 播放图标，在此处将其设置为不触发鼠标事件
+    styleRules.append(`
+pixiv-icon[name="24/Play"] {
+  pointer-events: none;
+}`);
     styleRules.appendTo("head");
   })();
   //#endregion
