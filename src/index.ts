@@ -143,16 +143,16 @@ const Pages: Record<
 function getToolbar() {
   const toolbar = $(`#${TOOLBAR_ID}`);
   if (toolbar.length > 0) {
-    return toolbar.get(0);
+    return toolbar.get(0)!;
   }
   $("body").append(
     `<div id="${TOOLBAR_ID}" style="position: fixed; right: 28px; bottom: 96px;"></div>`
   );
-  return $(`#${TOOLBAR_ID}`).get(0);
+  return $(`#${TOOLBAR_ID}`).get(0)!;
 }
 
 function getToolbarOld() {
-  return $("._toolmenu").get(0);
+  return $("._toolmenu").get(0)!;
 }
 
 // Replaces deleted artwork indicators with search engine links.
@@ -170,6 +170,7 @@ function showSearchLinksForDeletedArtworks() {
     // Check if the span indicates that it is a deleted artwork
     if (
       span.textContent.trim() === "-----" &&
+      artworkPath !== null &&
       artworkPath.startsWith("/artworks/")
     ) {
       // Extract ID from artworkPath by slicing off "/artworks/".
@@ -190,7 +191,9 @@ function showSearchLinksForDeletedArtworks() {
         }
       });
       // Replace the original <span> with the container holding the links.
-      span.parentNode.replaceChild(container, span);
+      if (span.parentNode) {
+        span.parentNode.replaceChild(container, span);
+      }
     }
   });
 }
@@ -329,7 +332,7 @@ const ShowUpgradeMessage = () => {
     inset: "0px",
   });
   $("body").append(bg);
-  bg.get(0).innerHTML =
+  bg.get(0)!.innerHTML =
     '<img id="pps-close" src="https://pp-1252089172.cos.ap-chengdu.myqcloud.com/Close.png"style="position: absolute; right: 35px; top: 20px; width: 32px; height: 32px; cursor: pointer;"><div style="position: absolute; width: 40%; left: 30%; top: 25%; font-size: 25px; font-weight: bold; text-align: center; color: white;">' +
     Texts.install_title +
     g_version +
@@ -382,8 +385,8 @@ const initializePixivPreviewer = () => {
 
     // 匹配当前页面
     for (let i = 0; i < Object.keys(Pages).length; i++) {
-      if (Pages[i].CheckUrl(location.href)) {
-        g_pageType = i;
+      if (Pages[i as PageType].CheckUrl(location.href)) {
+        g_pageType = i as PageType;
         break;
       }
     }

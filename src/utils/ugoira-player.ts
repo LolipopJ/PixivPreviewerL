@@ -1,130 +1,208 @@
-function ZipImagePlayer(options) {
-  this.op = options;
-  this._URL = window.URL || window.webkitURL || window.MozURL || window.MSURL;
-  this._Blob =
-    window.Blob || window.WebKitBlob || window.MozBlob || window.MSBlob;
-  this._BlobBuilder =
-    window.BlobBuilder ||
-    window.WebKitBlobBuilder ||
-    window.MozBlobBuilder ||
-    window.MSBlobBuilder;
-  this._Uint8Array =
-    window.Uint8Array ||
-    window.WebKitUint8Array ||
-    window.MozUint8Array ||
-    window.MSUint8Array;
-  this._DataView =
-    window.DataView ||
-    window.WebKitDataView ||
-    window.MozDataView ||
-    window.MSDataView;
-  this._ArrayBuffer =
-    window.ArrayBuffer ||
-    window.WebKitArrayBuffer ||
-    window.MozArrayBuffer ||
-    window.MSArrayBuffer;
-  this._maxLoadAhead = 0;
-  if (!this._URL) {
-    this._debugLog("No URL support! Will use slower data: URLs.");
-    // Throttle loading to avoid making playback stalling completely while
-    // loading images...
-    this._maxLoadAhead = 10;
-  }
-  if (!this._Blob) {
-    this._error("No Blob support");
-  }
-  if (!this._Uint8Array) {
-    this._error("No Uint8Array support");
-  }
-  if (!this._DataView) {
-    this._error("No DataView support");
-  }
-  if (!this._ArrayBuffer) {
-    this._error("No ArrayBuffer support");
-  }
-  this._isSafari =
-    Object.prototype.toString.call(window.HTMLElement).indexOf("Constructor") >
-    0;
-  this._loadingState = 0;
-  this._dead = false;
-  this._context = options.canvas.getContext("2d");
-  this._files = {};
-  this._frameCount = this.op.metadata.frames.length;
-  this._debugLog("Frame count: " + this._frameCount);
-  this._frame = 0;
-  this._loadFrame = 0;
-  this._frameImages = [];
-  this._paused = false;
-  this._loadTimer = null;
-  this._startLoad();
-  if (this.op.autoStart) {
-    this.play();
-  } else {
-    this._paused = true;
-  }
+interface UgoiraFrame {
+  file: string;
+  delay: number;
 }
 
-ZipImagePlayer.prototype = {
-  _trailerBytes: 30000,
-  _failed: false,
-  _mkerr: function (msg) {
-    const _this = this;
-    return function () {
-      _this._error(msg);
+interface UgoiraMetadata {
+  frames: UgoiraFrame[];
+  mime_type?: string;
+}
+
+export interface ZipImagePlayerOptions {
+  canvas: HTMLCanvasElement;
+  metadata: UgoiraMetadata;
+  autoStart?: boolean;
+  debug?: boolean;
+  source?: string;
+  chunkSize?: number;
+  autosize?: boolean;
+  loop?: boolean;
+}
+
+interface ZipFileEntry {
+  off: number;
+  len: number;
+}
+
+interface ZipImagePlayerEventMap {
+  frameLoaded: (frame: number) => void;
+}
+
+class ZipImagePlayer {
+  canvas: HTMLCanvasElement;
+  private op: ZipImagePlayerOptions;
+  private _URL: typeof URL;
+  private _maxLoadAhead: number;
+  private _isSafari: boolean;
+  private _loadingState: number;
+  private _dead: boolean;
+  private _context: CanvasRenderingContext2D;
+  private _files: Record<string, ZipFileEntry>;
+  private _frameCount: number;
+  private _frame: number;
+  private _loadFrame: number;
+  private _frameImages: HTMLImageElement[];
+  private _paused: boolean;
+  private _loadTimer: ReturnType<typeof setTimeout> | null;
+  private _timer: ReturnType<typeof setTimeout> | null;
+  private _failed: boolean;
+  private _len: number;
+  private _buf: ArrayBuffer | null;
+  private _bytes: Uint8Array | null;
+  private _pHead: number;
+  private _pNextHead: number;
+  private _pFetch: number;
+  private _pTail: number;
+  private readonly _trailerBytes = 30000;
+  private _listeners: Partial<ZipImagePlayerEventMap> = {};
+
+  on<K extends keyof ZipImagePlayerEventMap>(
+    event: K,
+    handler: ZipImagePlayerEventMap[K]
+  ): void {
+    this._listeners[event] = handler;
+  }
+
+  off<K extends keyof ZipImagePlayerEventMap>(event: K): void {
+    delete this._listeners[event];
+  }
+
+  private _emit<K extends keyof ZipImagePlayerEventMap>(
+    event: K,
+    ...args: Parameters<ZipImagePlayerEventMap[K]>
+  ): void {
+    const handler = this._listeners[event];
+    if (handler) {
+      (handler as (...a: unknown[]) => void)(...args);
+    }
+  }
+
+  constructor(options: ZipImagePlayerOptions) {
+    this.canvas = options.canvas;
+    this.op = options;
+    const w = window;
+    this._URL = window.URL || w.webkitURL;
+    this._maxLoadAhead = 0;
+    if (!this._URL) {
+      this._debugLog("No URL support! Will use slower data: URLs.");
+      // Throttle loading to avoid making playback stalling completely while
+      // loading images...
+      this._maxLoadAhead = 10;
+    }
+    if (!window.Blob) {
+      this._error("No Blob support");
+    }
+    if (!window.Uint8Array) {
+      this._error("No Uint8Array support");
+    }
+    if (!window.DataView) {
+      this._error("No DataView support");
+    }
+    if (!window.ArrayBuffer) {
+      this._error("No ArrayBuffer support");
+    }
+    this._isSafari =
+      Object.prototype.toString
+        .call(window.HTMLElement)
+        .indexOf("Constructor") > 0;
+    this._loadingState = 0;
+    this._dead = false;
+    const context = options.canvas.getContext("2d");
+    if (!context) {
+      this._error("Failed to get 2D context");
+    }
+    this._context = context;
+    this._files = {};
+    this._frameCount = this.op.metadata.frames.length;
+    this._debugLog("Frame count: " + this._frameCount);
+    this._frame = 0;
+    this._loadFrame = 0;
+    this._frameImages = [];
+    this._paused = false;
+    this._loadTimer = null;
+    this._timer = null;
+    this._failed = false;
+    this._len = 0;
+    this._buf = null;
+    this._bytes = null;
+    this._pHead = 0;
+    this._pNextHead = 0;
+    this._pFetch = 0;
+    this._pTail = 0;
+    this._startLoad();
+    if (this.op.autoStart) {
+      this.play();
+    } else {
+      this._paused = true;
+    }
+  }
+
+  private _mkerr(msg: string): () => void {
+    return () => {
+      this._error(msg);
     };
-  },
-  _error: function (msg) {
+  }
+
+  private _error(msg: string): never {
     this._failed = true;
     throw Error("ZipImagePlayer error: " + msg);
-  },
-  _debugLog: function (msg) {
+  }
+
+  private _debugLog(msg: string): void {
     if (this.op.debug) {
       console.log(msg);
     }
-  },
-  _load: function (offset, length, callback) {
-    const _this = this;
+  }
+
+  private _load(
+    offset: number | null,
+    length: number | null,
+    callback: ((off: number, len: number) => void) | null
+  ): void {
     // Unfortunately JQuery doesn't support ArrayBuffer XHR
     const xhr = new XMLHttpRequest();
     xhr.addEventListener(
       "load",
-      function () {
-        if (_this._dead) {
+      () => {
+        if (this._dead) {
           return;
         }
-        _this._debugLog(
+        this._debugLog(
           "Load: " + offset + " " + length + " status=" + xhr.status
         );
         if (xhr.status == 200) {
-          _this._debugLog("Range disabled or unsupported, complete load");
+          this._debugLog("Range disabled or unsupported, complete load");
           offset = 0;
-          length = xhr.response.byteLength;
-          _this._len = length;
-          _this._buf = xhr.response;
-          _this._bytes = new _this._Uint8Array(_this._buf);
+          length = (xhr.response as ArrayBuffer).byteLength;
+          this._len = length;
+          this._buf = xhr.response as ArrayBuffer;
+          this._bytes = new Uint8Array(this._buf);
         } else {
           if (xhr.status != 206) {
-            _this._error("Unexpected HTTP status " + xhr.status);
+            this._error("Unexpected HTTP status " + xhr.status);
           }
-          if (xhr.response.byteLength != length) {
-            _this._error(
+          if ((xhr.response as ArrayBuffer).byteLength != length) {
+            this._error(
               "Unexpected length " +
-                xhr.response.byteLength +
+                (xhr.response as ArrayBuffer).byteLength +
                 " (expected " +
                 length +
                 ")"
             );
           }
-          _this._bytes.set(new _this._Uint8Array(xhr.response), offset);
+          this._bytes!.set(
+            new Uint8Array(xhr.response as ArrayBuffer),
+            offset!
+          );
         }
         if (callback) {
-          callback.apply(_this, [offset, length]);
+          callback(offset!, length!);
         }
       },
       false
     );
     xhr.addEventListener("error", this._mkerr("Fetch failed"), false);
-    xhr.open("GET", this.op.source);
+    xhr.open("GET", this.op.source!);
     xhr.responseType = "arraybuffer";
     if (offset != null && length != null) {
       const end = offset + length;
@@ -138,9 +216,9 @@ ZipImagePlayer.prototype = {
     }
     // this._debugLog("Load: " + offset + " " + length);
     xhr.send();
-  },
-  _startLoad: function () {
-    const _this = this;
+  }
+
+  private _startLoad(): void {
     if (!this.op.source) {
       // Unpacked mode (individiual frame URLs) - just load the frames.
       this._loadNextFrame();
@@ -150,43 +228,44 @@ ZipImagePlayer.prototype = {
       url: this.op.source,
       type: "HEAD",
     })
-      .done(function (data, status, xhr) {
-        if (_this._dead) {
+      .done((_data: unknown, _status: string, xhr: JQuery.jqXHR) => {
+        if (this._dead) {
           return;
         }
-        _this._pHead = 0;
-        _this._pNextHead = 0;
-        _this._pFetch = 0;
+        this._pHead = 0;
+        this._pNextHead = 0;
+        this._pFetch = 0;
         const len = parseInt(String(xhr.getResponseHeader("Content-Length")));
         if (!len) {
-          _this._debugLog("HEAD request failed: invalid file length.");
-          _this._debugLog("Falling back to full file mode.");
-          _this._load(null, null, function (off, len) {
-            _this._pTail = 0;
-            _this._pHead = len;
-            _this._findCentralDirectory();
+          this._debugLog("HEAD request failed: invalid file length.");
+          this._debugLog("Falling back to full file mode.");
+          this._load(null, null, (_off, fullLen) => {
+            this._pTail = 0;
+            this._pHead = fullLen;
+            this._findCentralDirectory();
           });
           return;
         }
-        _this._debugLog("Len: " + len);
-        _this._len = len;
-        _this._buf = new _this._ArrayBuffer(len);
-        _this._bytes = new _this._Uint8Array(_this._buf);
-        let off = len - _this._trailerBytes;
+        this._debugLog("Len: " + len);
+        this._len = len;
+        this._buf = new ArrayBuffer(len);
+        this._bytes = new Uint8Array(this._buf);
+        let off = len - this._trailerBytes;
         if (off < 0) {
           off = 0;
         }
-        _this._pTail = len;
-        _this._load(off, len - off, function (off) {
-          _this._pTail = off;
-          _this._findCentralDirectory();
+        this._pTail = len;
+        this._load(off, len - off, (loadedOff) => {
+          this._pTail = loadedOff;
+          this._findCentralDirectory();
         });
       })
       .fail(this._mkerr("Length fetch failed"));
-  },
-  _findCentralDirectory: function () {
+  }
+
+  private _findCentralDirectory(): void {
     // No support for ZIP file comment
-    const dv = new this._DataView(this._buf, this._len - 22, 22);
+    const dv = new DataView(this._buf!, this._len - 22, 22);
     if (dv.getUint32(0, true) != 0x06054b50) {
       this._error("End of Central Directory signature not found");
     }
@@ -194,16 +273,21 @@ ZipImagePlayer.prototype = {
     const cd_size = dv.getUint32(12, true);
     const cd_off = dv.getUint32(16, true);
     if (cd_off < this._pTail) {
-      this._load(cd_off, this._pTail - cd_off, function () {
+      this._load(cd_off, this._pTail - cd_off, () => {
         this._pTail = cd_off;
         this._readCentralDirectory(cd_off, cd_size, cd_count);
       });
     } else {
       this._readCentralDirectory(cd_off, cd_size, cd_count);
     }
-  },
-  _readCentralDirectory: function (offset, size, count) {
-    const dv = new this._DataView(this._buf, offset, size);
+  }
+
+  private _readCentralDirectory(
+    offset: number,
+    size: number,
+    count: number
+  ): void {
+    const dv = new DataView(this._buf!, offset, size);
     let p = 0;
     for (let i = 0; i < count; i++) {
       if (dv.getUint32(p, true) != 0x02014b50) {
@@ -219,7 +303,7 @@ ZipImagePlayer.prototype = {
         this._error("Unsupported compression method");
       }
       p += 46;
-      const nameView = new this._Uint8Array(this._buf, offset + p, nameLen);
+      const nameView = new Uint8Array(this._buf!, offset + p, nameLen);
       let name = "";
       for (let j = 0; j < nameLen; j++) {
         name += String.fromCharCode(nameView[j]);
@@ -232,52 +316,60 @@ ZipImagePlayer.prototype = {
     // Note: the implementation does not support more than two.
     if (this._pHead >= this._pTail) {
       this._pHead = this._len;
-      $(this).triggerHandler("loadProgress", [this._pHead / this._len]);
+      $(this as unknown as JQuery.PlainObject).triggerHandler("loadProgress", [
+        this._pHead / this._len,
+      ]);
       this._loadNextFrame();
     } else {
       this._loadNextChunk();
       this._loadNextChunk();
     }
-  },
-  _loadNextChunk: function () {
+  }
+
+  private _loadNextChunk(): void {
     if (this._pFetch >= this._pTail) {
       return;
     }
     const off = this._pFetch;
-    let len = this.op.chunkSize;
+    let len = this.op.chunkSize!;
     if (this._pFetch + len > this._pTail) {
       len = this._pTail - this._pFetch;
     }
     this._pFetch += len;
-    this._load(off, len, function () {
-      if (off == this._pHead) {
+    this._load(off, len, (loadedOff, loadedLen) => {
+      if (loadedOff == this._pHead) {
         if (this._pNextHead) {
           this._pHead = this._pNextHead;
           this._pNextHead = 0;
         } else {
-          this._pHead = off + len;
+          this._pHead = loadedOff + loadedLen;
         }
         if (this._pHead >= this._pTail) {
           this._pHead = this._len;
         }
         // this._debugLog("New pHead: " + this._pHead);
-        $(this).triggerHandler("loadProgress", [this._pHead / this._len]);
+        $(this as unknown as JQuery.PlainObject).triggerHandler(
+          "loadProgress",
+          [this._pHead / this._len]
+        );
         if (!this._loadTimer) {
           this._loadNextFrame();
         }
       } else {
-        this._pNextHead = off + len;
+        this._pNextHead = loadedOff + loadedLen;
       }
       this._loadNextChunk();
     });
-  },
-  _fileDataStart: function (offset) {
-    const dv = new DataView(this._buf, offset, 30);
+  }
+
+  private _fileDataStart(offset: number): number {
+    const dv = new DataView(this._buf!, offset, 30);
     const nameLen = dv.getUint16(26, true);
     const extraLen = dv.getUint16(28, true);
     return offset + 30 + nameLen + extraLen;
-  },
-  _isFileAvailable: function (name) {
+  }
+
+  private _isFileAvailable(name: string): boolean {
     const info = this._files[name];
     if (!info) {
       this._error("File " + name + " not found in ZIP");
@@ -286,8 +378,9 @@ ZipImagePlayer.prototype = {
       return false;
     }
     return this._pHead >= this._fileDataStart(info.off) + info.len;
-  },
-  _loadNextFrame: function () {
+  }
+
+  private _loadNextFrame(): void {
     if (this._dead) {
       return;
     }
@@ -308,31 +401,18 @@ ZipImagePlayer.prototype = {
     this._loadFrame += 1;
     const off = this._fileDataStart(this._files[meta.file].off);
     const end = off + this._files[meta.file].len;
-    let url;
-    const mime_type = this.op.metadata.mime_type || "image/png";
+    let url: string;
+    const mime_type = this.op.metadata.mime_type ?? "image/png";
     if (this._URL) {
-      let slice;
-      if (!this._buf.slice) {
-        slice = new this._ArrayBuffer(this._files[meta.file].len);
-        const view = new this._Uint8Array(slice);
-        view.set(this._bytes.subarray(off, end));
+      let slice: ArrayBuffer;
+      if (!this._buf!.slice) {
+        slice = new ArrayBuffer(this._files[meta.file].len);
+        const view = new Uint8Array(slice);
+        view.set(this._bytes!.subarray(off, end));
       } else {
-        slice = this._buf.slice(off, end);
+        slice = this._buf!.slice(off, end);
       }
-      let blob;
-      try {
-        blob = new this._Blob([slice], { type: mime_type });
-      } catch (err) {
-        this._debugLog(
-          "Blob constructor failed. Trying BlobBuilder..." +
-            " (" +
-            err.message +
-            ")"
-        );
-        const bb = new this._BlobBuilder();
-        bb.append(slice);
-        blob = bb.getBlob();
-      }
+      const blob = new Blob([slice], { type: mime_type });
       // _this._debugLog("Loading " + meta.file + " to frame " + frame);
       url = this._URL.createObjectURL(blob);
       this._loadImage(frame, url, true);
@@ -341,58 +421,59 @@ ZipImagePlayer.prototype = {
         "data:" +
         mime_type +
         ";base64," +
-        base64ArrayBuffer(this._buf, off, end - off);
+        base64ArrayBuffer(this._buf!, off, end - off);
       this._loadImage(frame, url, false);
     }
-  },
-  _loadImage: function (frame, url, isBlob) {
-    const _this = this;
+  }
+
+  private _loadImage(frame: number, url: string, isBlob: boolean): void {
     const image = new Image();
     const meta = this.op.metadata.frames[frame];
-    image.addEventListener("load", function () {
-      _this._debugLog("Loaded " + meta.file + " to frame " + frame);
+    image.addEventListener("load", () => {
+      this._debugLog("Loaded " + meta.file + " to frame " + frame);
       if (isBlob) {
-        _this._URL.revokeObjectURL(url);
+        this._URL.revokeObjectURL(url);
       }
-      if (_this._dead) {
+      if (this._dead) {
         return;
       }
-      _this._frameImages[frame] = image;
-      $(_this).triggerHandler("frameLoaded", frame);
-      if (_this._loadingState == 0) {
-        _this._displayFrame.apply(_this);
+      this._frameImages[frame] = image;
+      this._emit("frameLoaded", frame);
+      if (this._loadingState == 0) {
+        this._displayFrame();
       }
-      if (frame >= _this._frameCount - 1) {
-        _this._setLoadingState(2);
-        _this._buf = null;
-        _this._bytes = null;
+      if (frame >= this._frameCount - 1) {
+        this._setLoadingState(2);
+        this._buf = null;
+        this._bytes = null;
       } else {
-        if (
-          !_this._maxLoadAhead ||
-          frame - _this._frame < _this._maxLoadAhead
-        ) {
-          _this._loadNextFrame();
-        } else if (!_this._loadTimer) {
-          _this._loadTimer = setTimeout(function () {
-            _this._loadTimer = null;
-            _this._loadNextFrame();
+        if (!this._maxLoadAhead || frame - this._frame < this._maxLoadAhead) {
+          this._loadNextFrame();
+        } else if (!this._loadTimer) {
+          this._loadTimer = setTimeout(() => {
+            this._loadTimer = null;
+            this._loadNextFrame();
           }, 200);
         }
       }
     });
     image.src = url;
-  },
-  _setLoadingState: function (state) {
+  }
+
+  private _setLoadingState(state: number): void {
     if (this._loadingState != state) {
       this._loadingState = state;
-      $(this).triggerHandler("loadingStateChanged", [state]);
+      $(this as unknown as JQuery.PlainObject).triggerHandler(
+        "loadingStateChanged",
+        [state]
+      );
     }
-  },
-  _displayFrame: function () {
+  }
+
+  private _displayFrame(): void {
     if (this._dead) {
       return;
     }
-    const _this = this;
     const meta = this.op.metadata.frames[this._frame];
     this._debugLog("Displaying frame: " + this._frame + " " + meta.file);
     const image = this._frameImages[this._frame];
@@ -417,15 +498,19 @@ ZipImagePlayer.prototype = {
     }
     this._context.clearRect(0, 0, this.op.canvas.width, this.op.canvas.height);
     this._context.drawImage(image, 0, 0);
-    $(this).triggerHandler("frame", this._frame);
+    $(this as unknown as JQuery.PlainObject).triggerHandler(
+      "frame",
+      this._frame
+    );
     if (!this._paused) {
-      this._timer = setTimeout(function () {
-        _this._timer = null;
-        _this._nextFrame.apply(_this);
+      this._timer = setTimeout(() => {
+        this._timer = null;
+        this._nextFrame();
       }, meta.delay);
     }
-  },
-  _nextFrame: function () {
+  }
+
+  private _nextFrame(): void {
     if (this._frame >= this._frameCount - 1) {
       if (this.op.loop) {
         this._frame = 0;
@@ -437,18 +522,22 @@ ZipImagePlayer.prototype = {
       this._frame += 1;
     }
     this._displayFrame();
-  },
-  play: function () {
+  }
+
+  play(): void {
     if (this._dead) {
       return;
     }
     if (this._paused) {
-      $(this).triggerHandler("play", [this._frame]);
+      $(this as unknown as JQuery.PlainObject).triggerHandler("play", [
+        this._frame,
+      ]);
       this._paused = false;
       this._displayFrame();
     }
-  },
-  pause: function () {
+  }
+
+  pause(): void {
     if (this._dead) {
       return;
     }
@@ -457,10 +546,13 @@ ZipImagePlayer.prototype = {
         clearTimeout(this._timer);
       }
       this._paused = true;
-      $(this).triggerHandler("pause", [this._frame]);
+      $(this as unknown as JQuery.PlainObject).triggerHandler("pause", [
+        this._frame,
+      ]);
     }
-  },
-  rewind: function () {
+  }
+
+  rewind(): void {
     if (this._dead) {
       return;
     }
@@ -469,8 +561,9 @@ ZipImagePlayer.prototype = {
       clearTimeout(this._timer);
     }
     this._displayFrame();
-  },
-  stop: function () {
+  }
+
+  stop(): void {
     this._debugLog("Stopped!");
     this._dead = true;
     if (this._timer) {
@@ -479,28 +572,40 @@ ZipImagePlayer.prototype = {
     if (this._loadTimer) {
       clearTimeout(this._loadTimer);
     }
-    this._frameImages = null;
+    this._frameImages = [];
     this._buf = null;
     this._bytes = null;
-    $(this).triggerHandler("stop");
-  },
-  getCurrentFrame: function () {
+    $(this as unknown as JQuery.PlainObject).triggerHandler("stop");
+  }
+
+  getCurrentFrame(): number {
     return this._frame;
-  },
-  getLoadedFrames: function () {
+  }
+
+  getLoadedFrameImages(): HTMLImageElement[] {
+    return this._frameImages;
+  }
+
+  getLoadedFrames(): number {
     return this._frameImages.length;
-  },
-  getFrameCount: function () {
+  }
+
+  getFrameCount(): number {
     return this._frameCount;
-  },
-  hasError: function () {
+  }
+
+  hasError(): boolean {
     return this._failed;
-  },
-};
+  }
+}
 
 // Required for iOS <6, where Blob URLs are not available. This is slow...
 // Source: https://gist.github.com/jonleighton/958841
-function base64ArrayBuffer(arrayBuffer, off, byteLength) {
+function base64ArrayBuffer(
+  arrayBuffer: ArrayBuffer,
+  off: number,
+  byteLength: number
+): string {
   let base64 = "";
   const encodings =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";

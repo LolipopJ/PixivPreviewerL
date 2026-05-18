@@ -18,7 +18,7 @@ export const convertObjectKeysFromSnakeToCamel = <T = Record<string, unknown>>(
 
   const newResponse = {} as T;
   for (const key in obj) {
-    newResponse[snakeToCamel(key)] = obj[key];
+    newResponse[snakeToCamel(key) as keyof T] = obj[key as keyof T];
   }
 
   return newResponse;

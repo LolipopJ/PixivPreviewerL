@@ -44,7 +44,7 @@ export const requestWithRetry = async <TContext = unknown>(
     ...restOptions
   } = options;
 
-  let response: Tampermonkey.Response<TContext>;
+  let response: Tampermonkey.Response<TContext> | undefined;
   let retryTimes = 0;
   while (retryTimes < maxRetryTimes) {
     response = await request<TContext>(restOptions);
@@ -61,7 +61,7 @@ export const requestWithRetry = async <TContext = unknown>(
     await pause(retryDelay);
   }
   throw new Error(
-    `Request for ${restOptions.url} failed: ${response.responseText}`
+    `Request for ${restOptions.url} failed: ${response?.responseText}`
   );
 };
 

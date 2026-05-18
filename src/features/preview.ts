@@ -28,7 +28,9 @@ import {
 } from "../utils/illustration";
 import { iLog } from "../utils/logger";
 import mouseMonitor from "../utils/mouse-monitor";
-import ZipImagePlayer from "../utils/ugoira-player";
+import ZipImagePlayer, {
+  type ZipImagePlayerOptions,
+} from "../utils/ugoira-player";
 
 let isInitialized = false;
 export const loadIllustPreview = (
@@ -371,9 +373,7 @@ class PreviewedIllust {
   #currentIllustSize: [number, number] = [0, 0];
   /** 当前预览的动图播放器 */
   // @ts-expect-error: ignore type defines
-  #currentUgoiraPlayer: ZipImagePlayer & {
-    canvas: HTMLCanvasElement;
-  };
+  #currentUgoiraPlayer: ZipImagePlayer;
 
   constructor() {
     this.reset();
@@ -781,31 +781,32 @@ class PreviewedIllust {
     this.showIllustrationDetails();
   }
 
-  createUgoiraPlayer(options) {
+  createUgoiraPlayer(
+    options: Pick<ZipImagePlayerOptions, "source" | "metadata">
+  ) {
     const canvas = document.createElement("canvas");
     const p = new ZipImagePlayer({
-      canvas: canvas,
+      canvas,
       chunkSize: 300000,
       loop: true,
       autoStart: true,
       debug: false,
       ...options,
     });
-    p.canvas = canvas;
     return p;
   }
 
   bindUgoiraPreviewEvents() {
-    $(this.#currentUgoiraPlayer).on("frameLoaded", this.onUgoiraFrameLoaded);
+    this.#currentUgoiraPlayer?.on("frameLoaded", this.onUgoiraFrameLoaded);
     $(document).on("mousemove", this.onMouseMove);
   }
 
   unbindUgoiraPreviewEvents() {
-    $(this.#currentUgoiraPlayer).off();
+    this.#currentUgoiraPlayer?.off("frameLoaded");
     $(document).off("mousemove", this.onMouseMove);
   }
 
-  onUgoiraFrameLoaded = (ev, frame) => {
+  onUgoiraFrameLoaded = (frame: number) => {
     if (frame !== 0) {
       return;
     }
@@ -818,8 +819,9 @@ class PreviewedIllust {
     this.previewImageElement.remove();
     this.previewImageElement = canvas;
 
-    const ugoiraOriginWidth = ev.currentTarget._frameImages[0].width;
-    const ugoiraOriginHeight = ev.currentTarget._frameImages[0].height;
+    const frameImages = this.#currentUgoiraPlayer.getLoadedFrameImages();
+    const ugoiraOriginWidth = frameImages[0].width;
+    const ugoiraOriginHeight = frameImages[0].height;
     this.#currentIllustSize = [ugoiraOriginWidth, ugoiraOriginHeight];
     this.previewImageElement.attr({
       width: ugoiraOriginWidth,

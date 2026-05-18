@@ -80,10 +80,11 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
   }
 
   class IllustSorter {
-    type: IllustSortType;
-    illustrations: (IllustrationListItem & { bookmarkUserTotal: number })[];
+    type: IllustSortType | undefined;
+    illustrations: (IllustrationListItem & { bookmarkUserTotal: number })[] =
+      [];
     sorting: boolean = false;
-    nextSortPage: number;
+    nextSortPage: number | undefined;
     listElement: JQuery<HTMLElement> = $();
 
     progressElement = $();
@@ -96,7 +97,7 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
         this.type = type;
         this.illustrations = [];
         this.sorting = false;
-        this.nextSortPage = undefined;
+        this.nextSortPage = 1;
         this.listElement = getIllustrationsListDom(type);
         this.progressElement?.remove();
         this.progressElement = $(document.createElement("div"))
@@ -176,7 +177,7 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
             searchParams.set("is_first_page", page > 1 ? "0" : "1");
             searchParams.delete("ids[]");
 
-            const userId = searchParams.get("user_id");
+            const userId = searchParams.get("user_id") || "";
             const userIllustrations = await getUserIllustrationsWithCache(
               userId,
               {
@@ -447,7 +448,7 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
           IllustSortType.USER_ILLUST,
           IllustSortType.USER_MANGA,
           IllustSortType.USER_BOOKMARK,
-        ].includes(this.type)
+        ].includes(this.type as IllustSortType)
       ) {
         this.listElement.css({
           gap: "24px",
@@ -515,7 +516,7 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
 
 /** 获取作品节点 li 的父节点 ul */
 function getIllustrationsListDom(type: IllustSortType) {
-  let dom: JQuery<HTMLElement>;
+  let dom: JQuery<HTMLElement> = $();
   if (
     [
       IllustSortType.TAG_ARTWORK,
@@ -566,9 +567,9 @@ function getIllustrationsListDom(type: IllustSortType) {
 function getSortOptionsFromUrl(url: URL) {
   const { pathname, searchParams } = url;
 
-  let type: IllustSortType;
-  let api: string;
-  let defaultSearchParams: string;
+  let type: IllustSortType | undefined;
+  let api: string | undefined;
+  let defaultSearchParams: string | undefined;
 
   let match: RegExpMatchArray | null;
   if (
@@ -594,7 +595,7 @@ function getSortOptionsFromUrl(url: URL) {
         defaultSearchParams = `word=${tagName}&order=date_d&mode=all&p=1&csw=0&s_mode=s_tag_full&type=manga&lang=zh`;
         break;
     }
-  } else if ((match = pathname.match(/\/search/))) {
+  } else if (pathname.match(/\/search/)) {
     const tagName = searchParams.get("q");
     const filterType = searchParams.get("type");
 
@@ -649,6 +650,10 @@ function getSortOptionsFromUrl(url: URL) {
         defaultSearchParams = `work_category=manga&is_first_page=1&sensitiveFilterMode=userSetting&user_id=${userId}&lang=zh`;
         break;
     }
+  }
+
+  if (!type || !api || !defaultSearchParams) {
+    throw new Error("Current page doesn't support sorting illustrations.");
   }
 
   return {

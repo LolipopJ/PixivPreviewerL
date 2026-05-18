@@ -78,11 +78,7 @@ export const getUserIllustrationsWithCache = async (
   userId: string,
   { onRequesting }: { onRequesting?: () => void } = {}
 ) => {
-  let userIllustrations: Awaited<ReturnType<typeof getUserIllustrations>> = {
-    illusts: [],
-    manga: [],
-    artworks: [],
-  };
+  let userIllustrations: Awaited<ReturnType<typeof getUserIllustrations>>;
   const userIllustrationsCacheKey = `PIXIV_PREVIEWER_CACHED_ARTWORKS_OF_USER_${userId}`;
   try {
     const userIllustrationsCacheString = sessionStorage.getItem(
