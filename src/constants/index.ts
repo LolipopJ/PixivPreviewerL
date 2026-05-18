@@ -36,6 +36,8 @@ export const PREVIEW_WRAPPER_BORDER_RADIUS = 8;
 export const PREVIEW_WRAPPER_DISTANCE_TO_MOUSE = 20;
 /** 预览容器预加载图片数量。仅适用于插画类型作品 */
 export const PREVIEW_PRELOAD_NUM = 5;
+/** 预览缓存最大条目数 */
+export const PREVIEW_CACHE_MAX_SIZE = 100;
 
 /** 工具栏 ID */
 export const TOOLBAR_ID = "pp-toolbar";

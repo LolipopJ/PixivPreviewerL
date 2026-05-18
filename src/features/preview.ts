@@ -1,4 +1,5 @@
 import {
+  PREVIEW_CACHE_MAX_SIZE,
   PREVIEW_PRELOAD_NUM,
   PREVIEW_WRAPPER_BORDER_RADIUS,
   PREVIEW_WRAPPER_BORDER_WIDTH,
@@ -31,6 +32,7 @@ import mouseMonitor from "../utils/mouse-monitor";
 import ZipImagePlayer, {
   type ZipImagePlayerOptions,
 } from "../utils/ugoira-player";
+import { createLRUCache } from "../utils/utils";
 
 let isInitialized = false;
 export const loadIllustPreview = (
@@ -94,13 +96,13 @@ export const loadIllustPreview = (
     let currentHoveredIllustId = "";
     let getIllustPagesRequest = $.ajax();
 
-    // TODO: 自动清理缓存，避免占用内存过大
-    const getIllustPagesCache: Record<
-      string,
-      { regularUrls: string[]; originalUrls: string[] }
-    > = {};
-    const getUgoiraMetadataCache: Record<string, GetUgoiraMetaResponseData> =
-      {};
+    const getIllustPagesCache = createLRUCache<{
+      regularUrls: string[];
+      originalUrls: string[];
+    }>(PREVIEW_CACHE_MAX_SIZE);
+    const getUgoiraMetadataCache = createLRUCache<GetUgoiraMetaResponseData>(
+      PREVIEW_CACHE_MAX_SIZE
+    );
 
     return ({
       target,
@@ -126,13 +128,14 @@ export const loadIllustPreview = (
       }
 
       if ([IllustType.ILLUST, IllustType.MANGA].includes(illustType)) {
-        if (getIllustPagesCache[illustId]) {
+        const illustPagesCached = getIllustPagesCache.get(illustId);
+        if (illustPagesCached) {
           // 命中缓存，直接使用缓存中的元数据
           previewedIllust.setImage({
             illustId,
             illustElement: target,
             previewPage,
-            ...getIllustPagesCache[illustId],
+            ...illustPagesCached,
           });
           return;
         }
@@ -154,10 +157,10 @@ export const loadIllustPreview = (
             const originalUrls = urls.map((url) => url.original);
 
             // 设置缓存
-            getIllustPagesCache[illustId] = {
+            getIllustPagesCache.set(illustId, {
               regularUrls,
               originalUrls,
-            };
+            });
 
             // 当前鼠标悬浮的作品发生了改变，结束处理
             if (currentHoveredIllustId !== illustId) return;
@@ -177,12 +180,13 @@ export const loadIllustPreview = (
           },
         });
       } else if (illustType === IllustType.UGOIRA) {
-        if (getUgoiraMetadataCache[illustId]) {
+        const ugoiraMetadataCached = getUgoiraMetadataCache.get(illustId);
+        if (ugoiraMetadataCached) {
           // 命中缓存，直接使用缓存中的元数据
           previewedIllust.setUgoira({
             illustId,
             illustElement: target,
-            ...getUgoiraMetadataCache[illustId],
+            ...ugoiraMetadataCached,
           });
           return;
         }
@@ -198,7 +202,7 @@ export const loadIllustPreview = (
               return;
             }
 
-            getUgoiraMetadataCache[illustId] = data.body;
+            getUgoiraMetadataCache.set(illustId, data.body);
 
             if (currentHoveredIllustId !== illustId) return;
 

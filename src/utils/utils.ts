@@ -23,3 +23,24 @@ export const convertObjectKeysFromSnakeToCamel = <T = Record<string, unknown>>(
 
   return newResponse;
 };
+
+export const createLRUCache = <V>(maxSize: number) => {
+  const map = new Map<string, V>();
+  return {
+    get(key: string): V | undefined {
+      if (!map.has(key)) return undefined;
+      const val = map.get(key)!;
+      map.delete(key);
+      map.set(key, val);
+      return val;
+    },
+    set(key: string, val: V): void {
+      if (map.has(key)) {
+        map.delete(key);
+      } else if (map.size >= maxSize) {
+        map.delete(map.keys().next().value!);
+      }
+      map.set(key, val);
+    },
+  };
+};
