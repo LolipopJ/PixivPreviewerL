@@ -71,7 +71,7 @@
 安装项目依赖：
 
 ```bash
-yarn
+pnpm install
 ```
 
 开发与维护插件，可编辑 `src/` 目录里的源码；修改 Tampermonkey 的元数据，可编辑 `tsup.config.ts` 中的 `banner` 配置。
@@ -79,12 +79,12 @@ yarn
 查找并修复质量或格式问题：
 
 ```bash
-yarn lint     # 修复代码质量与格式问题
-yarn prettier # 修复代码的格式问题
+pnpm run lint     # 修复代码质量与格式问题
+pnpm run prettier # 修复代码的格式问题
 ```
 
 打包为可发布文件 `dist/index.cjs`：
 
 ```bash
-yarn build
+pnpm run build
 ```
