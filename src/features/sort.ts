@@ -40,7 +40,7 @@ type LoadIllustSortOptions = Pick<
   | "aiAssistedFilter"
 > & { csrfToken: string };
 
-const BOOKMARK_USER_PAGE_ILLUSTRATION_LIST_SELECTOR = "ul.sc-e83d358-1.gIHHFW";
+const BOOKMARK_USER_PAGE_ILLUSTRATION_LIST_SELECTOR = "ul.sc-e967f3f1-1.cEOodl";
 
 const USER_TYPE_ARTWORKS_PER_PAGE = 48;
 
@@ -404,7 +404,7 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
 
         const illustrationToolbar = document.createElement("div");
         illustrationToolbar.style =
-          "position: absolute; top: 154px; left: 0px; right: 0px; display: flex; align-items: center; padding: 0 4px 4px; pointer-events: none; font-size: 12px;";
+          "position: absolute; top: 164px; left: 0px; right: 0px; display: flex; align-items: center; padding: 0 4px 4px; pointer-events: none; font-size: 12px;";
         // TODO: 支持收藏 / 取消收藏作品
         illustrationToolbar.innerHTML = `
           <div style="padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: ${bookmarkUserTotal > 50000 ? "rgb(159, 18, 57)" : bookmarkUserTotal > 10000 ? "rgb(220, 38, 38)" : bookmarkUserTotal > 5000 ? "rgb(29, 78, 216)" : bookmarkUserTotal > 1000 ? "rgb(21, 128, 61)" : "rgb(71, 85, 105)"}; font-weight: bold; line-height: 16px; user-select: none;">❤ ${bookmarkUserTotal}</div>
@@ -473,10 +473,6 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
       api,
       searchParams: defaultSearchParams,
     } = getSortOptionsFromUrl(url);
-    if (type === undefined) {
-      iLog.w("Current page doesn't support sorting illustrations.");
-      return;
-    }
 
     const mergedSearchParams = new URLSearchParams(defaultSearchParams);
     url.searchParams.forEach((value, key) => {
@@ -516,7 +512,8 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
 
 /** 获取作品节点 li 的父节点 ul */
 function getIllustrationsListDom(type: IllustSortType) {
-  let dom: JQuery<HTMLElement> = $();
+  let dom: JQuery<HTMLElement> | undefined;
+
   if (
     [
       IllustSortType.TAG_ARTWORK,
@@ -554,13 +551,13 @@ function getIllustrationsListDom(type: IllustSortType) {
     }
   }
 
-  if (dom.length) {
-    return dom;
-  } else {
+  if (!dom || !dom.length) {
     throw new Error(
       `Illustrations list DOM not found in current page: ${location.href}. Please create a new issue here: ${process.env.BUG_REPORT_PAGE}`
     );
   }
+
+  return dom;
 }
 
 /** 根据当前路由获取接口参数 */
@@ -652,7 +649,11 @@ function getSortOptionsFromUrl(url: URL) {
     }
   }
 
-  if (!type || !api || !defaultSearchParams) {
+  if (
+    type === undefined ||
+    api === undefined ||
+    defaultSearchParams === undefined
+  ) {
     throw new Error("Current page doesn't support sorting illustrations.");
   }
 
