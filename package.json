@@ -1,6 +1,6 @@
 {
   "name": "pixiv-previewer-l",
-  "version": "1.4.4",
+  "version": "1.4.5",
   "type": "module",
   "description": "Original project: https://github.com/Ocrosoft/PixivPreviewer.",
   "private": true,
