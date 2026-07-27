@@ -857,9 +857,12 @@ class PreviewedIllust {
       const { aiType, bookmarkId, bookmarkUserTotal, tags } =
         illustrationDetails;
       const isR18 = checkIsR18(tags);
+      const isUgoira = checkIsUgoiraUsingTags(tags);
       const isAi = checkIsAiGenerated(aiType);
       const isAiAssisted = checkIsAiAssisted(tags);
+
       const illustrationDetailsElements: JQuery<HTMLElement>[] = [];
+
       if (isR18) {
         illustrationDetailsElements.push(
           $(document.createElement("div"))
@@ -870,12 +873,25 @@ class PreviewedIllust {
             .text("R-18")
         );
       }
+
+      if (isUgoira) {
+        this.downloadOriginalElement.hide();
+        illustrationDetailsElements.push(
+          $(document.createElement("div"))
+            .css({
+              ...DETAIL_BADGE_CSS,
+              background: "rgb(14, 116, 144)",
+            })
+            .text("动图")
+        );
+      }
+
       if (isAi) {
         illustrationDetailsElements.push(
           $(document.createElement("div"))
             .css({
               ...DETAIL_BADGE_CSS,
-              background: "rgb(29, 78, 216)",
+              background: "rgb(162, 28, 175)",
             })
             .text("AI 生成")
         );
@@ -889,6 +905,7 @@ class PreviewedIllust {
             .text("AI 辅助")
         );
       }
+
       illustrationDetailsElements.push(
         $(document.createElement("div"))
           .css({
@@ -906,12 +923,8 @@ class PreviewedIllust {
           })
           .text(`${bookmarkId ? "❤️" : "❤"} ${bookmarkUserTotal}`)
       );
-      this.illustMeta.append(illustrationDetailsElements);
 
-      const isUgoira = checkIsUgoiraUsingTags(tags);
-      if (isUgoira) {
-        this.downloadOriginalElement.hide();
-      }
+      this.illustMeta.append(illustrationDetailsElements);
     }
   }
 
