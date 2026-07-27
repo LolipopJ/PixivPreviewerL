@@ -63,7 +63,8 @@ export const loadIllustPreview = (
       return null;
     }
     const illustId = illustHrefMatch[1];
-    const previewPage = Number(illustHrefMatch[3] ?? 1);
+    // 页码锚点异常时（例如 0 或负数），回退到第一页，避免数组越界
+    const previewPage = Math.max(1, Number(illustHrefMatch[3] ?? 1));
 
     const ugoiraSvg = imgLink.children("div:first").find("svg:first");
     const playIcon = imgLink
@@ -94,7 +95,8 @@ export const loadIllustPreview = (
   const previewIllust = (() => {
     const previewedIllust = new PreviewedIllust();
     let currentHoveredIllustId = "";
-    let getIllustPagesRequest = $.ajax();
+    // 初始值为 null，避免调用 `$.ajax()` 时因缺省 url 而意外请求当前页面
+    let getIllustPagesRequest: JQuery.jqXHR | null = null;
 
     const getIllustPagesCache = createLRUCache<{
       regularUrls: string[];
@@ -116,7 +118,7 @@ export const loadIllustPreview = (
       illustType: IllustType;
     }) => {
       // 停止正在处理的获取元数据请求
-      getIllustPagesRequest.abort();
+      getIllustPagesRequest?.abort();
 
       // 更新当前鼠标悬浮作品 ID，避免异步任务结束后显示之前悬浮的作品
       currentHoveredIllustId = illustId;
@@ -173,9 +175,11 @@ export const loadIllustPreview = (
               originalUrls,
             });
           },
-          error: (err) => {
+          error: (jqXHR, textStatus) => {
+            // 切换悬浮目标时会主动 abort 上一个请求，属于预期行为，无需记录为错误
+            if (textStatus === "abort") return;
             iLog.e(
-              `An error occurred while requesting preview urls of illust ${illustId}: ${err}`
+              `An error occurred while requesting preview urls of illust ${illustId}: ${jqXHR.responseText || textStatus}`
             );
           },
         });
@@ -216,9 +220,11 @@ export const loadIllustPreview = (
               frames,
             });
           },
-          error: (err) => {
+          error: (jqXHR, textStatus) => {
+            // 切换悬浮目标时会主动 abort 上一个请求，属于预期行为，无需记录为错误
+            if (textStatus === "abort") return;
             iLog.e(
-              `An error occurred while requesting metadata of ugoira ${illustId}: ${err.responseText}`
+              `An error occurred while requesting metadata of ugoira ${illustId}: ${jqXHR.responseText}`
             );
           },
         });
@@ -338,6 +344,12 @@ const DETAIL_BADGE_CSS = {
   gap: "4px",
 } as const;
 
+/** 预览容器顶部工具栏中可交互徽章（页码 / 下载按钮）的通用样式 */
+const INTERACTIVE_BADGE_CSS = {
+  ...DETAIL_BADGE_CSS,
+  cursor: "pointer",
+} as const;
+
 class PreviewedIllust {
   /** 当前正在预览的作品的 ID */
   illustId = "";
@@ -382,8 +394,7 @@ class PreviewedIllust {
   /** 当前预览图片的实际尺寸 */
   #currentIllustSize: [number, number] = [0, 0];
   /** 当前预览的动图播放器 */
-  // @ts-expect-error: ignore type defines
-  #currentUgoiraPlayer: ZipImagePlayer;
+  #currentUgoiraPlayer: ZipImagePlayer | null = null;
 
   constructor() {
     this.reset();
@@ -440,39 +451,13 @@ class PreviewedIllust {
       .appendTo(this.previewWrapperHeader);
     this.pageCountText = $(document.createElement("span")).text("1/1");
     this.pageCountElement = $(document.createElement("div"))
-      .css({
-        height: "20px",
-        "border-radius": "12px",
-        color: "white",
-        background: "rgba(0, 0, 0, 0.32)",
-        "font-size": "12px",
-        "line-height": "1",
-        "font-weight": "bold",
-        padding: "3px 6px",
-        cursor: "pointer",
-        display: "flex",
-        "align-items": "center",
-        gap: "4px",
-      })
+      .css(INTERACTIVE_BADGE_CSS)
       .append(pageIcon)
       .append(this.pageCountText)
       .hide()
       .appendTo(this.previewWrapperHeader);
     this.downloadOriginalElement = $(document.createElement("a"))
-      .css({
-        height: "20px",
-        "border-radius": "12px",
-        color: "white",
-        background: "rgba(0, 0, 0, 0.32)",
-        "font-size": "12px",
-        "line-height": "1",
-        "font-weight": "bold",
-        padding: "3px 6px",
-        cursor: "pointer",
-        display: "flex",
-        "align-items": "center",
-        gap: "4px",
-      })
+      .css(INTERACTIVE_BADGE_CSS)
       .append(`${downloadIcon}<span>原图</span>`)
       .appendTo(this.previewWrapperHeader);
     this.previewLoadingElement = $(loadingIcon)
@@ -809,15 +794,19 @@ class PreviewedIllust {
   bindUgoiraPreviewEvents() {
     this.#currentUgoiraPlayer?.on("frameLoaded", this.onUgoiraFrameLoaded);
     $(document).on("mousemove", this.onMouseMove);
+
+    window.addEventListener("wheel", this.preventPageZoom, { passive: false });
   }
 
   unbindUgoiraPreviewEvents() {
     this.#currentUgoiraPlayer?.off("frameLoaded");
     $(document).off("mousemove", this.onMouseMove);
+
+    window.removeEventListener("wheel", this.preventPageZoom);
   }
 
   onUgoiraFrameLoaded = (frame: number) => {
-    if (frame !== 0) {
+    if (frame !== 0 || !this.#currentUgoiraPlayer) {
       return;
     }
 
@@ -847,9 +836,17 @@ class PreviewedIllust {
 
   //#region 预览组件通用能力
   async showIllustrationDetails() {
-    const illustrationDetails = await getIllustrationDetailsWithCache(
-      this.illustId
-    );
+    let illustrationDetails: IllustrationDetails | null;
+    try {
+      illustrationDetails = await getIllustrationDetailsWithCache(
+        this.illustId
+      );
+    } catch (error) {
+      iLog.e(
+        `An error occurred while fetching illustration details of ${this.illustId}: ${error}`
+      );
+      return;
+    }
 
     if (illustrationDetails && illustrationDetails.id === this.illustId) {
       this.illustMeta.empty();
