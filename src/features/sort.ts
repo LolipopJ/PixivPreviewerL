@@ -23,6 +23,7 @@ import {
   checkIsAiAssisted,
   checkIsAiGenerated,
   checkIsR18,
+  checkIsR18G,
   checkIsUgoira,
 } from "../utils/illustration";
 import { iLog } from "../utils/logger";
@@ -344,6 +345,7 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
         userName,
       } of this.illustrations) {
         const isR18 = checkIsR18(tags);
+        const isR18G = checkIsR18G(tags);
         const isUgoira = checkIsUgoira(illustType);
         const isAi = checkIsAiGenerated(aiType);
         const isAiAssisted = checkIsAiAssisted(tags);
@@ -381,10 +383,16 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
         illustrationMeta.style =
           "position: absolute; top: 0px; left: 0px; right: 0px; display: flex; align-items: flex-start; padding: 4px 4px 0; pointer-events: none; font-size: 10px;";
         illustrationMeta.innerHTML = `
-          ${isR18 ? '<div style="padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: rgb(255, 64, 96); font-weight: bold; line-height: 16px; user-select: none;">R-18</div>' : ""}
+          ${
+            isR18G
+              ? '<div style="padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: rgb(255, 64, 96); font-weight: bold; line-height: 16px; user-select: none;">R-18G</div>'
+              : isR18
+                ? '<div style="padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: rgb(255, 64, 96); font-weight: bold; line-height: 16px; user-select: none;">R-18</div>'
+                : ""
+          }
           ${
             isAi
-              ? '<div style="padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: rgb(29, 78, 216); font-weight: bold; line-height: 16px; user-select: none;">AI 生成</div>'
+              ? '<div style="padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: rgb(162, 28, 175); font-weight: bold; line-height: 16px; user-select: none;">AI 生成</div>'
               : isAiAssisted
                 ? '<div style="padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: rgb(109, 40, 217); font-weight: bold; line-height: 16px; user-select: none;">AI 辅助</div>'
                 : ""

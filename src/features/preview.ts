@@ -25,6 +25,7 @@ import {
   checkIsAiAssisted,
   checkIsAiGenerated,
   checkIsR18,
+  checkIsR18G,
   checkIsUgoiraUsingTags,
 } from "../utils/illustration";
 import { iLog } from "../utils/logger";
@@ -926,20 +927,21 @@ class PreviewedIllust {
       const { aiType, bookmarkId, bookmarkUserTotal, tags } =
         illustrationDetails;
       const isR18 = checkIsR18(tags);
+      const isR18G = checkIsR18G(tags);
       const isUgoira = checkIsUgoiraUsingTags(tags);
       const isAi = checkIsAiGenerated(aiType);
       const isAiAssisted = checkIsAiAssisted(tags);
 
       const illustrationDetailsElements: JQuery<HTMLElement>[] = [];
 
-      if (isR18) {
+      if (isR18 || isR18G) {
         illustrationDetailsElements.push(
           $(document.createElement("div"))
             .css({
               ...DETAIL_BADGE_CSS,
               background: "rgb(255, 64, 96)",
             })
-            .text("R-18")
+            .text(isR18G ? "R-18G" : "R-18")
         );
       }
 

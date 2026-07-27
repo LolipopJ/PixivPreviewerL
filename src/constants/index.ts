@@ -52,6 +52,10 @@ export const SORT_NEXT_PAGE_EVENT_NAME = "PIXIV_PREVIEWER_JUMP_TO_NEXT_PAGE";
 /** 隐藏已收藏作品按钮 */
 export const HIDE_FAVORITES_BUTTON_ID = "pp-hide-favorites";
 
+/** R18 标签列表，全小写 */
+export const R18_TAGS = ["r-18", "r18"];
+/** R18G 标签列表，全小写 */
+export const R18G_TAGS = ["r-18g", "r18g"];
 /** AI 辅助标签列表，全小写 */
 export const AI_ASSISTED_TAGS = [
   "aiイラスト",
@@ -63,4 +67,8 @@ export const AI_ASSISTED_TAGS = [
   "ai辅助",
   "ai加筆",
   "ai加笔",
+  "ai绘图",
+  "ai繪圖",
 ];
+/** 动图标签列表，全小写 */
+export const UGOIRA_TAGS = ["うごイラ", "ugoira", "动图", "動圖"];

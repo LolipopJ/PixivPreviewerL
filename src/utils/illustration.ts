@@ -1,18 +1,34 @@
-import { AI_ASSISTED_TAGS } from "../constants";
+import {
+  AI_ASSISTED_TAGS,
+  R18_TAGS,
+  R18G_TAGS,
+  UGOIRA_TAGS,
+} from "../constants";
 import { AiType, IllustType } from "../enums";
 
-export const checkIsR18 = (tags: string[]) => {
-  const R18_TAGS = ["r-18", "r18"];
+const checkUsingTags = (tags: string[], targetTags: string[]) => {
   for (const tag of tags) {
-    if (R18_TAGS.includes(tag.toLowerCase())) {
+    if (targetTags.includes(tag.toLowerCase())) {
       return true;
     }
   }
   return false;
 };
 
+export const checkIsR18 = (tags: string[]) => {
+  return checkUsingTags(tags, R18_TAGS);
+};
+
+export const checkIsR18G = (tags: string[]) => {
+  return checkUsingTags(tags, R18G_TAGS);
+};
+
 export const checkIsUgoira = (illustType: IllustType) => {
   return illustType === IllustType.UGOIRA;
+};
+
+export const checkIsUgoiraUsingTags = (tags: string[]) => {
+  return checkUsingTags(tags, UGOIRA_TAGS);
 };
 
 export const checkIsAiGenerated = (aiType: AiType) => {
@@ -20,14 +36,5 @@ export const checkIsAiGenerated = (aiType: AiType) => {
 };
 
 export const checkIsAiAssisted = (tags: string[]) => {
-  for (const tag of tags) {
-    if (AI_ASSISTED_TAGS.includes(tag.toLowerCase())) {
-      return true;
-    }
-  }
-  return false;
-};
-
-export const checkIsUgoiraUsingTags = (tags: string[]) => {
-  return tags.includes("うごイラ");
+  return checkUsingTags(tags, AI_ASSISTED_TAGS);
 };
