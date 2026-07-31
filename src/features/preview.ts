@@ -33,7 +33,7 @@ import mouseMonitor from "../utils/mouse-monitor";
 import ZipImagePlayer, {
   type ZipImagePlayerOptions,
 } from "../utils/ugoira-player";
-import { createLRUCache } from "../utils/utils";
+import { createLRUCache, sanitizeIllustFilename } from "../utils/utils";
 
 let isInitialized = false;
 export const loadIllustPreview = (
@@ -763,8 +763,9 @@ class PreviewedIllust {
 
     const downloadPage = this.currentPage;
     const currentImageOriginalUrl = this.originalUrls[downloadPage - 1];
-    const currentImageFilename =
-      currentImageOriginalUrl.split("/").pop() || "illust.jpg";
+    const currentImageFilename = sanitizeIllustFilename(
+      currentImageOriginalUrl.split("/").pop() || "illust.jpg"
+    );
 
     const textSpan = this.downloadOriginalElement.find("span");
     const originalText = textSpan.text();

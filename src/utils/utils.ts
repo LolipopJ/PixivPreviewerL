@@ -24,6 +24,14 @@ export const convertObjectKeysFromSnakeToCamel = <T = Record<string, unknown>>(
   return newResponse;
 };
 
+/**
+ * 将 Pixiv 原图链接中形如 `123456-abcdef_p0.png` 的文件名规范化为 `123456_p0.png`
+ * （部分作品原图链接文件名中会插入一段哈希值，与 Pixiv 网页端展示的文件名不一致）
+ */
+export const sanitizeIllustFilename = (filename: string) => {
+  return filename.replace(/^(\d+)-[0-9a-zA-Z]+(_.*)$/, "$1$2");
+};
+
 export const createLRUCache = <V>(maxSize: number) => {
   const map = new Map<string, V>();
   return {
