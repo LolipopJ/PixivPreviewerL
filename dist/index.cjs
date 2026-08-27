@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             1.4.6-20260727
+// @version             1.4.7-20260827
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0
@@ -19,10 +19,9 @@
 // @require             https://code.jquery.com/jquery-migrate-4.0.2.min.js
 // @run-at              document-end
 // ==/UserScript==
-
 //#region src/constants/index.ts
 /** 版本号，发生改变时将会弹窗 */
-const g_version = "1.4.6";
+const g_version = "1.4.7";
 /** 默认设置 */
 const g_defaultSettings = {
 	enablePreview: true,
@@ -53,6 +52,10 @@ const SORT_NEXT_PAGE_BUTTON_ID = "pp-sort-next-page";
 const SORT_NEXT_PAGE_EVENT_NAME = "PIXIV_PREVIEWER_JUMP_TO_NEXT_PAGE";
 /** 隐藏已收藏作品按钮 */
 const HIDE_FAVORITES_BUTTON_ID = "pp-hide-favorites";
+/** R18 标签列表，全小写 */
+const R18_TAGS = ["r-18", "r18"];
+/** R18G 标签列表，全小写 */
+const R18G_TAGS = ["r-18g", "r18g"];
 /** AI 辅助标签列表，全小写 */
 const AI_ASSISTED_TAGS = [
 	"aiイラスト",
@@ -63,7 +66,16 @@ const AI_ASSISTED_TAGS = [
 	"ai輔助",
 	"ai辅助",
 	"ai加筆",
-	"ai加笔"
+	"ai加笔",
+	"ai绘图",
+	"ai繪圖"
+];
+/** 动图标签列表，全小写 */
+const UGOIRA_TAGS = [
+	"うごイラ",
+	"ugoira",
+	"动图",
+	"動圖"
 ];
 
 //#endregion
@@ -110,9 +122,9 @@ const INDEX_DB_NAME = "PIXIV_PREVIEWER_L";
 const INDEX_DB_VERSION = 1;
 const ILLUSTRATION_DETAILS_CACHE_TABLE_KEY = "illustrationDetailsCache";
 /** 缓存过期时间 */
-const ILLUSTRATION_DETAILS_CACHE_TIME = 1e3 * 60 * 60 * 6;
+const ILLUSTRATION_DETAILS_CACHE_TIME = 216e5;
 /** 新作品发布初期不添加缓存 */
-const NEW_ILLUSTRATION_NOT_CACHE_TIME = 1e3 * 60 * 60 * 1;
+const NEW_ILLUSTRATION_NOT_CACHE_TIME = 36e5;
 const request$1 = indexedDB.open(INDEX_DB_NAME, INDEX_DB_VERSION);
 let db;
 request$1.onupgradeneeded = (event) => {
@@ -233,6 +245,13 @@ const convertObjectKeysFromSnakeToCamel = (obj) => {
 	const newResponse = {};
 	for (const key in obj) newResponse[snakeToCamel(key)] = obj[key];
 	return newResponse;
+};
+/**
+* 将 Pixiv 原图链接中形如 `123456-abcdef_p0.png` 的文件名规范化为 `123456_p0.png`
+* （部分作品原图链接文件名中会插入一段哈希值，与 Pixiv 网页端展示的文件名不一致）
+*/
+const sanitizeIllustFilename = (filename) => {
+	return filename.replace(/^(\d+)-[0-9a-zA-Z]+(_.*)$/, "$1$2");
 };
 const createLRUCache = (maxSize) => {
 	const map = /* @__PURE__ */ new Map();
@@ -400,23 +419,27 @@ const stopEventPropagation = (event) => {
 
 //#endregion
 //#region src/utils/illustration.ts
-const checkIsR18 = (tags) => {
-	const R18_TAGS = ["r-18", "r18"];
-	for (const tag of tags) if (R18_TAGS.includes(tag.toLowerCase())) return true;
+const checkUsingTags = (tags, targetTags) => {
+	for (const tag of tags) if (targetTags.includes(tag.toLowerCase())) return true;
 	return false;
+};
+const checkIsR18 = (tags) => {
+	return checkUsingTags(tags, R18_TAGS);
+};
+const checkIsR18G = (tags) => {
+	return checkUsingTags(tags, R18G_TAGS);
 };
 const checkIsUgoira = (illustType) => {
 	return illustType === 2;
+};
+const checkIsUgoiraUsingTags = (tags) => {
+	return checkUsingTags(tags, UGOIRA_TAGS);
 };
 const checkIsAiGenerated = (aiType) => {
 	return aiType === 2;
 };
 const checkIsAiAssisted = (tags) => {
-	for (const tag of tags) if (AI_ASSISTED_TAGS.includes(tag.toLowerCase())) return true;
-	return false;
-};
-const checkIsUgoiraUsingTags = (tags) => {
-	return tags.includes("うごイラ");
+	return checkUsingTags(tags, AI_ASSISTED_TAGS);
 };
 
 //#endregion
@@ -754,12 +777,13 @@ var ZipImagePlayer = class {
 		}, meta.delay);
 	}
 	_nextFrame() {
-		if (this._frame >= this._frameCount - 1) if (this.op.loop) this._frame = 0;
-		else {
-			this.pause();
-			return;
-		}
-		else this._frame += 1;
+		if (this._frame >= this._frameCount - 1) {
+			if (this.op.loop) this._frame = 0;
+			else {
+				this.pause();
+				return;
+			}
+		} else this._frame += 1;
 		this._displayFrame();
 	}
 	play() {
@@ -1050,7 +1074,8 @@ const loadIllustPreview = (options) => {
 			if (mouseMoveEvent.ctrlKey || mouseMoveEvent.metaKey) return;
 			if (mouseMoveEvent.target === prevTarget) return;
 			prevTarget = mouseMoveEvent.target;
-			debouncedOnMouseOverIllust($(mouseMoveEvent.target));
+			const currentTarget = $(mouseMoveEvent.target);
+			debouncedOnMouseOverIllust(currentTarget);
 		};
 	})();
 	$(document).on("mousemove", onMouseMoveDocument);
@@ -1300,9 +1325,7 @@ var PreviewedIllust = class {
 					this.nextPage();
 					break;
 				case "ArrowDown":
-				case "ArrowLeft":
-					this.prevPage();
-					break;
+				case "ArrowLeft": this.prevPage();
 			}
 		}
 	};
@@ -1310,7 +1333,7 @@ var PreviewedIllust = class {
 		onClickEvent.preventDefault();
 		const downloadPage = this.currentPage;
 		const currentImageOriginalUrl = this.originalUrls[downloadPage - 1];
-		const currentImageFilename = currentImageOriginalUrl.split("/").pop() || "illust.jpg";
+		const currentImageFilename = sanitizeIllustFilename(currentImageOriginalUrl.split("/").pop() || "illust.jpg");
 		const textSpan = this.downloadOriginalElement.find("span");
 		const originalText = textSpan.text();
 		this.downloadOriginalElement.css({
@@ -1370,8 +1393,9 @@ var PreviewedIllust = class {
 		this.renderIllustrationDetails(illustrationDetails);
 	}
 	createUgoiraPlayer(options) {
+		const canvas = document.createElement("canvas");
 		return new ZipImagePlayer({
-			canvas: document.createElement("canvas"),
+			canvas,
 			chunkSize: 3e5,
 			loop: true,
 			autoStart: true,
@@ -1414,14 +1438,15 @@ var PreviewedIllust = class {
 			this.illustMeta.empty();
 			const { aiType, bookmarkId, bookmarkUserTotal, tags } = illustrationDetails;
 			const isR18 = checkIsR18(tags);
+			const isR18G = checkIsR18G(tags);
 			const isUgoira = checkIsUgoiraUsingTags(tags);
 			const isAi = checkIsAiGenerated(aiType);
 			const isAiAssisted = checkIsAiAssisted(tags);
 			const illustrationDetailsElements = [];
-			if (isR18) illustrationDetailsElements.push($(document.createElement("div")).css({
+			if (isR18 || isR18G) illustrationDetailsElements.push($(document.createElement("div")).css({
 				...DETAIL_BADGE_CSS,
 				background: "rgb(255, 64, 96)"
-			}).text("R-18"));
+			}).text(isR18G ? "R-18G" : "R-18"));
 			if (isUgoira) {
 				this.downloadOriginalElement.hide();
 				illustrationDetailsElements.push($(document.createElement("div")).css({
@@ -1646,7 +1671,8 @@ const execLimitConcurrentPromises = async (promises, limit = 48) => {
 	const executeNext = async () => {
 		if (index >= promises.length) return Promise.resolve();
 		const currentIndex = index++;
-		results[currentIndex] = await promises[currentIndex]();
+		const result = await promises[currentIndex]();
+		results[currentIndex] = result;
 		return await executeNext();
 	};
 	const initialPromises = Array.from({ length: Math.min(limit, promises.length) }, () => executeNext());
@@ -1724,7 +1750,8 @@ const loadIllustSort = (options) => {
 					].includes(type)) {
 						searchParams.set("is_first_page", page > 1 ? "0" : "1");
 						searchParams.delete("ids[]");
-						const userIllustrations = await getUserIllustrationsWithCache(searchParams.get("user_id") || "", { onRequesting: () => this.setProgress(`Getting illustrations of current user...`) });
+						const userId = searchParams.get("user_id") || "";
+						const userIllustrations = await getUserIllustrationsWithCache(userId, { onRequesting: () => this.setProgress(`Getting illustrations of current user...`) });
 						const fromIndex = (page - 1) * USER_TYPE_ARTWORKS_PER_PAGE;
 						const toIndex = page * USER_TYPE_ARTWORKS_PER_PAGE;
 						switch (type) {
@@ -1734,9 +1761,7 @@ const loadIllustSort = (options) => {
 							case 8:
 								userIllustrations.illusts.slice(fromIndex, toIndex).forEach((id) => searchParams.append("ids[]", id));
 								break;
-							case 9:
-								userIllustrations.manga.slice(fromIndex, toIndex).forEach((id) => searchParams.append("ids[]", id));
-								break;
+							case 9: userIllustrations.manga.slice(fromIndex, toIndex).forEach((id) => searchParams.append("ids[]", id));
 						}
 					} else if ([10].includes(type)) searchParams.set("offset", String((page - 1) * USER_TYPE_ARTWORKS_PER_PAGE));
 					this.setProgress(`Getting illustration list of page ${page} ...`);
@@ -1801,6 +1826,7 @@ const loadIllustSort = (options) => {
 			const fragment = document.createDocumentFragment();
 			for (const { aiType, alt, bookmarkData, bookmarkUserTotal, id, illustType, pageCount, profileImageUrl, tags, title, url, userId, userName } of this.illustrations) {
 				const isR18 = checkIsR18(tags);
+				const isR18G = checkIsR18G(tags);
 				const isUgoira = checkIsUgoira(illustType);
 				const isAi = checkIsAiGenerated(aiType);
 				const isAiAssisted = checkIsAiAssisted(tags);
@@ -1827,8 +1853,8 @@ const loadIllustSort = (options) => {
 				const illustrationMeta = document.createElement("div");
 				illustrationMeta.style = "position: absolute; top: 0px; left: 0px; right: 0px; display: flex; align-items: flex-start; padding: 4px 4px 0; pointer-events: none; font-size: 10px;";
 				illustrationMeta.innerHTML = `
-          ${isR18 ? "<div style=\"padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: rgb(255, 64, 96); font-weight: bold; line-height: 16px; user-select: none;\">R-18</div>" : ""}
-          ${isAi ? "<div style=\"padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: rgb(29, 78, 216); font-weight: bold; line-height: 16px; user-select: none;\">AI 生成</div>" : isAiAssisted ? "<div style=\"padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: rgb(109, 40, 217); font-weight: bold; line-height: 16px; user-select: none;\">AI 辅助</div>" : ""}
+          ${isR18G ? "<div style=\"padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: rgb(255, 64, 96); font-weight: bold; line-height: 16px; user-select: none;\">R-18G</div>" : isR18 ? "<div style=\"padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: rgb(255, 64, 96); font-weight: bold; line-height: 16px; user-select: none;\">R-18</div>" : ""}
+          ${isAi ? "<div style=\"padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: rgb(162, 28, 175); font-weight: bold; line-height: 16px; user-select: none;\">AI 生成</div>" : isAiAssisted ? "<div style=\"padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: rgb(109, 40, 217); font-weight: bold; line-height: 16px; user-select: none;\">AI 辅助</div>" : ""}
           ${pageCount > 1 ? `
                 <div style="margin-left: auto;">
                   <div style="display: flex; justify-content: center; align-items: center; height: 20px; min-width: 20px; color: rgb(245, 245, 245); font-weight: bold; padding: 0px 6px; background: rgba(0, 0, 0, 0.32); border-radius: 10px; line-height: 10px;">
@@ -1964,7 +1990,6 @@ function getSortOptionsFromUrl(url) {
 				type = 2;
 				api = `/ajax/search/manga/${tagName}`;
 				defaultSearchParams = `word=${tagName}&order=date_d&mode=all&p=1&csw=0&s_mode=s_tag_full&type=manga&lang=zh`;
-				break;
 		}
 	} else if (pathname.match(/\/search/)) {
 		const tagName = searchParams.get("q");
@@ -1978,7 +2003,6 @@ function getSortOptionsFromUrl(url) {
 				type = 4;
 				api = `/ajax/search/manga/${tagName}`;
 				defaultSearchParams = `word=${tagName}&order=date_d&mode=all&p=1&csw=0&s_mode=s_tag_full&type=manga&lang=zh`;
-				break;
 		}
 	} else if (match = pathname.match(/\/bookmark_new_illust(_r18)?\.php$/)) {
 		const isR18 = !!match[1];
@@ -2011,7 +2035,6 @@ function getSortOptionsFromUrl(url) {
 			case "manga":
 				type = 9;
 				defaultSearchParams = `work_category=manga&is_first_page=1&sensitiveFilterMode=userSetting&user_id=${userId}&lang=zh`;
-				break;
 		}
 	}
 	if (type === void 0 || api === void 0 || defaultSearchParams === void 0) throw new Error("Current page doesn't support sorting illustrations.");
@@ -2283,7 +2306,7 @@ const initializePixivPreviewer = () => {
 	try {
 		g_settings = registerSettingsMenu();
 		iLog.i("Start to initialize Pixiv Previewer with global settings:", g_settings);
-		if (g_settings.version !== "1.4.6") ShowUpgradeMessage();
+		if (g_settings.version !== "1.4.7") ShowUpgradeMessage();
 		if (g_settings.enablePreview) loadIllustPreview(g_settings);
 		$.get(location.href, function(data) {
 			const matched = data.match(/token\\":\\"([a-z0-9]{32})/);
