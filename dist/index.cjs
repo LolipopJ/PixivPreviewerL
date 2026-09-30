@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             1.4.7-20260827
+// @version             1.4.7-20261009
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0
@@ -1150,6 +1150,8 @@ var PreviewedIllust = class {
 	previewImageElement = $();
 	/** 预加载图片的列表 */
 	#images = [];
+	/** 当前页面中各多图作品上次预览的页码，重置预览组件时保留 */
+	#previewPages = /* @__PURE__ */ new Map();
 	/** 下载按钮重置定时器 */
 	#downloadResetTimeout = null;
 	/** 保存的鼠标位置 */
@@ -1220,7 +1222,7 @@ var PreviewedIllust = class {
 		this.unbindPreviewImageEvents();
 		this.unbindUgoiraPreviewEvents();
 	}
-	/** 初始化预览容器，默认显示第一张图片 */
+	/** 初始化预览容器，优先恢复当前页面中记忆的预览页码 */
 	setImage({ illustId, illustElement, previewPage = 1, regularUrls, originalUrls, illustrationDetails }) {
 		this.reset();
 		this.initPreviewWrapper();
@@ -1229,8 +1231,9 @@ var PreviewedIllust = class {
 		this.illustElement = illustElement;
 		this.regularUrls = regularUrls;
 		this.originalUrls = originalUrls;
-		this.currentPage = previewPage;
 		this.pageCount = regularUrls.length;
+		const initialPage = this.#previewPages.get(illustId) ?? previewPage;
+		this.currentPage = initialPage >= 1 && initialPage <= this.pageCount ? initialPage : 1;
 		this.preloadImages();
 		this.bindPreviewImageEvents();
 		this.updatePreviewImage();
@@ -1258,6 +1261,7 @@ var PreviewedIllust = class {
 		const currentImageUrl = this.regularUrls[page - 1];
 		this.previewImageElement.attr("src", currentImageUrl);
 		this.pageCountText.text(`${page}/${this.pageCount}`);
+		if (this.pageCount > 1) this.#previewPages.set(this.illustId, page);
 	}
 	onImageLoad = () => {
 		this.illustLoaded = true;

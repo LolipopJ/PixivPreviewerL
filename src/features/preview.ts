@@ -464,6 +464,8 @@ class PreviewedIllust {
 
   /** 预加载图片的列表 */
   #images: (HTMLImageElement | undefined)[] = [];
+  /** 当前页面中各多图作品上次预览的页码，重置预览组件时保留 */
+  #previewPages = new Map<string, number>();
   /** 下载按钮重置定时器 */
   #downloadResetTimeout: ReturnType<typeof setTimeout> | null = null;
   /** 保存的鼠标位置 */
@@ -567,7 +569,7 @@ class PreviewedIllust {
   }
 
   //#region 预览图片功能
-  /** 初始化预览容器，默认显示第一张图片 */
+  /** 初始化预览容器，优先恢复当前页面中记忆的预览页码 */
   setImage({
     illustId,
     illustElement,
@@ -591,10 +593,12 @@ class PreviewedIllust {
     this.illustElement = illustElement;
     this.regularUrls = regularUrls;
     this.originalUrls = originalUrls;
-    this.currentPage = previewPage;
     this.pageCount = regularUrls.length;
+    const initialPage = this.#previewPages.get(illustId) ?? previewPage;
+    this.currentPage =
+      initialPage >= 1 && initialPage <= this.pageCount ? initialPage : 1;
 
-    // 预加载前 PREVIEW_PRELOAD_NUM 张图片
+    // 从当前页预加载 PREVIEW_PRELOAD_NUM 张图片
     this.preloadImages();
 
     // 绑定图片预览监听事件
@@ -643,6 +647,9 @@ class PreviewedIllust {
     this.previewImageElement.attr("src", currentImageUrl);
 
     this.pageCountText.text(`${page}/${this.pageCount}`);
+    if (this.pageCount > 1) {
+      this.#previewPages.set(this.illustId, page);
+    }
   }
 
   onImageLoad = () => {
