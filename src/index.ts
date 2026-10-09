@@ -11,6 +11,7 @@ import {
 import { deleteCachedIllustrationDetails } from "./databases";
 import { IllustSortOrder, LogLevel, PageType } from "./enums";
 import { hideFavorites } from "./features/hide-favorites";
+import { loadLocalTags } from "./features/local-tags";
 import { loadIllustPreview } from "./features/preview";
 import { loadIllustSort } from "./features/sort";
 import Texts from "./i18n";
@@ -352,6 +353,7 @@ const initializePixivPreviewer = () => {
   try {
     // 注册设置菜单
     g_settings = registerSettingsMenu();
+    loadLocalTags();
     iLog.i(
       "Start to initialize Pixiv Previewer with global settings:",
       g_settings

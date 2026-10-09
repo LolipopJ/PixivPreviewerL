@@ -32,6 +32,8 @@ export default defineConfig({
 // @match               *://www.pixiv.net/*
 // @grant               GM_getValue
 // @grant               GM_setValue
+// @grant               GM_addValueChangeListener
+// @grant               window.onurlchange
 // @grant               GM_registerMenuCommand
 // @grant               GM_unregisterMenuCommand
 // @grant               GM.xmlHttpRequest
