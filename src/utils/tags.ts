@@ -42,16 +42,20 @@ export const renameLocalTag = (tag: string, label: string) => {
   GM_setValue(LOCAL_TAGS_KEY, state);
 };
 
-export const moveLocalTag = (tag: string, direction: -1 | 1) => {
+export const moveLocalTag = (tag: string, target: number) => {
   const state = getLocalTagState();
   if (state.autoSort) return;
   const index = state.tags.findIndex((item) => item.tag === tag);
-  const target = index + direction;
-  if (index < 0 || target < 0 || target >= state.tags.length) return;
-  [state.tags[index], state.tags[target]] = [
-    state.tags[target],
-    state.tags[index],
-  ];
+  if (
+    index < 0 ||
+    !Number.isInteger(target) ||
+    target < 0 ||
+    target >= state.tags.length ||
+    index === target
+  )
+    return;
+  const [item] = state.tags.splice(index, 1);
+  state.tags.splice(target, 0, item);
   GM_setValue(LOCAL_TAGS_KEY, state);
 };
 

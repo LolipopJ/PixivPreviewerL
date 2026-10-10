@@ -128,6 +128,21 @@ export const loadLocalTags = () => {
     #${MANAGER_ID} label { display: flex; align-items: center; gap: 8px; }
     #${MANAGER_ID} ul { list-style: none; padding: 0; margin: 16px 0 0; }
     #${MANAGER_ID} li { padding: 12px 0; border-top: 1px solid var(--pp-tag-border); }
+    #${MANAGER_ID} li.pp-tag-dragging { opacity: .4; }
+    #${MANAGER_ID} .pp-tag-heading { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+    #${MANAGER_ID} .pp-tag-metadata { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+    #${MANAGER_ID} a { color: inherit; text-decoration: none; }
+    #${MANAGER_ID} a:hover { text-decoration: underline; }
+    #${MANAGER_ID} .pp-tag-drag {
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+      width: 28px; height: 28px; padding: 0; cursor: grab;
+    }
+    #${MANAGER_ID} .pp-tag-drag:active { cursor: grabbing; }
+    #${MANAGER_ID} .pp-tag-drag::before {
+      content: ""; width: 2px; height: 2px; margin: -10px 5px 0 0;
+      background: currentColor; border-radius: 50%;
+      box-shadow: 5px 0, 0 5px, 5px 5px, 0 10px, 5px 10px;
+    }
     #${MANAGER_ID} form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
     #${MANAGER_ID} input[type=text] {
       flex: 1; min-width: 120px; padding: 7px 10px; border: 1px solid var(--pp-tag-border);
@@ -314,17 +329,81 @@ export const loadLocalTags = () => {
       );
     }
     const list = $("<ul>");
+    let draggedRow: JQuery<HTMLLIElement> | null = null;
+    list.on("drop", (event) => {
+      if (!draggedRow) return;
+      event.preventDefault();
+      moveLocalTag(
+        draggedRow.attr("data-tag")!,
+        list.children().index(draggedRow)
+      );
+      draggedRow = null;
+      refresh();
+    });
     tags.forEach((item, index) => {
-      const row = $("<li>");
+      const row = $<HTMLLIElement>("<li>").attr("data-tag", item.tag);
       const metadata = $("<div>")
-        .text(`${item.tag}`)
-        .css({ "margin-bottom": "4px" })
-        .append($("<small>").text(` · 访问 ${item.visits} 次`));
+        .addClass("pp-tag-metadata")
+        .append(
+          $("<a>")
+            .attr({
+              href: `/tags/${encodeURIComponent(item.tag)}`,
+              target: "_blank",
+              rel: "noopener noreferrer",
+            })
+            .text(item.tag),
+          $("<small>").text(` · 访问 ${item.visits} 次`)
+        );
+      const rowHeading = $("<div>").addClass("pp-tag-heading");
+      if (!autoSort.prop("checked")) {
+        const handle = $("<button>")
+          .attr({
+            type: "button",
+            draggable: "true",
+            title: "拖拽排序",
+            "aria-label": `排序 ${item.label || item.tag}`,
+            "data-focus-key": `sort:${item.tag}`,
+          })
+          .addClass("pp-tag-drag")
+          .on("dragstart", (event) => {
+            draggedRow = row;
+            const transfer = (event.originalEvent as DragEvent).dataTransfer!;
+            transfer.effectAllowed = "move";
+            transfer.setData("text/plain", item.tag);
+            transfer.setDragImage(row.get(0)!, 0, 0);
+            row.addClass("pp-tag-dragging");
+          })
+          .on("dragend", () => {
+            if (!draggedRow) return;
+            draggedRow = null;
+            refresh();
+          })
+          .on("keydown", (event) => {
+            if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+            event.preventDefault();
+            moveLocalTag(item.tag, index + (event.key === "ArrowUp" ? -1 : 1));
+            refresh();
+          });
+        rowHeading.append(handle);
+        row.on("dragover", (event) => {
+          if (!draggedRow) return;
+          event.preventDefault();
+          (event.originalEvent as DragEvent).dataTransfer!.dropEffect = "move";
+          if (draggedRow.is(row)) return;
+          const { top, height } = row.get(0)!.getBoundingClientRect();
+          if ((event.originalEvent as DragEvent).clientY < top + height / 2) {
+            row.before(draggedRow);
+          } else {
+            row.after(draggedRow);
+          }
+        });
+      }
+      rowHeading.append(metadata);
       const form = $("<form>");
       const input = $("<input>")
         .attr({
           type: "text",
-          placeholder: "留空使用原始标签",
+          placeholder: "填一个好记的备注名吧",
           "aria-label": `${item.tag}的显示名称`,
           "data-focus-key": `label:${item.tag}`,
         })
@@ -341,11 +420,11 @@ export const loadLocalTags = () => {
         refresh();
       });
       const up = createButton("上移", () => {
-        moveLocalTag(item.tag, -1);
+        moveLocalTag(item.tag, index - 1);
         refresh();
       });
       const down = createButton("下移", () => {
-        moveLocalTag(item.tag, 1);
+        moveLocalTag(item.tag, index + 1);
         refresh();
       });
       up.attr({
@@ -369,7 +448,7 @@ export const loadLocalTags = () => {
         .addClass("pp-tag-danger")
         .attr("aria-label", `删除 ${item.label || item.tag}`);
       form.append(input, save, up, down, remove);
-      row.append(metadata, form);
+      row.append(rowHeading, form);
       list.append(row);
     });
     manager.append(list);
@@ -383,6 +462,7 @@ export const loadLocalTags = () => {
 
   const openManager = () => {
     hidePopover();
+    if (!manager.prop("open")) manager.empty();
     renderManager();
     if (!manager.prop("open")) manager.get(0)!.showModal();
   };
