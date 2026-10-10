@@ -8,6 +8,9 @@ export interface GlobalSettings {
   /** 打开预览窗口悬浮时间 */
   previewDelay: number;
 
+  /** 是否启用本地标签管理功能 */
+  enableLocalTags: boolean;
+
   /** 排序作品的页数 */
   pageCount: number;
   /** 过滤指定收藏数以下的作品 */

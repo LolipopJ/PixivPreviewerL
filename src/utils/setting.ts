@@ -38,8 +38,19 @@ export const setSettingValue = (key: keyof GlobalSettings, value: unknown) => {
   GM_setValue(SETTINGS_KEY, { ...settings, [key]: newValue });
 };
 
-export const getSettings = () => {
-  return (GM_getValue(SETTINGS_KEY) ?? g_defaultSettings) as GlobalSettings;
+export const getSettings = (): GlobalSettings => {
+  const savedSettings =
+    GM_getValue<Partial<GlobalSettings>>(SETTINGS_KEY) ?? {};
+  const settings = { ...g_defaultSettings, ...savedSettings };
+  if (
+    Object.keys(g_defaultSettings).some(
+      (key) => !Object.hasOwn(savedSettings, key)
+    )
+  ) {
+    // 新增键时自动保存
+    GM_setValue(SETTINGS_KEY, settings);
+  }
+  return settings;
 };
 
 export const resetSettings = () => {

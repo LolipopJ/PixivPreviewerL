@@ -236,6 +236,13 @@ const registerSettingsMenu = () => {
         });
       }
     ),
+    GM_registerMenuCommand(
+      `🏷️ 本地标签管理 ${settings.enableLocalTags ? "✅" : "❌"}`,
+      () => {
+        toggleSettingBooleanValue("enableLocalTags");
+        location.reload();
+      }
+    ),
     GM_registerMenuCommand(`📚️ 每次排序 ${settings.pageCount} 页`, () => {
       setSettingStringValue("pageCount", "每次排序的页数", {
         parseValue: (newValue) =>
@@ -353,7 +360,9 @@ const initializePixivPreviewer = () => {
   try {
     // 注册设置菜单
     g_settings = registerSettingsMenu();
-    loadLocalTags();
+    if (g_settings.enableLocalTags) {
+      loadLocalTags();
+    }
     iLog.i(
       "Start to initialize Pixiv Previewer with global settings:",
       g_settings
