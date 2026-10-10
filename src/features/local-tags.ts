@@ -15,7 +15,7 @@ import {
 } from "../utils/tags";
 
 const TAG_LINK_SELECTOR =
-  'a[href*="/tags/"]:not(nav > a):not(.gtm-new-work-tag-event-click):not(.gtm-new-work-translate-tag-event-click):not(.gtm-new-work-tag-thumbnail-event-click)';
+  'a[href*="/tags/"]:not(nav > a, .gtm-new-work-tag-event-click, .gtm-new-work-translate-tag-event-click, .gtm-new-work-tag-thumbnail-event-click, [data-ga4-label="tab_link"], [data-ga4-label="suggest_chip"], [data-ga4-label="delete_button"], [data-ga4-label="submit_button"])';
 const POPOVER_ID = "pp-local-tag-popover";
 const MANAGER_ID = "pp-local-tags-manager";
 const STRIP_CLASS = "pp-local-tags";
