@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             1.4.7-20261009
+// @version             1.5.0-20261010
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0
@@ -9,6 +9,8 @@
 // @match               *://www.pixiv.net/*
 // @grant               GM_getValue
 // @grant               GM_setValue
+// @grant               GM_addValueChangeListener
+// @grant               window.onurlchange
 // @grant               GM_registerMenuCommand
 // @grant               GM_unregisterMenuCommand
 // @grant               GM.xmlHttpRequest
@@ -21,12 +23,13 @@
 // ==/UserScript==
 //#region src/constants/index.ts
 /** 版本号，发生改变时将会弹窗 */
-const g_version = "1.4.7";
+const g_version = "1.5.0";
 /** 默认设置 */
 const g_defaultSettings = {
 	enablePreview: true,
 	enableAnimePreview: true,
 	previewDelay: 300,
+	enableLocalTags: true,
 	pageCount: 2,
 	favFilter: 500,
 	orderType: 0,
@@ -222,18 +225,6 @@ const hideFavorites = () => {
 };
 
 //#endregion
-//#region src/icons/download.svg
-var download_default = "<svg t=\"1742281193586\" class=\"icon\" viewBox=\"0 0 1024 1024\" version=\"1.1\" xmlns=\"http://www.w3.org/2000/svg\"\n  p-id=\"24408\" width=\"10\" height=\"10\">\n  <path\n    d=\"M1024 896v128H0v-320h128v192h768v-192h128v192zM576 554.688L810.688 320 896 405.312l-384 384-384-384L213.312 320 448 554.688V0h128v554.688z\"\n    fill=\"#ffffff\" p-id=\"24409\"></path>\n</svg>";
-
-//#endregion
-//#region src/icons/loading.svg
-var loading_default = "<svg t=\"1742282291278\" class=\"icon\" viewBox=\"0 0 1024 1024\" version=\"1.1\" xmlns=\"http://www.w3.org/2000/svg\"\n  p-id=\"38665\" width=\"48\" height=\"48\">\n  <path\n    d=\"M988 548c-19.9 0-36-16.1-36-36 0-59.4-11.6-117-34.6-171.3a440.45 440.45 0 0 0-94.3-139.9 437.71 437.71 0 0 0-139.9-94.3C629 83.6 571.4 72 512 72c-19.9 0-36-16.1-36-36s16.1-36 36-36c69.1 0 136.2 13.5 199.3 40.3C772.3 66 827 103 874 150c47 47 83.9 101.8 109.7 162.7 26.7 63.1 40.2 130.2 40.2 199.3 0.1 19.9-16 36-35.9 36z\"\n    p-id=\"38666\" fill=\"#1296db\"></path>\n</svg>";
-
-//#endregion
-//#region src/icons/page.svg
-var page_default = "<svg viewBox=\"0 0 10 10\" width=\"10\" height=\"10\">\n  <path\n    d=\"M 8 3 C 8.55228 3 9 3.44772 9 4 L 9 9 C 9 9.55228 8.55228 10 8 10 L 3 10 C 2.44772 10 2 9.55228 2 9 L 6 9 C 7.10457 9 8 8.10457 8 7 L 8 3 Z M 1 1 L 6 1 C 6.55228 1 7 1.44772 7 2 L 7 7 C 7 7.55228 6.55228 8 6 8 L 1 8 C 0.447715 8 0 7.55228 0 7 L 0 2 C 0 1.44772 0.447715 1 1 1 Z\"\n    fill=\"#ffffff\"></path>\n</svg>";
-
-//#endregion
 //#region src/utils/utils.ts
 const pause = (ms) => {
 	return new Promise((resolve) => setTimeout(resolve, ms));
@@ -300,6 +291,591 @@ const requestWithRetry = async (options) => {
 	}
 	throw new Error(`Request for ${restOptions.url} failed: ${response?.responseText}`);
 };
+
+//#endregion
+//#region src/services/tags.ts
+const detailsCache = /* @__PURE__ */ new Map();
+const getTagDetails = (tag) => {
+	const cached = detailsCache.get(tag);
+	if (cached) return cached;
+	const pending = request({
+		method: "GET",
+		url: `https://www.pixiv.net/ajax/tag/info?tag=${encodeURIComponent(tag)}&lang=zh`,
+		timeout: 1e4
+	}).then((response) => {
+		const data = response.response;
+		if (response.status !== 200 || data.error || !data.body) throw new Error(data.message || "标签详情加载失败");
+		return data.body;
+	}).catch((error) => {
+		detailsCache.delete(tag);
+		throw error;
+	});
+	if (detailsCache.size >= 100) detailsCache.delete(detailsCache.keys().next().value);
+	detailsCache.set(tag, pending);
+	return pending;
+};
+
+//#endregion
+//#region src/utils/debounce.ts
+function debounce(func, delay = 100) {
+	let timeout = null;
+	return function(...args) {
+		if (timeout) clearTimeout(timeout);
+		timeout = setTimeout(() => {
+			func(...args);
+		}, delay);
+	};
+}
+
+//#endregion
+//#region src/utils/tags.ts
+const LOCAL_TAGS_KEY = "PIXIV_PREVIEWER_L_LOCAL_TAGS";
+const getLocalTagState = () => GM_getValue(LOCAL_TAGS_KEY, {
+	tags: [],
+	autoSort: false
+});
+const getSortedLocalTags = () => {
+	const { tags, autoSort } = getLocalTagState();
+	return autoSort ? tags.slice().sort((a, b) => b.visits - a.visits) : tags;
+};
+const addLocalTag = (tag, label) => {
+	const state = getLocalTagState();
+	if (state.tags.some((item) => item.tag === tag)) return;
+	state.tags.push({
+		tag,
+		label: label.trim(),
+		visits: 0
+	});
+	GM_setValue(LOCAL_TAGS_KEY, state);
+};
+const removeLocalTag = (tag) => {
+	const state = getLocalTagState();
+	state.tags = state.tags.filter((item) => item.tag !== tag);
+	GM_setValue(LOCAL_TAGS_KEY, state);
+};
+const renameLocalTag = (tag, label) => {
+	const state = getLocalTagState();
+	const item = state.tags.find((item) => item.tag === tag);
+	if (!item) return;
+	item.label = label.trim();
+	GM_setValue(LOCAL_TAGS_KEY, state);
+};
+const moveLocalTag = (tag, target) => {
+	const state = getLocalTagState();
+	if (state.autoSort) return;
+	const index = state.tags.findIndex((item) => item.tag === tag);
+	if (index < 0 || !Number.isInteger(target) || target < 0 || target >= state.tags.length || index === target) return;
+	const [item] = state.tags.splice(index, 1);
+	state.tags.splice(target, 0, item);
+	GM_setValue(LOCAL_TAGS_KEY, state);
+};
+const setLocalTagAutoSort = (autoSort) => {
+	GM_setValue(LOCAL_TAGS_KEY, {
+		...getLocalTagState(),
+		autoSort
+	});
+};
+const recordLocalTagVisit = (tag) => {
+	const state = getLocalTagState();
+	const item = state.tags.find((item) => item.tag === tag);
+	if (!item) return;
+	item.visits++;
+	GM_setValue(LOCAL_TAGS_KEY, state);
+};
+const getTagFromPath = (pathname) => {
+	const match = pathname.match(/^\/(?:en\/)?tags\/([^/]+)/);
+	if (!match) return null;
+	try {
+		return decodeURIComponent(match[1]);
+	} catch {
+		return null;
+	}
+};
+
+//#endregion
+//#region src/features/local-tags.ts
+const TAG_LINK_SELECTOR = "a[href*=\"/tags/\"]:not(nav > a):not(.gtm-new-work-tag-event-click):not(.gtm-new-work-translate-tag-event-click):not(.gtm-new-work-tag-thumbnail-event-click)";
+const POPOVER_ID = "pp-local-tag-popover";
+const MANAGER_ID = "pp-local-tags-manager";
+const STRIP_CLASS = "pp-local-tags";
+const createButton = (label, onClick) => {
+	return $("<button>").attr("type", "button").text(label).css("height", "100%").on("click", onClick);
+};
+const createTagLink = ({ tag, label }) => {
+	const link = $("<a>").attr({
+		href: `/tags/${encodeURIComponent(tag)}`,
+		"data-label": label,
+		title: tag
+	}).append($("<span>").text(label || tag));
+	if (label) link.append($("<small>").text(tag));
+	return link;
+};
+const getTagLabel = (tag, text) => {
+	let label = text.trim().replace(/^#/, "");
+	const tagSuffix = `#${tag}`;
+	if (label.endsWith(tagSuffix)) label = label.slice(0, -tagSuffix.length).trim();
+	return label === tag ? "" : label;
+};
+const getPageTag = () => {
+	const header = $("[data-ga4-label=\"header\"]").first();
+	const entityId = header.attr("data-ga4-entity-id");
+	if (!entityId?.startsWith("tag/")) return null;
+	const tag = getTagFromPath(`/tags/${entityId.slice(4)}`);
+	if (!tag) return null;
+	const rawTag = header.find("span").filter((_, element) => $(element).text().trim() === tag).first();
+	if (!rawTag.length) return null;
+	return {
+		tag,
+		label: rawTag.parent().next().text().trim()
+	};
+};
+const getTagLink = (target) => {
+	if (!(target instanceof Element)) return null;
+	const link = $(target).closest(TAG_LINK_SELECTOR).get(0);
+	if (!link) return null;
+	const url = new URL($(link).prop("href"));
+	if (url.origin !== location.origin) return null;
+	return getTagFromPath(url.pathname) ? link : null;
+};
+const loadLocalTags = () => {
+	if ($(`#${POPOVER_ID}`).length) return;
+	$("<style>").text(`
+    #${POPOVER_ID}, #${MANAGER_ID}, .${STRIP_CLASS} {
+      --pp-tag-bg: #fff; --pp-tag-fg: #333; --pp-tag-muted: #666;
+      --pp-tag-border: #ddd; --pp-tag-chip: #f0f6fa;
+      --pp-tag-danger: #dc2626; --pp-tag-danger-hover: #b91c1c;
+      color: var(--pp-tag-fg); font: 14px/1.5 sans-serif;
+      box-sizing: border-box;
+    }
+    #${POPOVER_ID} *, #${MANAGER_ID} *, .${STRIP_CLASS} * { box-sizing: border-box; }
+    #${POPOVER_ID} {
+      position: fixed; z-index: 100000; width: min(340px, calc(100vw - 24px));
+      max-height: calc(100vh - 24px); overflow: auto; padding: 0;
+      background: var(--pp-tag-bg); border: 1px solid var(--pp-tag-border);
+      border-radius: 12px; box-shadow: 0 8px 32px #0003;
+    }
+    #${POPOVER_ID}[hidden] { display: none; }
+    #${POPOVER_ID} .pp-tag-preview {
+      display: block; height: 200px; overflow: hidden;
+      border-radius: 11px 11px 0 0; background: var(--pp-tag-chip);
+    }
+    #${POPOVER_ID} .pp-tag-preview:focus-visible { outline-offset: -2px; }
+    #${POPOVER_ID} img { display: block; width: 100%; height: 100%; object-fit: cover; }
+    #${POPOVER_ID} img[hidden] { display: none; }
+    #${POPOVER_ID} .pp-tag-content { padding: 16px; }
+    #${POPOVER_ID} h2, #${MANAGER_ID} h2 { font-size: 18px; margin: 0 0 12px; overflow-wrap: anywhere; }
+    #${POPOVER_ID} p { margin: 12px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+    #${POPOVER_ID} button, #${MANAGER_ID} button, .${STRIP_CLASS} button,
+    .${STRIP_CLASS} a {
+      border: 1px solid var(--pp-tag-border); border-radius: 6px;
+      padding: 6px 10px; color: var(--pp-tag-fg); background: var(--pp-tag-chip);
+      cursor: pointer; font: inherit; text-decoration: none; white-space: nowrap;
+    }
+    #${POPOVER_ID} button:hover, #${MANAGER_ID} button:hover,
+    .${STRIP_CLASS} button:hover, .${STRIP_CLASS} a:hover { border-color: #0096fa; }
+    #${MANAGER_ID} button.pp-tag-danger {
+      color: #fff; background: var(--pp-tag-danger); border-color: var(--pp-tag-danger);
+    }
+    #${MANAGER_ID} button.pp-tag-danger:hover {
+      background: var(--pp-tag-danger-hover); border-color: var(--pp-tag-danger-hover);
+    }
+    #${POPOVER_ID} :focus-visible, #${MANAGER_ID} :focus-visible,
+    .${STRIP_CLASS} :focus-visible { outline: 2px solid #0096fa; outline-offset: 2px; }
+    #${MANAGER_ID} {
+      width: min(720px, calc(100vw - 32px)); max-height: calc(100vh - 48px);
+      padding: 24px; border: 1px solid var(--pp-tag-border); border-radius: 12px;
+      background: var(--pp-tag-bg); overflow: auto;
+    }
+    #${MANAGER_ID}::backdrop { background: #0006; }
+    #${MANAGER_ID} header { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
+    #${MANAGER_ID} label { display: flex; align-items: center; gap: 8px; }
+    #${MANAGER_ID} ul { list-style: none; padding: 0; margin: 16px 0 0; }
+    #${MANAGER_ID} li { padding: 12px 0; border-top: 1px solid var(--pp-tag-border); }
+    #${MANAGER_ID} li.pp-tag-dragging { opacity: .4; }
+    #${MANAGER_ID} .pp-tag-heading { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+    #${MANAGER_ID} .pp-tag-metadata { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+    #${MANAGER_ID} a { color: inherit; text-decoration: none; }
+    #${MANAGER_ID} a:hover { text-decoration: underline; }
+    #${MANAGER_ID} .pp-tag-drag {
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+      width: 28px; height: 28px; padding: 0; cursor: grab;
+    }
+    #${MANAGER_ID} .pp-tag-drag:active { cursor: grabbing; }
+    #${MANAGER_ID} .pp-tag-drag::before {
+      content: ""; width: 2px; height: 2px; margin: -10px 5px 0 0;
+      background: currentColor; border-radius: 50%;
+      box-shadow: 5px 0, 0 5px, 5px 5px, 0 10px, 5px 10px;
+    }
+    #${MANAGER_ID} form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    #${MANAGER_ID} input[type=text] {
+      flex: 1; min-width: 120px; padding: 7px 10px; border: 1px solid var(--pp-tag-border);
+      border-radius: 6px; color: var(--pp-tag-fg); background: var(--pp-tag-bg); font: inherit;
+    }
+    #${MANAGER_ID} small { color: var(--pp-tag-muted); margin-bottom: 8px; overflow-wrap: anywhere; }
+    #${MANAGER_ID} button:disabled { opacity: .4; cursor: default; }
+    .${STRIP_CLASS} { display: inline-flex; align-items: center; gap: 8px; margin-right: 8px; flex-shrink: 0; }
+    .${STRIP_CLASS} [data-tag-links] { display: inline-flex; gap: 8px; }
+    .${STRIP_CLASS} a { display: inline-flex; flex-direction: column; justify-content: center; line-height: 1.35; }
+    .${STRIP_CLASS} a span { font-size: 14px; }
+    .${STRIP_CLASS} a small { font-size: 10px; color: var(--pp-tag-muted); }
+    @media (prefers-color-scheme: dark) {
+      #${POPOVER_ID}, #${MANAGER_ID}, .${STRIP_CLASS} {
+        --pp-tag-bg: #222; --pp-tag-fg: #eee; --pp-tag-muted: #aaa;
+        --pp-tag-border: #555; --pp-tag-chip: #303c45;
+      }
+    }
+  `).appendTo("head");
+	const popover = $("<div>").attr({
+		id: POPOVER_ID,
+		role: "dialog",
+		"aria-label": "标签详情"
+	}).prop("hidden", true);
+	const preview = $("<a>").attr({
+		class: "pp-tag-preview",
+		target: "_blank",
+		rel: "noopener noreferrer",
+		"aria-label": "在新窗口打开预览作品"
+	});
+	const thumbnail = $("<img>").appendTo(preview);
+	const content = $("<div>").addClass("pp-tag-content");
+	const title = $("<h2>");
+	const abstract = $("<p>").attr("aria-live", "polite");
+	thumbnail.on("error", () => {
+		thumbnail.prop("hidden", true);
+		preview.removeAttr("href");
+	});
+	let activeLink = null;
+	let activeTag = null;
+	let activeLabel = "";
+	let showTimer;
+	let hideTimer;
+	let scrollParents = $();
+	const action = createButton("添加到本地标签", () => {
+		if (!activeTag) return;
+		addLocalTag(activeTag, activeLabel);
+		refresh();
+	});
+	content.append(title, abstract, action);
+	popover.append(preview, content);
+	popover.appendTo("body");
+	const manager = $("<dialog>").attr({
+		id: MANAGER_ID,
+		closedby: "any",
+		"aria-labelledby": "pp-local-tags-heading"
+	}).appendTo("body");
+	const hidePopover = () => {
+		clearTimeout(showTimer);
+		clearTimeout(hideTimer);
+		popover.prop("hidden", true);
+		scrollParents.off("scroll.ppLocalTags");
+		scrollParents = $();
+		activeLink = null;
+		activeTag = null;
+	};
+	const updateAction = () => {
+		action.prop("hidden", !activeTag || getLocalTagState().tags.some((item) => item.tag === activeTag));
+	};
+	const positionPopover = () => {
+		if (!activeLink || popover.prop("hidden")) return;
+		const link = $(activeLink);
+		const offset = link.offset();
+		const viewport = $(window);
+		const linkTop = offset.top - viewport.scrollTop();
+		const linkBottom = linkTop + link.outerHeight();
+		const width = popover.outerWidth();
+		const height = popover.outerHeight();
+		const left = Math.max(12, Math.min(offset.left - viewport.scrollLeft(), viewport.width() - width - 12));
+		const top = linkBottom + height + 8 <= viewport.height() - 12 ? linkBottom + 8 : Math.max(12, linkTop - height - 8);
+		popover.css({
+			left,
+			top
+		});
+	};
+	const showPopover = async (link) => {
+		const tag = getTagFromPath(new URL($(link).prop("href")).pathname);
+		if (!tag || !$.contains($("html").get(0), link) || manager.prop("open")) return;
+		activeLink = link;
+		activeTag = tag;
+		activeLabel = $(link).attr("data-label") ?? getTagLabel(tag, $(link).text());
+		title.text(tag);
+		abstract.text("正在加载标签详情…");
+		thumbnail.prop("hidden", true).removeAttr("src");
+		preview.removeAttr("href");
+		popover.prop("hidden", false);
+		scrollParents.off("scroll.ppLocalTags");
+		scrollParents = $(link).parents();
+		scrollParents.on("scroll.ppLocalTags", hidePopover);
+		updateAction();
+		positionPopover();
+		try {
+			const details = await getTagDetails(tag);
+			if (activeLink !== link || activeTag !== tag) return;
+			title.text(details.tag || tag);
+			abstract.text(details.abstract || "暂无标签简介");
+			if (details.thumbnail) {
+				const artworkId = details.thumbnail.match(/\/(\d+)(?:-[\da-zA-Z]+)?_p\d+/)?.[1];
+				if (artworkId) preview.attr("href", `https://www.pixiv.net/artworks/${artworkId}`);
+				thumbnail.attr({
+					alt: `${details.tag || tag}的缩略图`,
+					src: details.thumbnail
+				}).prop("hidden", false);
+			}
+		} catch {
+			if (activeLink !== link || activeTag !== tag) return;
+			abstract.text("标签详情加载失败，请稍后重新悬浮重试。");
+		}
+		positionPopover();
+	};
+	const renderManager = () => {
+		const focusKey = manager.find(":focus").attr("data-focus-key");
+		const drafts = new Map(manager.find("input[type=\"text\"]").toArray().filter((input) => $(input).val() !== $(input).prop("defaultValue")).map((input) => [$(input).attr("data-focus-key"), $(input).val()]));
+		manager.empty();
+		const header = $("<header>");
+		const heading = $("<h2>").attr("id", "pp-local-tags-heading").text("本地标签管理");
+		header.append(heading, createButton("关闭", () => manager.get(0).close()));
+		const sortLabel = $("<label>");
+		const autoSort = $("<input>").attr({
+			type: "checkbox",
+			"data-focus-key": "auto-sort"
+		}).prop("checked", getLocalTagState().autoSort);
+		autoSort.on("change", () => {
+			setLocalTagAutoSort(autoSort.prop("checked"));
+			refresh();
+		});
+		sortLabel.append(autoSort, "自动排序（访问次数越多越靠前）");
+		manager.append(header, sortLabel);
+		const tags = getSortedLocalTags();
+		if (!tags.length) manager.append($("<p>").text("暂无本地标签。悬浮任意标签，点击“添加到本地标签”。"));
+		const list = $("<ul>");
+		let draggedRow = null;
+		list.on("drop", (event) => {
+			if (!draggedRow) return;
+			event.preventDefault();
+			moveLocalTag(draggedRow.attr("data-tag"), list.children().index(draggedRow));
+			draggedRow = null;
+			refresh();
+		});
+		tags.forEach((item, index) => {
+			const row = $("<li>").attr("data-tag", item.tag);
+			const metadata = $("<div>").addClass("pp-tag-metadata").append($("<a>").attr({
+				href: `/tags/${encodeURIComponent(item.tag)}`,
+				target: "_blank",
+				rel: "noopener noreferrer"
+			}).text(item.tag), $("<small>").text(` · 访问 ${item.visits} 次`));
+			const rowHeading = $("<div>").addClass("pp-tag-heading");
+			if (!autoSort.prop("checked")) {
+				const handle = $("<button>").attr({
+					type: "button",
+					draggable: "true",
+					title: "拖拽排序",
+					"aria-label": `排序 ${item.label || item.tag}`,
+					"data-focus-key": `sort:${item.tag}`
+				}).addClass("pp-tag-drag").on("dragstart", (event) => {
+					draggedRow = row;
+					const transfer = event.originalEvent.dataTransfer;
+					transfer.effectAllowed = "move";
+					transfer.setData("text/plain", item.tag);
+					transfer.setDragImage(row.get(0), 0, 0);
+					row.addClass("pp-tag-dragging");
+				}).on("dragend", () => {
+					if (!draggedRow) return;
+					draggedRow = null;
+					refresh();
+				}).on("keydown", (event) => {
+					if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+					event.preventDefault();
+					moveLocalTag(item.tag, index + (event.key === "ArrowUp" ? -1 : 1));
+					refresh();
+				});
+				rowHeading.append(handle);
+				row.on("dragover", (event) => {
+					if (!draggedRow) return;
+					event.preventDefault();
+					event.originalEvent.dataTransfer.dropEffect = "move";
+					if (draggedRow.is(row)) return;
+					const { top, height } = row.get(0).getBoundingClientRect();
+					if (event.originalEvent.clientY < top + height / 2) row.before(draggedRow);
+					else row.after(draggedRow);
+				});
+			}
+			rowHeading.append(metadata);
+			const form = $("<form>");
+			const input = $("<input>").attr({
+				type: "text",
+				placeholder: "填一个好记的备注名吧",
+				"aria-label": `${item.tag}的显示名称`,
+				"data-focus-key": `label:${item.tag}`
+			}).prop("defaultValue", item.label).val(drafts.get(`label:${item.tag}`) ?? item.label);
+			const save = $("<button>").attr({
+				type: "submit",
+				"data-focus-key": `save:${item.tag}`
+			}).text("保存备注名");
+			form.on("submit", (event) => {
+				event.preventDefault();
+				const label = input.val().trim();
+				renameLocalTag(item.tag, label);
+				input.val(label).prop("defaultValue", label);
+				refresh();
+			});
+			const up = createButton("上移", () => {
+				moveLocalTag(item.tag, index - 1);
+				refresh();
+			});
+			const down = createButton("下移", () => {
+				moveLocalTag(item.tag, index + 1);
+				refresh();
+			});
+			up.attr({
+				"data-focus-key": `up:${item.tag}`,
+				"aria-label": `上移 ${item.label || item.tag}`
+			}).prop({
+				hidden: autoSort.prop("checked"),
+				disabled: index === 0
+			});
+			down.attr({
+				"data-focus-key": `down:${item.tag}`,
+				"aria-label": `下移 ${item.label || item.tag}`
+			}).prop({
+				hidden: autoSort.prop("checked"),
+				disabled: index === tags.length - 1
+			});
+			const remove = createButton("删除", () => {
+				removeLocalTag(item.tag);
+				refresh();
+			});
+			remove.addClass("pp-tag-danger").attr("aria-label", `删除 ${item.label || item.tag}`);
+			form.append(input, save, up, down, remove);
+			row.append(rowHeading, form);
+			list.append(row);
+		});
+		manager.append(list);
+		if (focusKey) manager.find("[data-focus-key]").filter((_, element) => $(element).attr("data-focus-key") === focusKey).trigger("focus");
+	};
+	const openManager = () => {
+		hidePopover();
+		if (!manager.prop("open")) manager.empty();
+		renderManager();
+		if (!manager.prop("open")) manager.get(0).showModal();
+	};
+	const renderStrip = (strip) => {
+		strip.empty();
+		const tag = getTagFromPath(location.pathname);
+		if (tag) {
+			const saved = getLocalTagState().tags.some((item) => item.tag === tag);
+			strip.append(saved ? createButton("本地标签管理", openManager) : createButton("添加到本地标签", () => {
+				const pageTag = getPageTag();
+				if (!pageTag) return;
+				addLocalTag(pageTag.tag, pageTag.label);
+				refresh();
+			}));
+			return;
+		}
+		strip.append(createButton("本地标签管理", openManager));
+		const links = $("<span>").attr("data-tag-links", "");
+		links.append(...getSortedLocalTags().map(createTagLink));
+		strip.append(links);
+	};
+	function refresh() {
+		$(`.${STRIP_CLASS}`).each((_, strip) => renderStrip($(strip)));
+		updateAction();
+		positionPopover();
+		if (manager.prop("open")) renderManager();
+	}
+	const mountStrip = (parent, before) => {
+		if (parent.children(`.${STRIP_CLASS}`).length) return;
+		const strip = $(parent.is("ul") ? "<li>" : "<span>").addClass(STRIP_CLASS);
+		renderStrip(strip);
+		before.before(strip);
+	};
+	const mountEntries = () => {
+		const pathname = location.pathname.replace(/^\/en(?=\/|$)/, "") || "/";
+		if (getTagFromPath(pathname)) {
+			const edit = $("button").filter((_, button) => /(?:编辑|添加(?:进|到))(喜欢|喜爱)的标签/.test($(button).text())).first();
+			if (edit.length) mountStrip(edit.parent(), edit);
+		} else if (/^\/(?:illustration\/?|manga\/?|cate_r18\.php)?$/.test(pathname)) {
+			const firstTag = $(TAG_LINK_SELECTOR).filter((_, link) => !$(link).closest(`.${STRIP_CLASS}, header`).length && !!getTagLink(link)).first();
+			if (!firstTag.length) return;
+			let first = firstTag;
+			let parent = firstTag.parent();
+			while (parent.length && !parent.is("body")) {
+				if (parent.find("a[href*=\"/artworks/\"]").length) return;
+				if (parent.find(TAG_LINK_SELECTOR).length > 1 || parent.is("nav, ul, [role=tablist]") || ["flex", "inline-flex"].includes(parent.css("display"))) {
+					mountStrip(parent, first);
+					return;
+				}
+				first = parent;
+				parent = parent.parent();
+			}
+		}
+	};
+	const enter = (event) => {
+		const target = event.target;
+		if ($(target).closest(popover).length) {
+			clearTimeout(hideTimer);
+			return;
+		}
+		const link = getTagLink(target);
+		if (!link || $(link).closest(manager).length) return;
+		clearTimeout(hideTimer);
+		if (link === activeLink) return;
+		clearTimeout(showTimer);
+		showTimer = setTimeout(() => void showPopover(link), 200);
+	};
+	const leave = (event) => {
+		const link = getTagLink(event.target);
+		const target = event.target;
+		if (!link && !$(target).closest(popover).length) return;
+		const related = event.relatedTarget;
+		if (related instanceof Node && ($(related).closest(popover).length || link && $(related).closest(link).length)) return;
+		clearTimeout(showTimer);
+		clearTimeout(hideTimer);
+		hideTimer = setTimeout(hidePopover, 180);
+	};
+	$(document).on("mouseover", enter).on("focusin", enter).on("mouseout", leave).on("focusout", leave).on("keydown", (event) => {
+		if (event.key === "Escape") hidePopover();
+	}).on("scroll", hidePopover);
+	$(window).on("resize", positionPopover);
+	let previousTag = null;
+	const visitPage = () => {
+		const tag = getTagFromPath(location.pathname);
+		if (tag && tag !== previousTag) {
+			recordLocalTagVisit(tag);
+			refresh();
+		}
+		previousTag = tag;
+	};
+	$(window).on("urlchange", () => {
+		hidePopover();
+		if (manager.prop("open")) manager.get(0).close();
+		$(`.${STRIP_CLASS}`).remove();
+		visitPage();
+		mountEntries();
+	});
+	GM_addValueChangeListener(LOCAL_TAGS_KEY, (_key, _oldValue, _newValue, remote) => {
+		if (remote) refresh();
+	});
+	new MutationObserver(debounce(() => {
+		if (activeLink && !$.contains($("html").get(0), activeLink)) hidePopover();
+		mountEntries();
+	}, 100)).observe($("body").get(0), {
+		childList: true,
+		subtree: true
+	});
+	visitPage();
+	mountEntries();
+};
+
+//#endregion
+//#region src/icons/download.svg
+var download_default = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg t=\"1742281193586\"\n     class=\"icon\"\n     viewBox=\"0 0 1024 1024\"\n     version=\"1.1\"\n     xmlns=\"http://www.w3.org/2000/svg\"\n     p-id=\"24408\"\n     width=\"10\"\n     height=\"10\">\n    <path d=\"M1024 896v128H0v-320h128v192h768v-192h128v192zM576 554.688L810.688 320 896 405.312l-384 384-384-384L213.312 320 448 554.688V0h128v554.688z\"\n          fill=\"#ffffff\"\n          p-id=\"24409\" />\n</svg>";
+
+//#endregion
+//#region src/icons/loading.svg
+var loading_default = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg t=\"1742282291278\"\n     class=\"icon\"\n     viewBox=\"0 0 1024 1024\"\n     version=\"1.1\"\n     xmlns=\"http://www.w3.org/2000/svg\"\n     p-id=\"38665\"\n     width=\"48\"\n     height=\"48\">\n    <path d=\"M988 548c-19.9 0-36-16.1-36-36 0-59.4-11.6-117-34.6-171.3a440.45 440.45 0 0 0-94.3-139.9 437.71 437.71 0 0 0-139.9-94.3C629 83.6 571.4 72 512 72c-19.9 0-36-16.1-36-36s16.1-36 36-36c69.1 0 136.2 13.5 199.3 40.3C772.3 66 827 103 874 150c47 47 83.9 101.8 109.7 162.7 26.7 63.1 40.2 130.2 40.2 199.3 0.1 19.9-16 36-35.9 36z\"\n          p-id=\"38666\"\n          fill=\"#1296db\" />\n</svg>";
+
+//#endregion
+//#region src/icons/page.svg
+var page_default = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg viewBox=\"0 0 10 10\"\n     width=\"10\"\n     height=\"10\">\n    <path d=\"M 8 3 C 8.55228 3 9 3.44772 9 4 L 9 9 C 9 9.55228 8.55228 10 8 10 L 3 10 C 2.44772 10 2 9.55228 2 9 L 6 9 C 7.10457 9 8 8.10457 8 7 L 8 3 Z M 1 1 L 6 1 C 6.55228 1 7 1.44772 7 2 L 7 7 C 7 7.55228 6.55228 8 6 8 L 1 8 C 0.447715 8 0 7.55228 0 7 L 0 2 C 0 1.44772 0.447715 1 1 1 Z\"\n          fill=\"#ffffff\" />\n</svg>";
 
 //#endregion
 //#region src/services/download.ts
@@ -398,18 +974,6 @@ const getIllustPagesRequestUrl = (id) => {
 const getUgoiraMetadataRequestUrl = (id) => {
 	return `/ajax/illust/${id}/ugoira_meta`;
 };
-
-//#endregion
-//#region src/utils/debounce.ts
-function debounce(func, delay = 100) {
-	let timeout = null;
-	return function(...args) {
-		if (timeout) clearTimeout(timeout);
-		timeout = setTimeout(() => {
-			func(...args);
-		}, delay);
-	};
-}
 
 //#endregion
 //#region src/utils/event.ts
@@ -1657,15 +2221,15 @@ const Texts = {
 
 //#endregion
 //#region src/icons/heart.svg
-var heart_default = "<svg viewBox=\"0 0 32 32\" width=\"32\" height=\"32\">\n  <path d=\"\nM21,5.5 C24.8659932,5.5 28,8.63400675 28,12.5 C28,18.2694439 24.2975093,23.1517313 17.2206059,27.1100183\nC16.4622493,27.5342993 15.5379984,27.5343235 14.779626,27.110148 C7.70250208,23.1517462 4,18.2694529 4,12.5\nC4,8.63400691 7.13400681,5.5 11,5.5 C12.829814,5.5 14.6210123,6.4144028 16,7.8282366\nC17.3789877,6.4144028 19.170186,5.5 21,5.5 Z\"></path>\n  <path d=\"M16,11.3317089 C15.0857201,9.28334665 13.0491506,7.5 11,7.5\nC8.23857625,7.5 6,9.73857647 6,12.5 C6,17.4386065 9.2519779,21.7268174 15.7559337,25.3646328\nC15.9076021,25.4494645 16.092439,25.4494644 16.2441073,25.3646326 C22.7480325,21.7268037 26,17.4385986 26,12.5\nC26,9.73857625 23.7614237,7.5 21,7.5 C18.9508494,7.5 16.9142799,9.28334665 16,11.3317089 Z\" style=\"fill: #fafafa;\">\n  </path>\n</svg>";
+var heart_default = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg viewBox=\"0 0 32 32\"\n     width=\"32\"\n     height=\"32\">\n    <path d=\"&#xA;M21,5.5 C24.8659932,5.5 28,8.63400675 28,12.5 C28,18.2694439 24.2975093,23.1517313 17.2206059,27.1100183&#xA;C16.4622493,27.5342993 15.5379984,27.5343235 14.779626,27.110148 C7.70250208,23.1517462 4,18.2694529 4,12.5&#xA;C4,8.63400691 7.13400681,5.5 11,5.5 C12.829814,5.5 14.6210123,6.4144028 16,7.8282366&#xA;C17.3789877,6.4144028 19.170186,5.5 21,5.5 Z\" />\n    <path d=\"M16,11.3317089 C15.0857201,9.28334665 13.0491506,7.5 11,7.5&#xA;C8.23857625,7.5 6,9.73857647 6,12.5 C6,17.4386065 9.2519779,21.7268174 15.7559337,25.3646328&#xA;C15.9076021,25.4494645 16.092439,25.4494644 16.2441073,25.3646326 C22.7480325,21.7268037 26,17.4385986 26,12.5&#xA;C26,9.73857625 23.7614237,7.5 21,7.5 C18.9508494,7.5 16.9142799,9.28334665 16,11.3317089 Z\"\n          style=\"fill: #fafafa;\" />\n</svg>";
 
 //#endregion
 //#region src/icons/heart-filled.svg
-var heart_filled_default = "<svg viewBox=\"0 0 32 32\" width=\"32\" height=\"32\">\n  <path d=\"\nM21,5.5 C24.8659932,5.5 28,8.63400675 28,12.5 C28,18.2694439 24.2975093,23.1517313 17.2206059,27.1100183\nC16.4622493,27.5342993 15.5379984,27.5343235 14.779626,27.110148 C7.70250208,23.1517462 4,18.2694529 4,12.5\nC4,8.63400691 7.13400681,5.5 11,5.5 C12.829814,5.5 14.6210123,6.4144028 16,7.8282366\nC17.3789877,6.4144028 19.170186,5.5 21,5.5 Z\"></path>\n  <path d=\"M16,11.3317089 C15.0857201,9.28334665 13.0491506,7.5 11,7.5\nC8.23857625,7.5 6,9.73857647 6,12.5 C6,17.4386065 9.2519779,21.7268174 15.7559337,25.3646328\nC15.9076021,25.4494645 16.092439,25.4494644 16.2441073,25.3646326 C22.7480325,21.7268037 26,17.4385986 26,12.5\nC26,9.73857625 23.7614237,7.5 21,7.5 C18.9508494,7.5 16.9142799,9.28334665 16,11.3317089 Z\" style=\"fill: #dc2626;\">\n  </path>\n</svg>";
+var heart_filled_default = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg viewBox=\"0 0 32 32\"\n     width=\"32\"\n     height=\"32\">\n    <path d=\"&#xA;M21,5.5 C24.8659932,5.5 28,8.63400675 28,12.5 C28,18.2694439 24.2975093,23.1517313 17.2206059,27.1100183&#xA;C16.4622493,27.5342993 15.5379984,27.5343235 14.779626,27.110148 C7.70250208,23.1517462 4,18.2694529 4,12.5&#xA;C4,8.63400691 7.13400681,5.5 11,5.5 C12.829814,5.5 14.6210123,6.4144028 16,7.8282366&#xA;C17.3789877,6.4144028 19.170186,5.5 21,5.5 Z\" />\n    <path d=\"M16,11.3317089 C15.0857201,9.28334665 13.0491506,7.5 11,7.5&#xA;C8.23857625,7.5 6,9.73857647 6,12.5 C6,17.4386065 9.2519779,21.7268174 15.7559337,25.3646328&#xA;C15.9076021,25.4494645 16.092439,25.4494644 16.2441073,25.3646326 C22.7480325,21.7268037 26,17.4385986 26,12.5&#xA;C26,9.73857625 23.7614237,7.5 21,7.5 C18.9508494,7.5 16.9142799,9.28334665 16,11.3317089 Z\"\n          style=\"fill: #dc2626;\" />\n</svg>";
 
 //#endregion
 //#region src/icons/play.svg
-var play_default = "<svg viewBox=\"0 0 24 24\"\n  style=\"width: 48px; height: 48px; stroke: none; line-height: 0; font-size: 0px; vertical-align: middle;\">\n  <circle cx=\"12\" cy=\"12\" r=\"10\" style=\"fill: rgba(0, 0, 0, 0.32);\"></circle>\n  <path d=\"M9,8.74841664 L9,15.2515834 C9,15.8038681 9.44771525,16.2515834 10,16.2515834\nC10.1782928,16.2515834 10.3533435,16.2039156 10.5070201,16.1135176 L16.0347118,12.8619342\nC16.510745,12.5819147 16.6696454,11.969013 16.3896259,11.4929799\nC16.3034179,11.3464262 16.1812655,11.2242738 16.0347118,11.1380658 L10.5070201,7.88648243\nC10.030987,7.60646294 9.41808527,7.76536339 9.13806578,8.24139652\nC9.04766776,8.39507316 9,8.57012386 9,8.74841664 Z\" style=\"fill: rgb(245, 245, 245);\"></path>\n</svg>";
+var play_default = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg viewBox=\"0 0 24 24\"\n     style=\"width: 48px; height: 48px; stroke: none; line-height: 0; font-size: 0px; vertical-align: middle;\">\n    <circle cx=\"12\"\n            cy=\"12\"\n            r=\"10\"\n            style=\"fill: rgba(0, 0, 0, 0.32);\" />\n    <path d=\"M9,8.74841664 L9,15.2515834 C9,15.8038681 9.44771525,16.2515834 10,16.2515834&#xA;C10.1782928,16.2515834 10.3533435,16.2039156 10.5070201,16.1135176 L16.0347118,12.8619342&#xA;C16.510745,12.5819147 16.6696454,11.969013 16.3896259,11.4929799&#xA;C16.3034179,11.3464262 16.1812655,11.2242738 16.0347118,11.1380658 L10.5070201,7.88648243&#xA;C10.030987,7.60646294 9.41808527,7.76536339 9.13806578,8.24139652&#xA;C9.04766776,8.39507316 9,8.57012386 9,8.74841664 Z\"\n          style=\"fill: rgb(245, 245, 245);\" />\n</svg>";
 
 //#endregion
 //#region src/utils/promise.ts
@@ -2096,7 +2660,13 @@ const setSettingValue = (key, value) => {
 	});
 };
 const getSettings = () => {
-	return GM_getValue(SETTINGS_KEY) ?? g_defaultSettings;
+	const savedSettings = GM_getValue(SETTINGS_KEY) ?? {};
+	const settings = {
+		...g_defaultSettings,
+		...savedSettings
+	};
+	if (Object.keys(g_defaultSettings).some((key) => !Object.hasOwn(savedSettings, key))) GM_setValue(SETTINGS_KEY, settings);
+	return settings;
 };
 const resetSettings = () => {
 	GM_setValue(SETTINGS_KEY, g_defaultSettings);
@@ -2253,6 +2823,9 @@ const registerSettingsMenu = () => {
 			parseValue: (newValue) => Number(newValue) || g_defaultSettings.previewDelay,
 			onSet: () => registerSettingsMenu()
 		});
+	}), GM_registerMenuCommand(`🏷️ 本地标签管理 ${settings.enableLocalTags ? "✅" : "❌"}`, () => {
+		toggleSettingBooleanValue("enableLocalTags");
+		location.reload();
 	}), GM_registerMenuCommand(`📚️ 每次排序 ${settings.pageCount} 页`, () => {
 		setSettingStringValue("pageCount", "每次排序的页数", {
 			parseValue: (newValue) => Number(newValue) || g_defaultSettings.pageCount,
@@ -2309,8 +2882,9 @@ const ShowUpgradeMessage = () => {
 const initializePixivPreviewer = () => {
 	try {
 		g_settings = registerSettingsMenu();
+		if (g_settings.enableLocalTags) loadLocalTags();
 		iLog.i("Start to initialize Pixiv Previewer with global settings:", g_settings);
-		if (g_settings.version !== "1.4.7") ShowUpgradeMessage();
+		if (g_settings.version !== "1.5.0") ShowUpgradeMessage();
 		if (g_settings.enablePreview) loadIllustPreview(g_settings);
 		$.get(location.href, function(data) {
 			const matched = data.match(/token\\":\\"([a-z0-9]{32})/);
