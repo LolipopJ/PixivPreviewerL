@@ -15,7 +15,7 @@ import {
 } from "../utils/tags";
 
 const TAG_LINK_SELECTOR =
-  'a[href*="/tags/"]:not(.gtm-new-work-tag-event-click):not(.gtm-new-work-translate-tag-event-click):not(.gtm-new-work-tag-thumbnail-event-click)';
+  'a[href*="/tags/"]:not(nav > a):not(.gtm-new-work-tag-event-click):not(.gtm-new-work-translate-tag-event-click):not(.gtm-new-work-tag-thumbnail-event-click)';
 const POPOVER_ID = "pp-local-tag-popover";
 const MANAGER_ID = "pp-local-tags-manager";
 const STRIP_CLASS = "pp-local-tags";
@@ -49,17 +49,18 @@ const getTagLabel = (tag: string, text: string) => {
   return label === tag ? "" : label;
 };
 
-const getPageTagLabel = (tag: string) => {
-  const heading = $('h1, [data-ga4-label="keyword_details"] nav').last();
-  const rawTag = heading
-    .find("*")
-    .addBack()
-    .filter((_, element) => $(element).text().trim().replace(/^#/, "") === tag)
-    .last();
-  const translation = rawTag.length
-    ? rawTag.next("span").filter((_, element) => !$(element).find("a").length)
-    : heading;
-  return getTagLabel(tag, translation.text());
+const getPageTag = () => {
+  const header = $('[data-ga4-label="header"]').first();
+  const entityId = header.attr("data-ga4-entity-id");
+  if (!entityId?.startsWith("tag/")) return null;
+  const tag = getTagFromPath(`/tags/${entityId.slice(4)}`);
+  if (!tag) return null;
+  const rawTag = header
+    .find("span")
+    .filter((_, element) => $(element).text().trim() === tag)
+    .first();
+  if (!rawTag.length) return null;
+  return { tag, label: rawTag.parent().next().text().trim() };
 };
 
 const getTagLink = (target: EventTarget | null) => {
@@ -476,7 +477,9 @@ export const loadLocalTags = () => {
         saved
           ? createButton("本地标签管理", openManager)
           : createButton("添加到本地标签", () => {
-              addLocalTag(tag, getPageTagLabel(tag));
+              const pageTag = getPageTag();
+              if (!pageTag) return;
+              addLocalTag(pageTag.tag, pageTag.label);
               refresh();
             })
       );
