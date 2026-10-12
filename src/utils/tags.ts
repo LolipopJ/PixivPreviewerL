@@ -1,4 +1,7 @@
+import type { TagDetails } from "../services/tags";
+
 export const LOCAL_TAGS_KEY = "PIXIV_PREVIEWER_L_LOCAL_TAGS";
+const LOCAL_TAG_METADATA_CACHE_TIME = 30 * 24 * 60 * 60 * 1000;
 
 export interface LocalTag {
   /** 搜索关键字 TAG */
@@ -6,6 +9,10 @@ export interface LocalTag {
   /** 显示标签 TAG_LABEL，留空使用原始标签 */
   label: string;
   visits: number;
+  metadata?: {
+    details: TagDetails;
+    cachedAt: number;
+  };
 }
 
 interface LocalTagState {
@@ -15,6 +22,25 @@ interface LocalTagState {
 
 export const getLocalTagState = (): LocalTagState =>
   GM_getValue(LOCAL_TAGS_KEY, { tags: [], autoSort: false });
+
+export const getCachedLocalTagDetails = (tag: string) => {
+  const state = getLocalTagState();
+  const item = state.tags.find((item) => item.tag === tag);
+  if (!item?.metadata) return;
+  const age = Date.now() - item.metadata.cachedAt;
+  if (age >= 0 && age < LOCAL_TAG_METADATA_CACHE_TIME)
+    return item.metadata.details;
+  delete item.metadata;
+  GM_setValue(LOCAL_TAGS_KEY, state);
+};
+
+export const cacheLocalTagDetails = (tag: string, details: TagDetails) => {
+  const state = getLocalTagState();
+  const item = state.tags.find((item) => item.tag === tag);
+  if (!item) return;
+  item.metadata = { details, cachedAt: Date.now() };
+  GM_setValue(LOCAL_TAGS_KEY, state);
+};
 
 export const getSortedLocalTags = () => {
   const { tags, autoSort } = getLocalTagState();

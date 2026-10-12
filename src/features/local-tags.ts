@@ -1,5 +1,8 @@
+import settingsIcon from "../icons/settings.svg";
+import trashIcon from "../icons/trash.svg";
 import { getTagDetails } from "../services/tags";
 import debounce from "../utils/debounce";
+import { getLocalTagColor } from "../utils/tag-colors";
 import {
   addLocalTag,
   getLocalTagState,
@@ -28,12 +31,24 @@ const createButton = (label: string, onClick: () => void) => {
     .on("click", onClick);
 };
 
+const createIconButton = (label: string, icon: string, onClick: () => void) =>
+  createButton(label, onClick)
+    .addClass("pp-tag-icon")
+    .attr({ title: label, "aria-label": label })
+    .html(icon)
+    .css("height", "32px");
+
 const createTagLink = ({ tag, label }: Pick<LocalTag, "tag" | "label">) => {
+  const background = getLocalTagColor(tag);
   const link = $("<a>")
     .attr({
       href: `/tags/${encodeURIComponent(tag)}`,
       "data-label": label,
       title: tag,
+    })
+    .css({
+      backgroundColor: background,
+      color: "#fff",
     })
     .append($("<span>").text(label || tag));
   if (label) link.append($("<small>").text(tag));
@@ -117,6 +132,13 @@ export const loadLocalTags = () => {
     #${MANAGER_ID} button.pp-tag-danger:hover {
       background: var(--pp-tag-danger-hover); border-color: var(--pp-tag-danger-hover);
     }
+    #${MANAGER_ID} button.pp-tag-icon, .${STRIP_CLASS} button.pp-tag-icon {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 32px; flex-shrink: 0; padding: 6px;
+    }
+    #${MANAGER_ID} .pp-tag-icon svg, .${STRIP_CLASS} .pp-tag-icon svg {
+      width: 18px; height: 18px;
+    }
     #${POPOVER_ID} :focus-visible, #${MANAGER_ID} :focus-visible,
     .${STRIP_CLASS} :focus-visible { outline: 2px solid #0096fa; outline-offset: 2px; }
     #${MANAGER_ID} {
@@ -154,8 +176,8 @@ export const loadLocalTags = () => {
     .${STRIP_CLASS} { display: inline-flex; align-items: center; gap: 8px; margin-right: 8px; flex-shrink: 0; }
     .${STRIP_CLASS} [data-tag-links] { display: inline-flex; gap: 8px; }
     .${STRIP_CLASS} a { display: inline-flex; flex-direction: column; justify-content: center; line-height: 1.35; }
-    .${STRIP_CLASS} a span { font-size: 14px; }
-    .${STRIP_CLASS} a small { font-size: 10px; color: var(--pp-tag-muted); }
+    .${STRIP_CLASS} a span { font-size: 14px; font-weight: bold; }
+    .${STRIP_CLASS} a small { font-size: 10px; color: inherit; }
     @media (prefers-color-scheme: dark) {
       #${POPOVER_ID}, #${MANAGER_ID}, .${STRIP_CLASS} {
         --pp-tag-bg: #222; --pp-tag-fg: #eee; --pp-tag-muted: #aaa;
@@ -441,13 +463,14 @@ export const loadLocalTags = () => {
           hidden: autoSort.prop("checked"),
           disabled: index === tags.length - 1,
         });
-      const remove = createButton("删除", () => {
-        removeLocalTag(item.tag);
-        refresh();
-      });
-      remove
-        .addClass("pp-tag-danger")
-        .attr("aria-label", `删除 ${item.label || item.tag}`);
+      const remove = createIconButton(
+        `删除 ${item.label || item.tag}`,
+        trashIcon,
+        () => {
+          removeLocalTag(item.tag);
+          refresh();
+        }
+      ).addClass("pp-tag-danger");
       form.append(input, save, up, down, remove);
       row.append(rowHeading, form);
       list.append(row);
@@ -485,9 +508,14 @@ export const loadLocalTags = () => {
       );
       return;
     }
-    strip.append(createButton("本地标签管理", openManager));
+    const tags = getSortedLocalTags();
+    strip.append(
+      tags.length >= 10
+        ? createIconButton("本地标签管理", settingsIcon, openManager)
+        : createButton("本地标签管理", openManager)
+    );
     const links = $("<span>").attr("data-tag-links", "");
-    links.append(...getSortedLocalTags().map(createTagLink));
+    links.append(...tags.map(createTagLink));
     strip.append(links);
   };
 
