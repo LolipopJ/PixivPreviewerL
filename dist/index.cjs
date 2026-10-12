@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             1.5.0-20261010
+// @version             1.5.1-20261012
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0
@@ -23,7 +23,7 @@
 // ==/UserScript==
 //#region src/constants/index.ts
 /** 版本号，发生改变时将会弹窗 */
-const g_version = "1.5.0";
+const g_version = "1.5.1";
 /** 默认设置 */
 const g_defaultSettings = {
 	enablePreview: true,
@@ -225,6 +225,99 @@ const hideFavorites = () => {
 };
 
 //#endregion
+//#region src/icons/settings.svg
+var settings_default = "<svg\n  xmlns=\"http://www.w3.org/2000/svg\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n  aria-hidden=\"true\"\n  focusable=\"false\"\n>\n  <path\n    d=\"m9.2 4.6.8-2.6h4l.8 2.6 2.1 1.2 2.6-.6 2 3.5-1.8 2v2.5l1.8 2-2 3.5-2.6-.6-2.1 1.2L14 22h-4l-.8-2.6-2.1-1.2-2.6.6-2-3.5 1.8-2v-2.5l-1.8-2 2-3.5 2.6.6Z\"\n  />\n  <circle cx=\"12\" cy=\"12\" r=\"3\" />\n</svg>";
+
+//#endregion
+//#region src/icons/trash.svg
+var trash_default = "<svg\n  xmlns=\"http://www.w3.org/2000/svg\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n  aria-hidden=\"true\"\n  focusable=\"false\"\n>\n  <path d=\"M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7\" />\n</svg>";
+
+//#endregion
+//#region src/utils/tags.ts
+const LOCAL_TAGS_KEY = "PIXIV_PREVIEWER_L_LOCAL_TAGS";
+const LOCAL_TAG_METADATA_CACHE_TIME = 2592e6;
+const getLocalTagState = () => GM_getValue(LOCAL_TAGS_KEY, {
+	tags: [],
+	autoSort: false
+});
+const getCachedLocalTagDetails = (tag) => {
+	const state = getLocalTagState();
+	const item = state.tags.find((item) => item.tag === tag);
+	if (!item?.metadata) return;
+	const age = Date.now() - item.metadata.cachedAt;
+	if (age >= 0 && age < LOCAL_TAG_METADATA_CACHE_TIME) return item.metadata.details;
+	delete item.metadata;
+	GM_setValue(LOCAL_TAGS_KEY, state);
+};
+const cacheLocalTagDetails = (tag, details) => {
+	const state = getLocalTagState();
+	const item = state.tags.find((item) => item.tag === tag);
+	if (!item) return;
+	item.metadata = {
+		details,
+		cachedAt: Date.now()
+	};
+	GM_setValue(LOCAL_TAGS_KEY, state);
+};
+const getSortedLocalTags = () => {
+	const { tags, autoSort } = getLocalTagState();
+	return autoSort ? tags.slice().sort((a, b) => b.visits - a.visits) : tags;
+};
+const addLocalTag = (tag, label) => {
+	const state = getLocalTagState();
+	if (state.tags.some((item) => item.tag === tag)) return;
+	state.tags.push({
+		tag,
+		label: label.trim(),
+		visits: 0
+	});
+	GM_setValue(LOCAL_TAGS_KEY, state);
+};
+const removeLocalTag = (tag) => {
+	const state = getLocalTagState();
+	state.tags = state.tags.filter((item) => item.tag !== tag);
+	GM_setValue(LOCAL_TAGS_KEY, state);
+};
+const renameLocalTag = (tag, label) => {
+	const state = getLocalTagState();
+	const item = state.tags.find((item) => item.tag === tag);
+	if (!item) return;
+	item.label = label.trim();
+	GM_setValue(LOCAL_TAGS_KEY, state);
+};
+const moveLocalTag = (tag, target) => {
+	const state = getLocalTagState();
+	if (state.autoSort) return;
+	const index = state.tags.findIndex((item) => item.tag === tag);
+	if (index < 0 || !Number.isInteger(target) || target < 0 || target >= state.tags.length || index === target) return;
+	const [item] = state.tags.splice(index, 1);
+	state.tags.splice(target, 0, item);
+	GM_setValue(LOCAL_TAGS_KEY, state);
+};
+const setLocalTagAutoSort = (autoSort) => {
+	GM_setValue(LOCAL_TAGS_KEY, {
+		...getLocalTagState(),
+		autoSort
+	});
+};
+const recordLocalTagVisit = (tag) => {
+	const state = getLocalTagState();
+	const item = state.tags.find((item) => item.tag === tag);
+	if (!item) return;
+	item.visits++;
+	GM_setValue(LOCAL_TAGS_KEY, state);
+};
+const getTagFromPath = (pathname) => {
+	const match = pathname.match(/^\/(?:en\/)?tags\/([^/]+)/);
+	if (!match) return null;
+	try {
+		return decodeURIComponent(match[1]);
+	} catch {
+		return null;
+	}
+};
+
+//#endregion
 //#region src/utils/utils.ts
 const pause = (ms) => {
 	return new Promise((resolve) => setTimeout(resolve, ms));
@@ -294,25 +387,26 @@ const requestWithRetry = async (options) => {
 
 //#endregion
 //#region src/services/tags.ts
-const detailsCache = /* @__PURE__ */ new Map();
+const pendingDetails = /* @__PURE__ */ new Map();
 const getTagDetails = (tag) => {
-	const cached = detailsCache.get(tag);
-	if (cached) return cached;
-	const pending = request({
+	const pending = pendingDetails.get(tag);
+	if (pending) return pending;
+	const cached = getCachedLocalTagDetails(tag);
+	if (cached) return Promise.resolve(cached);
+	const requestDetails = request({
 		method: "GET",
 		url: `https://www.pixiv.net/ajax/tag/info?tag=${encodeURIComponent(tag)}&lang=zh`,
 		timeout: 1e4
 	}).then((response) => {
 		const data = response.response;
 		if (response.status !== 200 || data.error || !data.body) throw new Error(data.message || "标签详情加载失败");
+		cacheLocalTagDetails(tag, data.body);
 		return data.body;
-	}).catch((error) => {
-		detailsCache.delete(tag);
-		throw error;
+	}).finally(() => {
+		pendingDetails.delete(tag);
 	});
-	if (detailsCache.size >= 100) detailsCache.delete(detailsCache.keys().next().value);
-	detailsCache.set(tag, pending);
-	return pending;
+	pendingDetails.set(tag, requestDetails);
+	return requestDetails;
 };
 
 //#endregion
@@ -328,84 +422,168 @@ function debounce(func, delay = 100) {
 }
 
 //#endregion
-//#region src/utils/tags.ts
-const LOCAL_TAGS_KEY = "PIXIV_PREVIEWER_L_LOCAL_TAGS";
-const getLocalTagState = () => GM_getValue(LOCAL_TAGS_KEY, {
-	tags: [],
-	autoSort: false
-});
-const getSortedLocalTags = () => {
-	const { tags, autoSort } = getLocalTagState();
-	return autoSort ? tags.slice().sort((a, b) => b.visits - a.visits) : tags;
-};
-const addLocalTag = (tag, label) => {
-	const state = getLocalTagState();
-	if (state.tags.some((item) => item.tag === tag)) return;
-	state.tags.push({
-		tag,
-		label: label.trim(),
-		visits: 0
-	});
-	GM_setValue(LOCAL_TAGS_KEY, state);
-};
-const removeLocalTag = (tag) => {
-	const state = getLocalTagState();
-	state.tags = state.tags.filter((item) => item.tag !== tag);
-	GM_setValue(LOCAL_TAGS_KEY, state);
-};
-const renameLocalTag = (tag, label) => {
-	const state = getLocalTagState();
-	const item = state.tags.find((item) => item.tag === tag);
-	if (!item) return;
-	item.label = label.trim();
-	GM_setValue(LOCAL_TAGS_KEY, state);
-};
-const moveLocalTag = (tag, target) => {
-	const state = getLocalTagState();
-	if (state.autoSort) return;
-	const index = state.tags.findIndex((item) => item.tag === tag);
-	if (index < 0 || !Number.isInteger(target) || target < 0 || target >= state.tags.length || index === target) return;
-	const [item] = state.tags.splice(index, 1);
-	state.tags.splice(target, 0, item);
-	GM_setValue(LOCAL_TAGS_KEY, state);
-};
-const setLocalTagAutoSort = (autoSort) => {
-	GM_setValue(LOCAL_TAGS_KEY, {
-		...getLocalTagState(),
-		autoSort
-	});
-};
-const recordLocalTagVisit = (tag) => {
-	const state = getLocalTagState();
-	const item = state.tags.find((item) => item.tag === tag);
-	if (!item) return;
-	item.visits++;
-	GM_setValue(LOCAL_TAGS_KEY, state);
-};
-const getTagFromPath = (pathname) => {
-	const match = pathname.match(/^\/(?:en\/)?tags\/([^/]+)/);
-	if (!match) return null;
-	try {
-		return decodeURIComponent(match[1]);
-	} catch {
-		return null;
-	}
+//#region src/utils/tag-colors.ts
+const backgrounds = Object.values({
+	red: [
+		"#e7000b",
+		"#c10007",
+		"#9f0712"
+	],
+	orange: [
+		"#f54a00",
+		"#ca3500",
+		"#9f2d00"
+	],
+	amber: [
+		"#e17100",
+		"#bb4d00",
+		"#973c00"
+	],
+	yellow: [
+		"#d08700",
+		"#a65f00",
+		"#894b00"
+	],
+	lime: [
+		"#5ea500",
+		"#497d00",
+		"#3c6300"
+	],
+	green: [
+		"#00a63e",
+		"#008236",
+		"#016630"
+	],
+	emerald: [
+		"#009966",
+		"#007a55",
+		"#006045"
+	],
+	teal: [
+		"#009689",
+		"#00786f",
+		"#005f5a"
+	],
+	cyan: [
+		"#0092b8",
+		"#007595",
+		"#005f78"
+	],
+	sky: [
+		"#0084d1",
+		"#0069a8",
+		"#00598a"
+	],
+	blue: [
+		"#155dfc",
+		"#1447e6",
+		"#193cb8"
+	],
+	indigo: [
+		"#4f39f6",
+		"#432dd7",
+		"#372aac"
+	],
+	violet: [
+		"#7f22fe",
+		"#7008e7",
+		"#5d0ec0"
+	],
+	purple: [
+		"#9810fa",
+		"#8200db",
+		"#6e11b0"
+	],
+	fuchsia: [
+		"#c800de",
+		"#a800b7",
+		"#8a0194"
+	],
+	pink: [
+		"#e60076",
+		"#c6005c",
+		"#a3004c"
+	],
+	rose: [
+		"#ec003f",
+		"#c70036",
+		"#a50036"
+	],
+	slate: [
+		"#45556c",
+		"#314158",
+		"#1d293d"
+	],
+	gray: [
+		"#4a5565",
+		"#364153",
+		"#1e2939"
+	],
+	zinc: [
+		"#52525c",
+		"#3f3f47",
+		"#27272a"
+	],
+	neutral: [
+		"#525252",
+		"#404040",
+		"#262626"
+	],
+	stone: [
+		"#57534d",
+		"#44403b",
+		"#292524"
+	],
+	mauve: [
+		"#594c5b",
+		"#463947",
+		"#2a212c"
+	],
+	olive: [
+		"#5b5b4b",
+		"#474739",
+		"#2b2b22"
+	],
+	mist: [
+		"#4b585b",
+		"#394447",
+		"#22292b"
+	],
+	taupe: [
+		"#5b4f4b",
+		"#473c39",
+		"#2b2422"
+	]
+}).flat();
+const getLocalTagColor = (tag) => {
+	const characters = Array.from(tag);
+	const first = characters[0]?.codePointAt(0) ?? 0;
+	const last = characters.at(-1)?.codePointAt(0) ?? 0;
+	return backgrounds[(first * 31 + last) % backgrounds.length];
 };
 
 //#endregion
 //#region src/features/local-tags.ts
-const TAG_LINK_SELECTOR = "a[href*=\"/tags/\"]:not(nav > a):not(.gtm-new-work-tag-event-click):not(.gtm-new-work-translate-tag-event-click):not(.gtm-new-work-tag-thumbnail-event-click)";
+const TAG_LINK_SELECTOR = "a[href*=\"/tags/\"]:not(nav > a, .gtm-new-work-tag-event-click, .gtm-new-work-translate-tag-event-click, .gtm-new-work-tag-thumbnail-event-click, [data-ga4-label=\"tab_link\"], [data-ga4-label=\"suggest_chip\"], [data-ga4-label=\"delete_button\"], [data-ga4-label=\"submit_button\"])";
 const POPOVER_ID = "pp-local-tag-popover";
 const MANAGER_ID = "pp-local-tags-manager";
 const STRIP_CLASS = "pp-local-tags";
 const createButton = (label, onClick) => {
 	return $("<button>").attr("type", "button").text(label).css("height", "100%").on("click", onClick);
 };
+const createIconButton = (label, icon, onClick) => createButton(label, onClick).addClass("pp-tag-icon").attr({
+	title: label,
+	"aria-label": label
+}).html(icon).css("height", "32px");
 const createTagLink = ({ tag, label }) => {
+	const background = getLocalTagColor(tag);
 	const link = $("<a>").attr({
 		href: `/tags/${encodeURIComponent(tag)}`,
 		"data-label": label,
 		title: tag
+	}).css({
+		backgroundColor: background,
+		color: "#fff"
 	}).append($("<span>").text(label || tag));
 	if (label) link.append($("<small>").text(tag));
 	return link;
@@ -479,6 +657,13 @@ const loadLocalTags = () => {
     #${MANAGER_ID} button.pp-tag-danger:hover {
       background: var(--pp-tag-danger-hover); border-color: var(--pp-tag-danger-hover);
     }
+    #${MANAGER_ID} button.pp-tag-icon, .${STRIP_CLASS} button.pp-tag-icon {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 32px; flex-shrink: 0; padding: 6px;
+    }
+    #${MANAGER_ID} .pp-tag-icon svg, .${STRIP_CLASS} .pp-tag-icon svg {
+      width: 18px; height: 18px;
+    }
     #${POPOVER_ID} :focus-visible, #${MANAGER_ID} :focus-visible,
     .${STRIP_CLASS} :focus-visible { outline: 2px solid #0096fa; outline-offset: 2px; }
     #${MANAGER_ID} {
@@ -516,8 +701,8 @@ const loadLocalTags = () => {
     .${STRIP_CLASS} { display: inline-flex; align-items: center; gap: 8px; margin-right: 8px; flex-shrink: 0; }
     .${STRIP_CLASS} [data-tag-links] { display: inline-flex; gap: 8px; }
     .${STRIP_CLASS} a { display: inline-flex; flex-direction: column; justify-content: center; line-height: 1.35; }
-    .${STRIP_CLASS} a span { font-size: 14px; }
-    .${STRIP_CLASS} a small { font-size: 10px; color: var(--pp-tag-muted); }
+    .${STRIP_CLASS} a span { font-size: 14px; font-weight: bold; }
+    .${STRIP_CLASS} a small { font-size: 10px; color: inherit; }
     @media (prefers-color-scheme: dark) {
       #${POPOVER_ID}, #${MANAGER_ID}, .${STRIP_CLASS} {
         --pp-tag-bg: #222; --pp-tag-fg: #eee; --pp-tag-muted: #aaa;
@@ -739,11 +924,10 @@ const loadLocalTags = () => {
 				hidden: autoSort.prop("checked"),
 				disabled: index === tags.length - 1
 			});
-			const remove = createButton("删除", () => {
+			const remove = createIconButton(`删除 ${item.label || item.tag}`, trash_default, () => {
 				removeLocalTag(item.tag);
 				refresh();
-			});
-			remove.addClass("pp-tag-danger").attr("aria-label", `删除 ${item.label || item.tag}`);
+			}).addClass("pp-tag-danger");
 			form.append(input, save, up, down, remove);
 			row.append(rowHeading, form);
 			list.append(row);
@@ -770,9 +954,10 @@ const loadLocalTags = () => {
 			}));
 			return;
 		}
-		strip.append(createButton("本地标签管理", openManager));
+		const tags = getSortedLocalTags();
+		strip.append(tags.length >= 10 ? createIconButton("本地标签管理", settings_default, openManager) : createButton("本地标签管理", openManager));
 		const links = $("<span>").attr("data-tag-links", "");
-		links.append(...getSortedLocalTags().map(createTagLink));
+		links.append(...tags.map(createTagLink));
 		strip.append(links);
 	};
 	function refresh() {
@@ -2884,7 +3069,7 @@ const initializePixivPreviewer = () => {
 		g_settings = registerSettingsMenu();
 		if (g_settings.enableLocalTags) loadLocalTags();
 		iLog.i("Start to initialize Pixiv Previewer with global settings:", g_settings);
-		if (g_settings.version !== "1.5.0") ShowUpgradeMessage();
+		if (g_settings.version !== "1.5.1") ShowUpgradeMessage();
 		if (g_settings.enablePreview) loadIllustPreview(g_settings);
 		$.get(location.href, function(data) {
 			const matched = data.match(/token\\":\\"([a-z0-9]{32})/);
