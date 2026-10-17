@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             1.5.1-20261012
+// @version             1.5.2-20261017
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0
@@ -14,16 +14,17 @@
 // @grant               GM_registerMenuCommand
 // @grant               GM_unregisterMenuCommand
 // @grant               GM.xmlHttpRequest
+// @grant               unsafeWindow
 // @icon                https://t0.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&size=32&url=https://www.pixiv.net
 // @icon64              https://t0.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&size=64&url=https://www.pixiv.net
 // @require             https://update.greasyfork.org/scripts/515994/1478507/gh_2215_make_GM_xhr_more_parallel_again.js
 // @require             https://code.jquery.com/jquery-4.0.0.min.js
 // @require             https://code.jquery.com/jquery-migrate-4.0.2.min.js
-// @run-at              document-end
+// @run-at              document-start
 // ==/UserScript==
 //#region src/constants/index.ts
 /** 版本号，发生改变时将会弹窗 */
-const g_version = "1.5.1";
+const g_version = "1.5.2";
 /** 默认设置 */
 const g_defaultSettings = {
 	enablePreview: true,
@@ -240,6 +241,16 @@ const getLocalTagState = () => GM_getValue(LOCAL_TAGS_KEY, {
 	tags: [],
 	autoSort: false
 });
+const getLocalTag = (tag) => getLocalTagState().tags.find((item) => item.tag === tag);
+const hasLocalTag = (tag) => getLocalTagState().tags.some((item) => item.tag === tag);
+const recordLocalTagTotal = (tag, total) => {
+	if (!Number.isFinite(total) || total < 0) return;
+	const state = getLocalTagState();
+	const item = state.tags.find((item) => item.tag === tag);
+	if (!item || item.lastTotal === total) return;
+	item.lastTotal = total;
+	GM_setValue(LOCAL_TAGS_KEY, state);
+};
 const getCachedLocalTagDetails = (tag) => {
 	const state = getLocalTagState();
 	const item = state.tags.find((item) => item.tag === tag);
@@ -388,6 +399,47 @@ const requestWithRetry = async (options) => {
 //#endregion
 //#region src/services/tags.ts
 const pendingDetails = /* @__PURE__ */ new Map();
+const pendingTotals = /* @__PURE__ */ new Map();
+/** 从标签搜索响应中提取插画漫画作品总数 */
+const getIllustMangaTotal = (body) => {
+	const searchBody = body;
+	const illustMangaTotal = searchBody?.illustManga?.total;
+	if (typeof illustMangaTotal === "number") return illustMangaTotal;
+	if (!searchBody?.illust && !searchBody?.manga) return void 0;
+	const illustTotal = searchBody.illust?.total ?? 0;
+	const mangaTotal = searchBody.manga?.total ?? 0;
+	if (typeof illustTotal === "number" && typeof mangaTotal === "number") return illustTotal + mangaTotal;
+};
+/** 如果标签在本地列表中，记录其插画漫画作品总数 */
+const recordTagTotal = (tag, body) => {
+	if (!hasLocalTag(tag)) return;
+	const total = getIllustMangaTotal(body);
+	if (total !== void 0) recordLocalTagTotal(tag, total);
+};
+const requestTagTopBody = async (tag) => {
+	const response = await request({
+		method: "GET",
+		url: `/ajax/search/top/${encodeURIComponent(tag)}?lang=zh`,
+		timeout: 1e4
+	});
+	const data = response.response;
+	if (response.status !== 200 || data.error || !data.body) throw new Error(data.message || "标签信息加载失败");
+	recordTagTotal(tag, data.body);
+	return data.body;
+};
+/** 获取标签的中文翻译，未找到翻译或翻译与标签相同时返回空字符串 */
+const getTagTranslation = async (tag) => {
+	const translation = (await requestTagTopBody(tag)).tagTranslation?.[tag]?.zh?.trim() ?? "";
+	return translation === tag ? "" : translation;
+};
+/** 获取标签当前的插画漫画作品总数，同时记录为上次访问总数 */
+const getTagCurrentTotal = (tag) => {
+	const pending = pendingTotals.get(tag);
+	if (pending) return pending;
+	const loading = requestTagTopBody(tag).then(getIllustMangaTotal).finally(() => pendingTotals.delete(tag));
+	pendingTotals.set(tag, loading);
+	return loading;
+};
 const getTagDetails = (tag) => {
 	const pending = pendingDetails.get(tag);
 	if (pending) return pending;
@@ -395,7 +447,7 @@ const getTagDetails = (tag) => {
 	if (cached) return Promise.resolve(cached);
 	const requestDetails = request({
 		method: "GET",
-		url: `https://www.pixiv.net/ajax/tag/info?tag=${encodeURIComponent(tag)}&lang=zh`,
+		url: `/ajax/tag/info?tag=${encodeURIComponent(tag)}&lang=zh`,
 		timeout: 1e4
 	}).then((response) => {
 		const data = response.response;
@@ -579,7 +631,6 @@ const createTagLink = ({ tag, label }) => {
 	const background = getLocalTagColor(tag);
 	const link = $("<a>").attr({
 		href: `/tags/${encodeURIComponent(tag)}`,
-		"data-label": label,
 		title: tag
 	}).css({
 		backgroundColor: background,
@@ -588,24 +639,64 @@ const createTagLink = ({ tag, label }) => {
 	if (label) link.append($("<small>").text(tag));
 	return link;
 };
-const getTagLabel = (tag, text) => {
-	let label = text.trim().replace(/^#/, "");
-	const tagSuffix = `#${tag}`;
-	if (label.endsWith(tagSuffix)) label = label.slice(0, -tagSuffix.length).trim();
-	return label === tag ? "" : label;
+const getTagFromSearchUrl = (url) => {
+	try {
+		const parsed = new URL(url, location.href);
+		if (parsed.origin !== location.origin) return null;
+		const match = parsed.pathname.match(/^\/ajax\/search\/top\/([^/]+)\/?$/);
+		if (!match) return null;
+		return decodeURIComponent(match[1]);
+	} catch {
+		return null;
+	}
 };
-const getPageTag = () => {
-	const header = $("[data-ga4-label=\"header\"]").first();
-	const entityId = header.attr("data-ga4-entity-id");
-	if (!entityId?.startsWith("tag/")) return null;
-	const tag = getTagFromPath(`/tags/${entityId.slice(4)}`);
-	if (!tag) return null;
-	const rawTag = header.find("span").filter((_, element) => $(element).text().trim() === tag).first();
-	if (!rawTag.length) return null;
-	return {
-		tag,
-		label: rawTag.parent().next().text().trim()
-	};
+const recordTagSearchTotal = (tag, data) => {
+	const response = data;
+	if (!response || response.error) return;
+	recordTagTotal(tag, response.body);
+};
+/** 拦截页面自身的标签 top 搜索请求，记录访问标签页时的作品总数 */
+const interceptTagSearchRequests = () => {
+	try {
+		const pageFetch = unsafeWindow.fetch.bind(unsafeWindow);
+		unsafeWindow.fetch = function(input, init) {
+			const url = typeof input === "string" ? input : "url" in input ? input.url : input.href;
+			const response = pageFetch(input, init);
+			const tag = getTagFromSearchUrl(url);
+			if (tag) response.then((result) => {
+				if (!result.ok) return void 0;
+				return result.clone().json();
+			}).then((data) => {
+				if (data) recordTagSearchTotal(tag, data);
+			}).catch(() => {});
+			return response;
+		};
+	} catch (error) {
+		iLog.w("Failed to intercept fetch requests for local tags:", error);
+	}
+	try {
+		const XHR = unsafeWindow.XMLHttpRequest;
+		const requestUrls = /* @__PURE__ */ new WeakMap();
+		const originalOpen = XHR.prototype.open;
+		const originalSend = XHR.prototype.send;
+		XHR.prototype.open = function(method, url, async, username, password) {
+			requestUrls.set(this, String(url));
+			if (async === void 0) return originalOpen.call(this, method, url);
+			return originalOpen.call(this, method, url, async, username, password);
+		};
+		XHR.prototype.send = function(body) {
+			const tag = getTagFromSearchUrl(requestUrls.get(this) ?? "");
+			if (tag) this.addEventListener("load", () => {
+				if (this.status < 200 || this.status >= 300) return;
+				try {
+					recordTagSearchTotal(tag, this.responseType === "json" ? this.response : JSON.parse(this.responseText));
+				} catch {}
+			});
+			return originalSend.call(this, body);
+		};
+	} catch (error) {
+		iLog.w("Failed to intercept XHR requests for local tags:", error);
+	}
 };
 const getTagLink = (target) => {
 	if (!(target instanceof Element)) return null;
@@ -643,6 +734,8 @@ const loadLocalTags = () => {
     #${POPOVER_ID} .pp-tag-content { padding: 16px; }
     #${POPOVER_ID} h2, #${MANAGER_ID} h2 { font-size: 18px; margin: 0 0 12px; overflow-wrap: anywhere; }
     #${POPOVER_ID} p { margin: 12px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+    #${POPOVER_ID} .pp-tag-stats { color: var(--pp-tag-muted); font-size: 13px; }
+    #${POPOVER_ID} .pp-tag-stats[hidden] { display: none; }
     #${POPOVER_ID} button, #${MANAGER_ID} button, .${STRIP_CLASS} button,
     .${STRIP_CLASS} a {
       border: 1px solid var(--pp-tag-border); border-radius: 6px;
@@ -725,22 +818,39 @@ const loadLocalTags = () => {
 	const content = $("<div>").addClass("pp-tag-content");
 	const title = $("<h2>");
 	const abstract = $("<p>").attr("aria-live", "polite");
+	const stats = $("<p>").addClass("pp-tag-stats").attr("aria-live", "polite").prop("hidden", true);
 	thumbnail.on("error", () => {
 		thumbnail.prop("hidden", true);
 		preview.removeAttr("href");
 	});
 	let activeLink = null;
 	let activeTag = null;
-	let activeLabel = "";
+	let addingTag = null;
 	let showTimer;
 	let hideTimer;
 	let scrollParents = $();
+	const addTagFromApi = (tag, button) => {
+		if (addingTag) return;
+		addingTag = tag;
+		button?.prop("disabled", true);
+		button?.text("正在添加…");
+		updateAction();
+		getTagTranslation(tag).then((label) => {
+			addLocalTag(tag, label);
+			refresh();
+		}).finally(() => {
+			addingTag = null;
+			button?.prop("disabled", false);
+			updateAction();
+		}).catch((error) => {
+			if (button !== action || activeTag === tag) button?.text("添加失败，点击重试");
+			iLog.w("Failed to add local tag:", error);
+		});
+	};
 	const action = createButton("添加到本地标签", () => {
-		if (!activeTag) return;
-		addLocalTag(activeTag, activeLabel);
-		refresh();
+		if (activeTag) addTagFromApi(activeTag, action);
 	});
-	content.append(title, abstract, action);
+	content.append(title, abstract, stats, action);
 	popover.append(preview, content);
 	popover.appendTo("body");
 	const manager = $("<dialog>").attr({
@@ -758,7 +868,8 @@ const loadLocalTags = () => {
 		activeTag = null;
 	};
 	const updateAction = () => {
-		action.prop("hidden", !activeTag || getLocalTagState().tags.some((item) => item.tag === activeTag));
+		const pending = !!activeTag && addingTag === activeTag;
+		action.prop("hidden", !activeTag || hasLocalTag(activeTag)).prop("disabled", pending).text(pending ? "正在添加…" : "添加到本地标签");
 	};
 	const positionPopover = () => {
 		if (!activeLink || popover.prop("hidden")) return;
@@ -776,14 +887,30 @@ const loadLocalTags = () => {
 			top
 		});
 	};
+	const updateStats = async (tag, link) => {
+		if (!hasLocalTag(tag)) return;
+		const lastTotal = getLocalTag(tag)?.lastTotal;
+		stats.text(`插画漫画作品总数：${lastTotal ?? "-"} 件`);
+		stats.prop("hidden", false);
+		try {
+			const total = await getTagCurrentTotal(tag);
+			if (total === void 0 || activeLink !== link || activeTag !== tag) return;
+			if (lastTotal === void 0) stats.text(`插画漫画作品总数：${total} 件`);
+			else {
+				const added = total - lastTotal;
+				stats.text(added >= 0 ? `插画漫画作品总数：${total} 件（新增 ${added} 件）` : `插画漫画作品总数：${total} 件（减少 ${-added} 件）`);
+			}
+			positionPopover();
+		} catch {}
+	};
 	const showPopover = async (link) => {
 		const tag = getTagFromPath(new URL($(link).prop("href")).pathname);
 		if (!tag || !$.contains($("html").get(0), link) || manager.prop("open")) return;
 		activeLink = link;
 		activeTag = tag;
-		activeLabel = $(link).attr("data-label") ?? getTagLabel(tag, $(link).text());
 		title.text(tag);
 		abstract.text("正在加载标签详情…");
+		stats.prop("hidden", true).text("");
 		thumbnail.prop("hidden", true).removeAttr("src");
 		preview.removeAttr("href");
 		popover.prop("hidden", false);
@@ -792,6 +919,7 @@ const loadLocalTags = () => {
 		scrollParents.on("scroll.ppLocalTags", hidePopover);
 		updateAction();
 		positionPopover();
+		updateStats(tag, link);
 		try {
 			const details = await getTagDetails(tag);
 			if (activeLink !== link || activeTag !== tag) return;
@@ -945,13 +1073,11 @@ const loadLocalTags = () => {
 		strip.empty();
 		const tag = getTagFromPath(location.pathname);
 		if (tag) {
-			const saved = getLocalTagState().tags.some((item) => item.tag === tag);
-			strip.append(saved ? createButton("本地标签管理", openManager) : createButton("添加到本地标签", () => {
-				const pageTag = getPageTag();
-				if (!pageTag) return;
-				addLocalTag(pageTag.tag, pageTag.label);
-				refresh();
-			}));
+			if (hasLocalTag(tag)) strip.append(createButton("本地标签管理", openManager));
+			else {
+				const addButton = createButton("添加到本地标签", () => addTagFromApi(tag, addButton));
+				strip.append(addButton);
+			}
 			return;
 		}
 		const tags = getSortedLocalTags();
@@ -3069,7 +3195,7 @@ const initializePixivPreviewer = () => {
 		g_settings = registerSettingsMenu();
 		if (g_settings.enableLocalTags) loadLocalTags();
 		iLog.i("Start to initialize Pixiv Previewer with global settings:", g_settings);
-		if (g_settings.version !== "1.5.1") ShowUpgradeMessage();
+		if (g_settings.version !== "1.5.2") ShowUpgradeMessage();
 		if (g_settings.enablePreview) loadIllustPreview(g_settings);
 		$.get(location.href, function(data) {
 			const matched = data.match(/token\\":\\"([a-z0-9]{32})/);
@@ -3152,6 +3278,7 @@ const initializePixivPreviewer = () => {
 		DoLog(1, "An error occurred while initializing:", e);
 	}
 };
+if (getSettings().enableLocalTags) interceptTagSearchRequests();
 window.addEventListener("DOMContentLoaded", () => {
 	setTimeout(initializePixivPreviewer, 1e3);
 });
