@@ -9,6 +9,8 @@ export interface LocalTag {
   /** 显示标签 TAG_LABEL，留空使用原始标签 */
   label: string;
   visits: number;
+  /** 上次访问标签页时的插画漫画作品总数 */
+  lastTotal?: number;
   metadata?: {
     details: TagDetails;
     cachedAt: number;
@@ -22,6 +24,21 @@ interface LocalTagState {
 
 export const getLocalTagState = (): LocalTagState =>
   GM_getValue(LOCAL_TAGS_KEY, { tags: [], autoSort: false });
+
+export const getLocalTag = (tag: string) =>
+  getLocalTagState().tags.find((item) => item.tag === tag);
+
+export const hasLocalTag = (tag: string) =>
+  getLocalTagState().tags.some((item) => item.tag === tag);
+
+export const recordLocalTagTotal = (tag: string, total: number) => {
+  if (!Number.isFinite(total) || total < 0) return;
+  const state = getLocalTagState();
+  const item = state.tags.find((item) => item.tag === tag);
+  if (!item || item.lastTotal === total) return;
+  item.lastTotal = total;
+  GM_setValue(LOCAL_TAGS_KEY, state);
+};
 
 export const getCachedLocalTagDetails = (tag: string) => {
   const state = getLocalTagState();

@@ -11,7 +11,10 @@ import {
 import { deleteCachedIllustrationDetails } from "./databases";
 import { IllustSortOrder, LogLevel, PageType } from "./enums";
 import { hideFavorites } from "./features/hide-favorites";
-import { loadLocalTags } from "./features/local-tags";
+import {
+  interceptTagSearchRequests,
+  loadLocalTags,
+} from "./features/local-tags";
 import { loadIllustPreview } from "./features/preview";
 import { loadIllustSort } from "./features/sort";
 import Texts from "./i18n";
@@ -496,6 +499,8 @@ const initializePixivPreviewer = () => {
     DoLog(LogLevel.Error, "An error occurred while initializing:", e);
   }
 };
+
+if (getSettings().enableLocalTags) interceptTagSearchRequests();
 
 window.addEventListener("DOMContentLoaded", () => {
   setTimeout(initializePixivPreviewer, 1000);

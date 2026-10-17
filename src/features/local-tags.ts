@@ -1,13 +1,21 @@
 import settingsIcon from "../icons/settings.svg";
 import trashIcon from "../icons/trash.svg";
-import { getTagDetails } from "../services/tags";
+import {
+  getTagCurrentTotal,
+  getTagDetails,
+  getTagTranslation,
+  recordTagTotal,
+} from "../services/tags";
 import debounce from "../utils/debounce";
+import { iLog } from "../utils/logger";
 import { getLocalTagColor } from "../utils/tag-colors";
 import {
   addLocalTag,
+  getLocalTag,
   getLocalTagState,
   getSortedLocalTags,
   getTagFromPath,
+  hasLocalTag,
   LOCAL_TAGS_KEY,
   type LocalTag,
   moveLocalTag,
@@ -43,7 +51,6 @@ const createTagLink = ({ tag, label }: Pick<LocalTag, "tag" | "label">) => {
   const link = $("<a>")
     .attr({
       href: `/tags/${encodeURIComponent(tag)}`,
-      "data-label": label,
       title: tag,
     })
     .css({
@@ -55,27 +62,103 @@ const createTagLink = ({ tag, label }: Pick<LocalTag, "tag" | "label">) => {
   return link;
 };
 
-const getTagLabel = (tag: string, text: string) => {
-  let label = text.trim().replace(/^#/, "");
-  const tagSuffix = `#${tag}`;
-  if (label.endsWith(tagSuffix)) {
-    label = label.slice(0, -tagSuffix.length).trim();
+const getTagFromSearchUrl = (url: string) => {
+  try {
+    const parsed = new URL(url, location.href);
+    if (parsed.origin !== location.origin) return null;
+    const match = parsed.pathname.match(/^\/ajax\/search\/top\/([^/]+)\/?$/);
+    if (!match) return null;
+    return decodeURIComponent(match[1]);
+  } catch {
+    return null;
   }
-  return label === tag ? "" : label;
 };
 
-const getPageTag = () => {
-  const header = $('[data-ga4-label="header"]').first();
-  const entityId = header.attr("data-ga4-entity-id");
-  if (!entityId?.startsWith("tag/")) return null;
-  const tag = getTagFromPath(`/tags/${entityId.slice(4)}`);
-  if (!tag) return null;
-  const rawTag = header
-    .find("span")
-    .filter((_, element) => $(element).text().trim() === tag)
-    .first();
-  if (!rawTag.length) return null;
-  return { tag, label: rawTag.parent().next().text().trim() };
+const recordTagSearchTotal = (tag: string, data: unknown) => {
+  const response = data as { error?: boolean; body?: unknown } | null;
+  if (!response || response.error) return;
+  recordTagTotal(tag, response.body);
+};
+
+/** 拦截页面自身的标签 top 搜索请求，记录访问标签页时的作品总数 */
+export const interceptTagSearchRequests = () => {
+  try {
+    const pageFetch = unsafeWindow.fetch.bind(unsafeWindow);
+    unsafeWindow.fetch = function (input, init) {
+      const url =
+        typeof input === "string"
+          ? input
+          : "url" in input
+            ? input.url
+            : input.href;
+      const response = pageFetch(input, init);
+
+      const tag = getTagFromSearchUrl(url);
+      if (tag) {
+        response
+          .then((result) => {
+            if (!result.ok) return undefined;
+            return result.clone().json();
+          })
+          .then((data) => {
+            if (data) recordTagSearchTotal(tag, data);
+          })
+          .catch(() => {});
+      }
+
+      return response;
+    };
+  } catch (error) {
+    iLog.w("Failed to intercept fetch requests for local tags:", error);
+  }
+
+  try {
+    const XHR = unsafeWindow.XMLHttpRequest;
+    const requestUrls = new WeakMap<XMLHttpRequest, string>();
+    const originalOpen = XHR.prototype.open as (
+      this: XMLHttpRequest,
+      method: string,
+      url: string | URL,
+      async?: boolean,
+      username?: string | null,
+      password?: string | null
+    ) => void;
+    const originalSend = XHR.prototype.send;
+    XHR.prototype.open = function (
+      method: string,
+      url: string | URL,
+      async?: boolean,
+      username?: string | null,
+      password?: string | null
+    ) {
+      requestUrls.set(this, String(url));
+      if (async === undefined) return originalOpen.call(this, method, url);
+      return originalOpen.call(this, method, url, async, username, password);
+    };
+    XHR.prototype.send = function (
+      body?: Document | XMLHttpRequestBodyInit | null
+    ) {
+      const tag = getTagFromSearchUrl(requestUrls.get(this) ?? "");
+      if (tag) {
+        this.addEventListener("load", () => {
+          if (this.status < 200 || this.status >= 300) return;
+          try {
+            recordTagSearchTotal(
+              tag,
+              this.responseType === "json"
+                ? this.response
+                : JSON.parse(this.responseText)
+            );
+          } catch {
+            // 忽略非 JSON 响应
+          }
+        });
+      }
+      return originalSend.call(this, body);
+    };
+  } catch (error) {
+    iLog.w("Failed to intercept XHR requests for local tags:", error);
+  }
 };
 
 const getTagLink = (target: EventTarget | null) => {
@@ -118,6 +201,8 @@ export const loadLocalTags = () => {
     #${POPOVER_ID} .pp-tag-content { padding: 16px; }
     #${POPOVER_ID} h2, #${MANAGER_ID} h2 { font-size: 18px; margin: 0 0 12px; overflow-wrap: anywhere; }
     #${POPOVER_ID} p { margin: 12px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+    #${POPOVER_ID} .pp-tag-stats { color: var(--pp-tag-muted); font-size: 13px; }
+    #${POPOVER_ID} .pp-tag-stats[hidden] { display: none; }
     #${POPOVER_ID} button, #${MANAGER_ID} button, .${STRIP_CLASS} button,
     .${STRIP_CLASS} a {
       border: 1px solid var(--pp-tag-border); border-radius: 6px;
@@ -201,23 +286,48 @@ export const loadLocalTags = () => {
   const content = $("<div>").addClass("pp-tag-content");
   const title = $("<h2>");
   const abstract = $("<p>").attr("aria-live", "polite");
+  const stats = $("<p>")
+    .addClass("pp-tag-stats")
+    .attr("aria-live", "polite")
+    .prop("hidden", true);
   thumbnail.on("error", () => {
     thumbnail.prop("hidden", true);
     preview.removeAttr("href");
   });
   let activeLink: HTMLAnchorElement | null = null;
   let activeTag: string | null = null;
-  let activeLabel = "";
+  let addingTag: string | null = null;
   let showTimer: ReturnType<typeof setTimeout>;
   let hideTimer: ReturnType<typeof setTimeout>;
   let scrollParents = $<HTMLElement>();
 
+  const addTagFromApi = (tag: string, button?: JQuery<HTMLElement>) => {
+    if (addingTag) return;
+    addingTag = tag;
+    button?.prop("disabled", true);
+    button?.text("正在添加…");
+    updateAction();
+    void getTagTranslation(tag)
+      .then((label) => {
+        addLocalTag(tag, label);
+        refresh();
+      })
+      .finally(() => {
+        addingTag = null;
+        button?.prop("disabled", false);
+        updateAction();
+      })
+      .catch((error) => {
+        if (button !== action || activeTag === tag)
+          button?.text("添加失败，点击重试");
+        iLog.w("Failed to add local tag:", error);
+      });
+  };
+
   const action = createButton("添加到本地标签", () => {
-    if (!activeTag) return;
-    addLocalTag(activeTag, activeLabel);
-    refresh();
+    if (activeTag) addTagFromApi(activeTag, action);
   });
-  content.append(title, abstract, action);
+  content.append(title, abstract, stats, action);
   popover.append(preview, content);
   popover.appendTo("body");
 
@@ -240,11 +350,11 @@ export const loadLocalTags = () => {
   };
 
   const updateAction = () => {
-    action.prop(
-      "hidden",
-      !activeTag ||
-        getLocalTagState().tags.some((item) => item.tag === activeTag)
-    );
+    const pending = !!activeTag && addingTag === activeTag;
+    action
+      .prop("hidden", !activeTag || hasLocalTag(activeTag))
+      .prop("disabled", pending)
+      .text(pending ? "正在添加…" : "添加到本地标签");
   };
 
   const positionPopover = () => {
@@ -269,16 +379,43 @@ export const loadLocalTags = () => {
         : Math.max(12, linkTop - height - 8);
     popover.css({ left, top });
   };
+  const updateStats = async (tag: string, link: HTMLAnchorElement) => {
+    if (!hasLocalTag(tag)) return;
+
+    // 请求本身会更新 lastTotal，先保存旧值用于计算新增作品数。
+    const lastTotal = getLocalTag(tag)?.lastTotal;
+    stats.text(`插画漫画作品总数：${lastTotal ?? "-"} 件`);
+    stats.prop("hidden", false);
+
+    try {
+      const total = await getTagCurrentTotal(tag);
+      if (total === undefined || activeLink !== link || activeTag !== tag)
+        return;
+      if (lastTotal === undefined) {
+        stats.text(`插画漫画作品总数：${total} 件`);
+      } else {
+        const added = total - lastTotal;
+        stats.text(
+          added >= 0
+            ? `插画漫画作品总数：${total} 件（新增 ${added} 件）`
+            : `插画漫画作品总数：${total} 件（减少 ${-added} 件）`
+        );
+      }
+      positionPopover();
+    } catch {
+      // 统计信息加载失败时不影响标签详情展示。
+    }
+  };
+
   const showPopover = async (link: HTMLAnchorElement) => {
     const tag = getTagFromPath(new URL($(link).prop("href")).pathname);
     if (!tag || !$.contains($("html").get(0)!, link) || manager.prop("open"))
       return;
     activeLink = link;
     activeTag = tag;
-    activeLabel =
-      $(link).attr("data-label") ?? getTagLabel(tag, $(link).text());
     title.text(tag);
     abstract.text("正在加载标签详情…");
+    stats.prop("hidden", true).text("");
     thumbnail.prop("hidden", true).removeAttr("src");
     preview.removeAttr("href");
     popover.prop("hidden", false);
@@ -288,6 +425,7 @@ export const loadLocalTags = () => {
     scrollParents.on("scroll.ppLocalTags", hidePopover);
     updateAction();
     positionPopover();
+    void updateStats(tag, link);
     try {
       const details = await getTagDetails(tag);
       // 旧请求完成时，不能覆盖正在悬浮的另一个标签。
@@ -495,17 +633,14 @@ export const loadLocalTags = () => {
     strip.empty();
     const tag = getTagFromPath(location.pathname);
     if (tag) {
-      const saved = getLocalTagState().tags.some((item) => item.tag === tag);
-      strip.append(
-        saved
-          ? createButton("本地标签管理", openManager)
-          : createButton("添加到本地标签", () => {
-              const pageTag = getPageTag();
-              if (!pageTag) return;
-              addLocalTag(pageTag.tag, pageTag.label);
-              refresh();
-            })
-      );
+      if (hasLocalTag(tag)) {
+        strip.append(createButton("本地标签管理", openManager));
+      } else {
+        const addButton = createButton("添加到本地标签", () =>
+          addTagFromApi(tag, addButton)
+        );
+        strip.append(addButton);
+      }
       return;
     }
     const tags = getSortedLocalTags();

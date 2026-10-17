@@ -37,12 +37,13 @@ export default defineConfig({
 // @grant               GM_registerMenuCommand
 // @grant               GM_unregisterMenuCommand
 // @grant               GM.xmlHttpRequest
+// @grant               unsafeWindow
 // @icon                https://t0.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&size=32&url=https://www.pixiv.net
 // @icon64              https://t0.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&size=64&url=https://www.pixiv.net
 // @require             https://update.greasyfork.org/scripts/515994/1478507/gh_2215_make_GM_xhr_more_parallel_again.js
 // @require             https://code.jquery.com/jquery-4.0.0.min.js
 // @require             https://code.jquery.com/jquery-migrate-4.0.2.min.js
-// @run-at              document-end
+// @run-at              document-start
 // ==/UserScript==`,
   },
   format: "cjs",
