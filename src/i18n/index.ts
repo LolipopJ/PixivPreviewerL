@@ -3,28 +3,19 @@ const Texts = {
   upgrade_body: `<div>
   <p style="line-height: 1.6;">
     本脚本基于
-    <a
-      style="color: skyblue"
-      href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer"
-      target="_blank"
-      >Pixiv Previewer</a
-    >
+    <a style="color: skyblue;" href="https://greasyfork.org/scripts/30766-pixiv-previewer" target="_blank">Pixiv
+      Previewer</a>
     二次开发，旨在满足开发者自己需要的能力。如果您有不错的想法或建议，请前往原脚本的
-    <a
-      style="color: skyblue"
-      href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer/feedback"
-      target="_blank"
-      >Greasy Fork 反馈页面</a
-    >或开启一个新的
-    <a
-      style="color: skyblue"
-      href="https://github.com/Ocrosoft/PixivPreviewer/issues"
-      target="_blank"
-      >Github 议题</a
-    >！
+    <a style="color: skyblue;" href="https://greasyfork.org/scripts/30766-pixiv-previewer/feedback"
+      target="_blank">Greasy Fork 反馈页面</a>或开启一个新的
+    <a style="color: skyblue;" href="https://github.com/Ocrosoft/PixivPreviewer/issues" target="_blank">Github 议题</a>！
   </p>
-</div>
-`,
+  <p style="line-height: 1.6;">
+    如需查看功能更新记录，可前往此脚本的
+    <a style="color: skyblue;" href="https://greasyfork.org/scripts/533844-pixiv-previewer-l/versions" target="_blank"
+      rel="noopener noreferrer">版本历史页面</a>。
+  </p>
+</div>`,
   setting_language: "语言",
   setting_preview: "预览",
   setting_animePreview: "动图预览",
