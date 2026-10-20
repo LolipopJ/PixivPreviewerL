@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             1.5.2-20261017
+// @version             1.6.0-20261020
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0
@@ -24,7 +24,7 @@
 // ==/UserScript==
 //#region src/constants/index.ts
 /** 版本号，发生改变时将会弹窗 */
-const g_version = "1.5.2";
+const g_version = "1.6.0";
 /** 默认设置 */
 const g_defaultSettings = {
 	enablePreview: true,
@@ -1742,6 +1742,7 @@ function base64ArrayBuffer(arrayBuffer, off, byteLength) {
 
 //#endregion
 //#region src/features/preview.ts
+const ONE_HANDED_MODE_HOLD_MS = 500;
 let isInitialized$1 = false;
 const loadIllustPreview = (options) => {
 	if (isInitialized$1) return;
@@ -1777,8 +1778,8 @@ const loadIllustPreview = (options) => {
 	* 获取作品访问链接并在前端显示预览
 	* @param target 作品的元数据
 	*/
+	const previewedIllust = new PreviewedIllust();
 	const previewIllust = (() => {
-		const previewedIllust = new PreviewedIllust();
 		let currentHoveredIllustId = "";
 		let getIllustPagesRequest = null;
 		const getIllustPagesCache = createLRUCache(100);
@@ -1911,6 +1912,7 @@ const loadIllustPreview = (options) => {
 		};
 	})();
 	const onMouseOverIllust = (target) => {
+		if (previewedIllust.oneHandedMode) return;
 		const { illustId, previewPage, illustType, illustLinkDom } = getIllustMetadata(target) || {};
 		if (illustId === void 0 || illustType === void 0) return;
 		if (linkBlank && illustLinkDom) {
@@ -1922,6 +1924,7 @@ const loadIllustPreview = (options) => {
 			illustLinkDom.on("click", stopEventPropagation);
 		}
 		const previewIllustTimeout = setTimeout(() => {
+			if (previewedIllust.oneHandedMode) return;
 			previewIllust({
 				target,
 				illustId,
@@ -1946,7 +1949,7 @@ const loadIllustPreview = (options) => {
 		const debouncedOnMouseOverIllust = debounce(onMouseOverIllust, mouseHoverDebounceWait);
 		let prevTarget = null;
 		return (mouseMoveEvent) => {
-			if (mouseMoveEvent.ctrlKey || mouseMoveEvent.metaKey) return;
+			if (previewedIllust.oneHandedMode || mouseMoveEvent.ctrlKey || mouseMoveEvent.metaKey) return;
 			if (mouseMoveEvent.target === prevTarget) return;
 			prevTarget = mouseMoveEvent.target;
 			const currentTarget = $(mouseMoveEvent.target);
@@ -1960,6 +1963,9 @@ const loadIllustPreview = (options) => {
 @keyframes pp-spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
+    }
+    @keyframes pp-one-handed-progress {
+      to { stroke-dashoffset: 0; }
 }`);
 		styleRules.append(`
 ._layout-thumbnail img + div {
@@ -1992,6 +1998,10 @@ const INTERACTIVE_BADGE_CSS = {
 	cursor: "pointer"
 };
 var PreviewedIllust = class {
+	oneHandedMode = false;
+	#longPressTimeout = null;
+	#longPressProgress = $();
+	#suppressLongPressClick = false;
 	/** 当前正在预览的作品的 ID */
 	illustId = "";
 	/** 当前正在预览的作品的详细信息 */
@@ -2040,6 +2050,9 @@ var PreviewedIllust = class {
 	}
 	/** 初始化预览组件 */
 	reset() {
+		this.oneHandedMode = false;
+		this.#suppressLongPressClick = false;
+		this.cancelLongPress();
 		this.illustId = "";
 		this.illustDetails = null;
 		this.illustElement = $();
@@ -2120,16 +2133,14 @@ var PreviewedIllust = class {
 		this.downloadOriginalElement.on("click", this.onDownloadImage);
 		$(document).on("wheel", this.onPreviewImageMouseWheel);
 		$(document).on("keydown", this.onPreviewImageKeyDown);
-		$(document).on("mousemove", this.onMouseMove);
-		window.addEventListener("wheel", this.preventPageZoom, { passive: false });
+		this.bindPreviewMouseEvents();
 	}
 	unbindPreviewImageEvents() {
 		this.previewImageElement.off();
 		this.downloadOriginalElement.off();
 		$(document).off("wheel", this.onPreviewImageMouseWheel);
 		$(document).off("keydown", this.onPreviewImageKeyDown);
-		$(document).off("mousemove", this.onMouseMove);
-		window.removeEventListener("wheel", this.preventPageZoom);
+		this.unbindPreviewMouseEvents();
 	}
 	/** 显示 pageIndex 指向的图片 */
 	updatePreviewImage(page = this.currentPage) {
@@ -2189,14 +2200,14 @@ var PreviewedIllust = class {
 		this.nextPage();
 	};
 	onPreviewImageMouseWheel = (mouseWheelEvent) => {
-		if (mouseWheelEvent.ctrlKey || mouseWheelEvent.metaKey) {
+		if (this.oneHandedMode || mouseWheelEvent.ctrlKey || mouseWheelEvent.metaKey) {
 			mouseWheelEvent.preventDefault();
 			if (mouseWheelEvent.originalEvent.deltaY > 0) this.nextPage();
 			else this.prevPage();
 		}
 	};
 	onPreviewImageKeyDown = (keyDownEvent) => {
-		if (keyDownEvent.ctrlKey || keyDownEvent.metaKey) {
+		if (this.oneHandedMode || keyDownEvent.ctrlKey || keyDownEvent.metaKey) {
 			keyDownEvent.preventDefault();
 			switch (keyDownEvent.key) {
 				case "ArrowUp":
@@ -2284,13 +2295,11 @@ var PreviewedIllust = class {
 	}
 	bindUgoiraPreviewEvents() {
 		this.#currentUgoiraPlayer?.on("frameLoaded", this.onUgoiraFrameLoaded);
-		$(document).on("mousemove", this.onMouseMove);
-		window.addEventListener("wheel", this.preventPageZoom, { passive: false });
+		this.bindPreviewMouseEvents();
 	}
 	unbindUgoiraPreviewEvents() {
 		this.#currentUgoiraPlayer?.off("frameLoaded");
-		$(document).off("mousemove", this.onMouseMove);
-		window.removeEventListener("wheel", this.preventPageZoom);
+		this.unbindPreviewMouseEvents();
 	}
 	onUgoiraFrameLoaded = (frame) => {
 		if (frame !== 0 || !this.#currentUgoiraPlayer) return;
@@ -2354,16 +2363,88 @@ var PreviewedIllust = class {
 		this.previewLoadingElement.show();
 		this.adjustPreviewWrapper({ baseOnMousePos: true });
 	}
+	bindPreviewMouseEvents() {
+		$(document).on("mousemove", this.onMouseMove);
+		document.addEventListener("mousedown", this.onMouseDown, true);
+		document.addEventListener("mouseup", this.cancelLongPress, true);
+		document.addEventListener("click", this.onDocumentClick, true);
+		document.addEventListener("dragstart", this.cancelLongPress, true);
+		document.addEventListener("mouseleave", this.cancelLongPress);
+		window.addEventListener("blur", this.cancelLongPress);
+		window.addEventListener("wheel", this.preventPageZoom, { passive: false });
+	}
+	unbindPreviewMouseEvents() {
+		this.cancelLongPress();
+		$(document).off("mousemove", this.onMouseMove);
+		document.removeEventListener("mousedown", this.onMouseDown, true);
+		document.removeEventListener("mouseup", this.cancelLongPress, true);
+		document.removeEventListener("click", this.onDocumentClick, true);
+		document.removeEventListener("dragstart", this.cancelLongPress, true);
+		document.removeEventListener("mouseleave", this.cancelLongPress);
+		window.removeEventListener("blur", this.cancelLongPress);
+		window.removeEventListener("wheel", this.preventPageZoom);
+	}
+	onMouseDown = (event) => {
+		if (event.button !== 0) return;
+		this.#suppressLongPressClick = false;
+		if (this.oneHandedMode || !this.illustElement.is(event.target)) return;
+		this.cancelLongPress();
+		this.#longPressProgress = $(`<svg viewBox="0 0 32 32" aria-hidden="true">
+        <circle cx="16" cy="16" r="12" fill="none"
+          stroke="rgba(0, 0, 0, 0.35)" stroke-width="4" />
+        <circle cx="16" cy="16" r="12" fill="none"
+          stroke="rgb(0, 150, 250)" stroke-width="4" stroke-linecap="round"
+          pathLength="1" stroke-dasharray="1" stroke-dashoffset="1"
+          transform="rotate(-90 16 16)"
+          style="animation: pp-one-handed-progress ${ONE_HANDED_MODE_HOLD_MS}ms linear forwards" />
+      </svg>`).css({
+			position: "fixed",
+			left: `${event.clientX - 16}px`,
+			top: `${event.clientY - 16}px`,
+			width: "32px",
+			height: "32px",
+			"z-index": "1000000",
+			"pointer-events": "none"
+		}).appendTo(document.body);
+		this.#longPressTimeout = setTimeout(() => {
+			this.oneHandedMode = true;
+			this.#suppressLongPressClick = true;
+			this.previewWrapperElement.css({ "pointer-events": "auto" });
+			this.cancelLongPress();
+		}, ONE_HANDED_MODE_HOLD_MS);
+	};
+	cancelLongPress = () => {
+		if (this.#longPressTimeout !== null) {
+			clearTimeout(this.#longPressTimeout);
+			this.#longPressTimeout = null;
+		}
+		this.#longPressProgress.remove();
+		this.#longPressProgress = $();
+	};
+	onDocumentClick = (event) => {
+		if (!event.isTrusted) return;
+		if (this.#suppressLongPressClick) {
+			this.#suppressLongPressClick = false;
+			event.preventDefault();
+			event.stopImmediatePropagation();
+			return;
+		}
+		if (this.oneHandedMode && !this.previewWrapperElement[0]?.contains(event.target)) this.reset();
+	};
 	/** 阻止页面缩放事件 */
 	preventPageZoom = (mouseWheelEvent) => {
-		if (mouseWheelEvent.ctrlKey || mouseWheelEvent.metaKey) mouseWheelEvent.preventDefault();
+		if (this.oneHandedMode || mouseWheelEvent.ctrlKey || mouseWheelEvent.metaKey) mouseWheelEvent.preventDefault();
 	};
 	/**
 	* 根据鼠标移动调整预览容器位置与显隐
 	* @param mouseMoveEvent
 	*/
 	onMouseMove = (mouseMoveEvent) => {
-		if (mouseMoveEvent.ctrlKey || mouseMoveEvent.metaKey) {
+		if (this.#longPressTimeout !== null) this.#longPressProgress.css({
+			left: `${mouseMoveEvent.clientX - 16}px`,
+			top: `${mouseMoveEvent.clientY - 16}px`
+		});
+		if (this.oneHandedMode || mouseMoveEvent.ctrlKey || mouseMoveEvent.metaKey) {
 			this.previewWrapperElement.css({ "pointer-events": "auto" });
 			return;
 		}
@@ -3195,7 +3276,7 @@ const initializePixivPreviewer = () => {
 		g_settings = registerSettingsMenu();
 		if (g_settings.enableLocalTags) loadLocalTags();
 		iLog.i("Start to initialize Pixiv Previewer with global settings:", g_settings);
-		if (g_settings.version !== "1.5.2") ShowUpgradeMessage();
+		if (g_settings.version !== "1.6.0") ShowUpgradeMessage();
 		if (g_settings.enablePreview) loadIllustPreview(g_settings);
 		$.get(location.href, function(data) {
 			const matched = data.match(/token\\":\\"([a-z0-9]{32})/);
