@@ -35,6 +35,8 @@ import ZipImagePlayer, {
 } from "../utils/ugoira-player";
 import { createLRUCache, sanitizeIllustFilename } from "../utils/utils";
 
+const ONE_HANDED_MODE_HOLD_MS = 500;
+
 let isInitialized = false;
 export const loadIllustPreview = (
   options: Pick<
@@ -93,8 +95,8 @@ export const loadIllustPreview = (
    * 获取作品访问链接并在前端显示预览
    * @param target 作品的元数据
    */
+  const previewedIllust = new PreviewedIllust();
   const previewIllust = (() => {
-    const previewedIllust = new PreviewedIllust();
     let currentHoveredIllustId = "";
     // 初始值为 null，避免调用 `$.ajax()` 时因缺省 url 而意外请求当前页面
     let getIllustPagesRequest: JQuery.jqXHR | null = null;
@@ -314,6 +316,8 @@ export const loadIllustPreview = (
 
   //#region 绑定鼠标悬浮图片监听事件
   const onMouseOverIllust = (target: JQuery<HTMLElement>) => {
+    if (previewedIllust.oneHandedMode) return;
+
     const { illustId, previewPage, illustType, illustLinkDom } =
       getIllustMetadata(target) || {};
     if (illustId === undefined || illustType === undefined) {
@@ -329,6 +333,7 @@ export const loadIllustPreview = (
     }
 
     const previewIllustTimeout = setTimeout(() => {
+      if (previewedIllust.oneHandedMode) return;
       previewIllust({ target, illustId, previewPage, illustType });
     }, mouseHoverPreviewWait);
 
@@ -357,7 +362,11 @@ export const loadIllustPreview = (
     let prevTarget: EventTarget | null = null;
 
     return (mouseMoveEvent: JQuery.MouseMoveEvent) => {
-      if (mouseMoveEvent.ctrlKey || mouseMoveEvent.metaKey) {
+      if (
+        previewedIllust.oneHandedMode ||
+        mouseMoveEvent.ctrlKey ||
+        mouseMoveEvent.metaKey
+      ) {
         // 按住 Ctrl 或 Meta 键时，跳过
         return;
       }
@@ -387,6 +396,9 @@ export const loadIllustPreview = (
 @keyframes pp-spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
+    }
+    @keyframes pp-one-handed-progress {
+      to { stroke-dashoffset: 0; }
 }`);
     // https://www.pixiv.net/ranking.php 排行榜页面加载后续作品时，
     // 会插入一个影响鼠标悬浮判定的空节点，在此处将其设置为不触发鼠标事件
@@ -428,6 +440,14 @@ const INTERACTIVE_BADGE_CSS = {
 } as const;
 
 class PreviewedIllust {
+  oneHandedMode = false;
+
+  #longPressTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  #longPressProgress: JQuery<HTMLElement> = $();
+
+  #suppressLongPressClick = false;
+
   /** 当前正在预览的作品的 ID */
   illustId = "";
   /** 当前正在预览的作品的详细信息 */
@@ -481,6 +501,10 @@ class PreviewedIllust {
 
   /** 初始化预览组件 */
   reset() {
+    this.oneHandedMode = false;
+    this.#suppressLongPressClick = false;
+    this.cancelLongPress();
+
     this.illustId = "";
     this.illustDetails = null;
     this.illustElement = $();
@@ -623,11 +647,7 @@ class PreviewedIllust {
     $(document).on("wheel", this.onPreviewImageMouseWheel);
     // 监听方向键切换图片事件
     $(document).on("keydown", this.onPreviewImageKeyDown);
-    // 监听鼠标移动事件
-    $(document).on("mousemove", this.onMouseMove);
-
-    // 监听鼠标滚动事件
-    window.addEventListener("wheel", this.preventPageZoom, { passive: false });
+    this.bindPreviewMouseEvents();
   }
 
   unbindPreviewImageEvents() {
@@ -636,9 +656,7 @@ class PreviewedIllust {
 
     $(document).off("wheel", this.onPreviewImageMouseWheel);
     $(document).off("keydown", this.onPreviewImageKeyDown);
-    $(document).off("mousemove", this.onMouseMove);
-
-    window.removeEventListener("wheel", this.preventPageZoom);
+    this.unbindPreviewMouseEvents();
   }
 
   /** 显示 pageIndex 指向的图片 */
@@ -735,7 +753,11 @@ class PreviewedIllust {
   };
 
   onPreviewImageMouseWheel = (mouseWheelEvent: JQuery.TriggeredEvent) => {
-    if (mouseWheelEvent.ctrlKey || mouseWheelEvent.metaKey) {
+    if (
+      this.oneHandedMode ||
+      mouseWheelEvent.ctrlKey ||
+      mouseWheelEvent.metaKey
+    ) {
       mouseWheelEvent.preventDefault();
 
       if ((mouseWheelEvent.originalEvent as WheelEvent).deltaY > 0) {
@@ -749,7 +771,7 @@ class PreviewedIllust {
   };
 
   onPreviewImageKeyDown = (keyDownEvent: JQuery.KeyDownEvent) => {
-    if (keyDownEvent.ctrlKey || keyDownEvent.metaKey) {
+    if (this.oneHandedMode || keyDownEvent.ctrlKey || keyDownEvent.metaKey) {
       keyDownEvent.preventDefault();
 
       switch (keyDownEvent.key) {
@@ -884,16 +906,12 @@ class PreviewedIllust {
 
   bindUgoiraPreviewEvents() {
     this.#currentUgoiraPlayer?.on("frameLoaded", this.onUgoiraFrameLoaded);
-    $(document).on("mousemove", this.onMouseMove);
-
-    window.addEventListener("wheel", this.preventPageZoom, { passive: false });
+    this.bindPreviewMouseEvents();
   }
 
   unbindUgoiraPreviewEvents() {
     this.#currentUgoiraPlayer?.off("frameLoaded");
-    $(document).off("mousemove", this.onMouseMove);
-
-    window.removeEventListener("wheel", this.preventPageZoom);
+    this.unbindPreviewMouseEvents();
   }
 
   onUgoiraFrameLoaded = (frame: number) => {
@@ -1016,9 +1034,102 @@ class PreviewedIllust {
     });
   }
 
+  bindPreviewMouseEvents() {
+    $(document).on("mousemove", this.onMouseMove);
+    document.addEventListener("mousedown", this.onMouseDown, true);
+    document.addEventListener("mouseup", this.cancelLongPress, true);
+    document.addEventListener("click", this.onDocumentClick, true);
+    document.addEventListener("dragstart", this.cancelLongPress, true);
+    document.addEventListener("mouseleave", this.cancelLongPress);
+    window.addEventListener("blur", this.cancelLongPress);
+    window.addEventListener("wheel", this.preventPageZoom, { passive: false });
+  }
+
+  unbindPreviewMouseEvents() {
+    this.cancelLongPress();
+    $(document).off("mousemove", this.onMouseMove);
+    document.removeEventListener("mousedown", this.onMouseDown, true);
+    document.removeEventListener("mouseup", this.cancelLongPress, true);
+    document.removeEventListener("click", this.onDocumentClick, true);
+    document.removeEventListener("dragstart", this.cancelLongPress, true);
+    document.removeEventListener("mouseleave", this.cancelLongPress);
+    window.removeEventListener("blur", this.cancelLongPress);
+    window.removeEventListener("wheel", this.preventPageZoom);
+  }
+
+  onMouseDown = (event: MouseEvent) => {
+    if (event.button !== 0) return;
+    this.#suppressLongPressClick = false;
+    if (this.oneHandedMode || !this.illustElement.is(event.target as Element)) {
+      return;
+    }
+
+    this.cancelLongPress();
+    this.#longPressProgress = $(
+      `<svg viewBox="0 0 32 32" aria-hidden="true">
+        <circle cx="16" cy="16" r="12" fill="none"
+          stroke="rgba(0, 0, 0, 0.35)" stroke-width="4" />
+        <circle cx="16" cy="16" r="12" fill="none"
+          stroke="rgb(0, 150, 250)" stroke-width="4" stroke-linecap="round"
+          pathLength="1" stroke-dasharray="1" stroke-dashoffset="1"
+          transform="rotate(-90 16 16)"
+          style="animation: pp-one-handed-progress ${ONE_HANDED_MODE_HOLD_MS}ms linear forwards" />
+      </svg>`
+    )
+      .css({
+        position: "fixed",
+        left: `${event.clientX - 16}px`,
+        top: `${event.clientY - 16}px`,
+        width: "32px",
+        height: "32px",
+        "z-index": "1000000",
+        "pointer-events": "none",
+      })
+      .appendTo(document.body);
+
+    this.#longPressTimeout = setTimeout(() => {
+      this.oneHandedMode = true;
+      this.#suppressLongPressClick = true;
+      this.previewWrapperElement.css({ "pointer-events": "auto" });
+      this.cancelLongPress();
+    }, ONE_HANDED_MODE_HOLD_MS);
+  };
+
+  cancelLongPress = () => {
+    if (this.#longPressTimeout !== null) {
+      clearTimeout(this.#longPressTimeout);
+      this.#longPressTimeout = null;
+    }
+    this.#longPressProgress.remove();
+    this.#longPressProgress = $();
+  };
+
+  onDocumentClick = (event: MouseEvent) => {
+    // 下载等操作触发的程序点击不属于用户手势。
+    if (!event.isTrusted) return;
+
+    // 长按结束后的 click 属于进入手势，避免打开作品链接或立即退出模式。
+    if (this.#suppressLongPressClick) {
+      this.#suppressLongPressClick = false;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
+    if (
+      this.oneHandedMode &&
+      !this.previewWrapperElement[0]?.contains(event.target as Node)
+    ) {
+      this.reset();
+    }
+  };
+
   /** 阻止页面缩放事件 */
   preventPageZoom = (mouseWheelEvent: WheelEvent) => {
-    if (mouseWheelEvent.ctrlKey || mouseWheelEvent.metaKey) {
+    if (
+      this.oneHandedMode ||
+      mouseWheelEvent.ctrlKey ||
+      mouseWheelEvent.metaKey
+    ) {
       mouseWheelEvent.preventDefault();
     }
   };
@@ -1028,7 +1139,17 @@ class PreviewedIllust {
    * @param mouseMoveEvent
    */
   onMouseMove = (mouseMoveEvent: JQuery.MouseMoveEvent) => {
-    if (mouseMoveEvent.ctrlKey || mouseMoveEvent.metaKey) {
+    if (this.#longPressTimeout !== null) {
+      this.#longPressProgress.css({
+        left: `${mouseMoveEvent.clientX - 16}px`,
+        top: `${mouseMoveEvent.clientY - 16}px`,
+      });
+    }
+    if (
+      this.oneHandedMode ||
+      mouseMoveEvent.ctrlKey ||
+      mouseMoveEvent.metaKey
+    ) {
       this.previewWrapperElement.css({ "pointer-events": "auto" });
       return;
     }
