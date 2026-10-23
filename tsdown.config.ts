@@ -40,6 +40,7 @@ export default defineConfig({
 // @grant               GM_registerMenuCommand
 // @grant               GM_unregisterMenuCommand
 // @grant               GM.xmlHttpRequest
+// @grant               GM_download
 // @grant               unsafeWindow
 // @icon                https://t0.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&size=32&url=https://www.pixiv.net
 // @icon64              https://t0.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&size=64&url=https://www.pixiv.net

@@ -5,6 +5,8 @@ export type DownloadRecord = {
   id: string;
   url: string;
   filename: string;
+  /** 下载保存的子目录（相对于浏览器默认下载目录） */
+  directory?: string;
   status: "downloading" | "completed" | "interrupted" | "failed";
   loaded: number;
   total: number;
@@ -75,6 +77,9 @@ const readStoredDownloads = (): DownloadRecord[] => {
         total: item.total,
         createdAt: item.createdAt,
       };
+      if (typeof item.directory === "string" && item.directory) {
+        record.directory = item.directory;
+      }
       if (Number.isFinite(item.completedAt)) {
         record.completedAt = item.completedAt;
       }
@@ -256,6 +261,60 @@ type DownloadOptions = Omit<
   "url" | "method" | "responseType"
 >;
 
+let hasWarnedDirectoryFallback = false;
+
+/** 使用 `<a download>` 保存文件，子目录会被浏览器替换为下划线，仅用于无目录场景 */
+const saveWithAnchor = (blob: Blob, filename: string) => {
+  const blobUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  try {
+    anchor.href = blobUrl;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+  } finally {
+    anchor.remove();
+    URL.revokeObjectURL(blobUrl);
+  }
+};
+
+/**
+ * 保存下载的文件。存在子目录时借助 `GM_download` 保存到子目录，
+ * 该能力依赖 Tampermonkey 的「浏览器 API」下载模式，不可用时回退到默认下载目录。
+ */
+const saveBlob = (blob: Blob, record: DownloadRecord) => {
+  const { directory, filename } = record;
+  const saveToDefaultDirectory = () => {
+    if (directory && !hasWarnedDirectoryFallback) {
+      hasWarnedDirectoryFallback = true;
+      iLog.w(
+        `无法保存到子目录 ${directory}，已改为默认下载目录。如需按子目录保存，请在 Tampermonkey 设置中将「下载模式」设为「浏览器 API」。`
+      );
+    }
+    saveWithAnchor(blob, filename);
+  };
+  // 仅 Tampermonkey 的「浏览器 API」下载模式支持子目录，其他模式直接回退
+  const canSaveToDirectory =
+    globalThis.GM_info?.downloadMode !== "native" &&
+    globalThis.GM_info?.downloadMode !== "disabled" &&
+    typeof GM_download === "function";
+
+  if (!directory || !canSaveToDirectory) {
+    saveToDefaultDirectory();
+    return;
+  }
+
+  try {
+    GM_download({
+      url: blob,
+      name: `${directory}/${filename}`,
+      onerror: saveToDefaultDirectory,
+    });
+  } catch {
+    saveToDefaultDirectory();
+  }
+};
+
 const startDownload = (
   record: DownloadRecord,
   options: DownloadOptions = {}
@@ -318,17 +377,7 @@ const startDownload = (
             response.response instanceof Blob
               ? response.response
               : new Blob([response.response]);
-          const blobUrl = URL.createObjectURL(blob);
-          const anchor = document.createElement("a");
-          try {
-            anchor.href = blobUrl;
-            anchor.download = record.filename;
-            document.body.appendChild(anchor);
-            anchor.click();
-          } finally {
-            document.body.removeChild(anchor);
-            URL.revokeObjectURL(blobUrl);
-          }
+          saveBlob(blob, record);
           record.status = "completed";
           attempts.delete(record.id);
           releaseOwnership(record);
@@ -407,7 +456,8 @@ export const abortDownload = (id: string) => {
 export const downloadFile = (
   url: string,
   filename: string,
-  options: DownloadOptions = {}
+  options: DownloadOptions = {},
+  directory?: string
 ) => {
   getDownloads();
   syncFromStorage();
@@ -420,6 +470,7 @@ export const downloadFile = (
     total: 0,
     createdAt: Date.now(),
   };
+  if (directory) record.directory = directory;
   downloads!.unshift(record);
   startDownload(record, options);
 };

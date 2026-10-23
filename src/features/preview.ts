@@ -27,6 +27,7 @@ import {
   checkIsR18,
   checkIsR18G,
   checkIsUgoiraUsingTags,
+  getDownloadDirectory,
 } from "../utils/illustration";
 import { iLog } from "../utils/logger";
 import mouseMonitor from "../utils/mouse-monitor";
@@ -821,6 +822,7 @@ class PreviewedIllust {
     downloadIllust({
       url: currentImageOriginalUrl,
       filename: currentImageFilename,
+      directory: getDownloadDirectory(this.illustDetails?.tags ?? []),
       options: {
         onerror: onDownloadFailed,
         ontimeout: onDownloadFailed,

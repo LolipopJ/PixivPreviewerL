@@ -6,19 +6,27 @@ import type { PixivStandardResponse } from "./request";
 export const downloadIllust = ({
   url,
   filename,
+  directory,
   options = {},
 }: {
   url: string;
   filename: string;
+  /** 保存在默认下载目录下的子目录 */
+  directory?: string;
   options?: Parameters<typeof downloadFile>[2];
 }) => {
-  downloadFile(url, filename, {
-    ...options,
-    onerror: function (this, resp) {
-      options.onerror?.call(this, resp);
-      window.open(url, "__blank");
+  downloadFile(
+    url,
+    filename,
+    {
+      ...options,
+      onerror: function (this, resp) {
+        options.onerror?.call(this, resp);
+        window.open(url, "__blank");
+      },
     },
-  });
+    directory
+  );
 };
 
 /** 基于 pixiv.cat 反代下载作品 */

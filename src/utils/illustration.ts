@@ -1,6 +1,8 @@
 import {
   AI_ASSISTED_TAGS,
+  R18_DOWNLOAD_DIRECTORY,
   R18_TAGS,
+  R18G_DOWNLOAD_DIRECTORY,
   R18G_TAGS,
   UGOIRA_TAGS,
 } from "../constants";
@@ -21,6 +23,16 @@ export const checkIsR18 = (tags: string[]) => {
 
 export const checkIsR18G = (tags: string[]) => {
   return checkUsingTags(tags, R18G_TAGS);
+};
+
+/**
+ * 获取作品原图下载时使用的子目录。
+ * R18G 作品优先归入 r18-g 目录，R18 作品归入 r18 目录，其他作品返回 `undefined`。
+ */
+export const getDownloadDirectory = (tags: string[]) => {
+  if (checkIsR18G(tags)) return R18G_DOWNLOAD_DIRECTORY;
+  if (checkIsR18(tags)) return R18_DOWNLOAD_DIRECTORY;
+  return undefined;
 };
 
 export const checkIsUgoira = (illustType: IllustType) => {

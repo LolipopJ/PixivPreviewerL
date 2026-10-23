@@ -54,6 +54,11 @@ export const SORT_NEXT_PAGE_EVENT_NAME = "PIXIV_PREVIEWER_JUMP_TO_NEXT_PAGE";
 /** 隐藏已收藏作品按钮 */
 export const HIDE_FAVORITES_BUTTON_ID = "pp-hide-favorites";
 
+/** R18 作品原图下载目录 */
+export const R18_DOWNLOAD_DIRECTORY = "r18";
+/** R18G 作品原图下载目录 */
+export const R18G_DOWNLOAD_DIRECTORY = "r18-g";
+
 /** R18 标签列表，全小写 */
 export const R18_TAGS = ["r-18", "r18"];
 /** R18G 标签列表，全小写 */
