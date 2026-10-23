@@ -1,5 +1,8 @@
 import downloadIcon from "../icons/download.svg";
+import retryIcon from "../icons/retry.svg";
+import stopIcon from "../icons/stop.svg";
 import {
+  abortDownload,
   clearCompletedDownloads,
   type DownloadRecord,
   getDownloads,
@@ -15,6 +18,24 @@ const formatBytes = (bytes: number) =>
   bytes >= 1024 * 1024
     ? `${(bytes / (1024 * 1024)).toFixed(1)} MB`
     : `${Math.ceil(bytes / 1024)} KB`;
+
+const formatTime = (timestamp: number) => {
+  const date = new Date(timestamp);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+};
+
+const createIconButton = (
+  label: string,
+  icon: string,
+  className: string,
+  onClick: () => void
+) =>
+  $("<button>")
+    .attr({ type: "button", title: label, "aria-label": label })
+    .addClass(`pp-download-icon ${className}`)
+    .html(icon)
+    .on("click", onClick);
 
 export const loadDownloadPanel = (toolbar: HTMLElement) => {
   if (document.getElementById(BUTTON_ID)) return;
@@ -64,7 +85,15 @@ export const loadDownloadPanel = (toolbar: HTMLElement) => {
       #${PANEL_ID} a:hover { text-decoration: underline; }
       #${PANEL_ID} small { display: block; color: var(--pp-download-muted); overflow-wrap: anywhere; }
       #${PANEL_ID} progress { display: block; width: 100%; height: 6px; margin-top: 8px; accent-color: #0096fa; }
-      #${PANEL_ID} .pp-download-retry { flex-shrink: 0; }
+      #${PANEL_ID} .pp-download-icon {
+        display: inline-flex; align-items: center; justify-content: center;
+        flex-shrink: 0; width: 32px; height: 32px; padding: 6px; border-radius: 50%;
+      }
+      #${PANEL_ID} .pp-download-icon:hover { background: rgba(0, 150, 250, .12); }
+      #${PANEL_ID} .pp-download-icon svg { display: block; width: 18px; height: 18px; }
+      #${PANEL_ID} .pp-download-icon[hidden] { display: none; }
+      #${PANEL_ID} .pp-download-abort { color: #d32f2f; }
+      #${PANEL_ID} .pp-download-abort:hover { background: rgba(211, 47, 47, .12); }
       @keyframes pp-download-bounce { 0%, 100% { transform: translateY(-3px); } 50% { transform: translateY(3px); } }
       @keyframes pp-toolbar-pulse { 50% { opacity: .35; } }
       @media (prefers-reduced-motion: reduce) {
@@ -134,6 +163,7 @@ export const loadDownloadPanel = (toolbar: HTMLElement) => {
       item: JQuery;
       status: JQuery;
       progress: JQuery<HTMLProgressElement>;
+      abort: JQuery;
       retry: JQuery;
     }
   >();
@@ -209,14 +239,20 @@ export const loadDownloadPanel = (toolbar: HTMLElement) => {
         const progress = $("<progress>")
           .attr({ max: 100, "aria-label": `${record.filename} 下载进度` })
           .appendTo(info) as JQuery<HTMLProgressElement>;
-        const retry = $("<button>")
-          .attr({ type: "button", "aria-label": `重试下载 ${record.filename}` })
-          .addClass("pp-download-retry")
-          .text("重试")
-          .on("click", () => retryDownload(record.id))
-          .appendTo(item);
+        const abort = createIconButton(
+          `中止下载 ${record.filename}`,
+          stopIcon,
+          "pp-download-abort",
+          () => abortDownload(record.id)
+        ).appendTo(item);
+        const retry = createIconButton(
+          `重试下载 ${record.filename}`,
+          retryIcon,
+          "pp-download-retry",
+          () => retryDownload(record.id)
+        ).appendTo(item);
         list.prepend(item);
-        row = { item, status, progress, retry };
+        row = { item, status, progress, abort, retry };
         rows.set(record.id, row);
       }
       const running = record.status === "downloading";
@@ -226,11 +262,12 @@ export const loadDownloadPanel = (toolbar: HTMLElement) => {
           : undefined;
       const labels: Record<DownloadRecord["status"], string> = {
         downloading: `下载中 ${percent === undefined ? formatBytes(record.loaded) : `${percent}% · ${formatBytes(record.loaded)} / ${formatBytes(record.total)}`}`,
-        completed: `已下载 · ${formatBytes(record.loaded)}`,
+        completed: `已下载 · ${formatBytes(record.loaded)}${record.completedAt === undefined ? "" : ` · ${formatTime(record.completedAt)}`}`,
         interrupted: "下载已中断，点击重试重新下载",
         failed: `下载失败：${record.error || "网络错误"}`,
       };
       row.status.text(labels[record.status]);
+      row.abort.prop("hidden", !running);
       row.retry.prop("hidden", running || record.status === "completed");
       row.progress.prop("hidden", !running);
       if (percent === undefined) row.progress.removeAttr("value");

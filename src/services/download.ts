@@ -9,12 +9,17 @@ export type DownloadRecord = {
   loaded: number;
   total: number;
   createdAt: number;
+  /** 下载完成时间 */
+  completedAt?: number;
   error?: string;
 };
 
 const STORAGE_KEY = "pp-downloads";
 const listeners = new Set<() => void>();
 const attempts = new Map<string, symbol>();
+const requests = new Map<string, { abort: () => void }>();
+/** 被用户主动中止的尝试 */
+const abortedAttempts = new Set<symbol>();
 let downloads: DownloadRecord[] | undefined;
 
 export const getDownloads = (): readonly DownloadRecord[] => {
@@ -34,7 +39,9 @@ export const getDownloads = (): readonly DownloadRecord[] => {
               ) &&
               Number.isFinite(item.loaded) &&
               Number.isFinite(item.total) &&
-              Number.isFinite(item.createdAt)
+              Number.isFinite(item.createdAt) &&
+              (item.completedAt === undefined ||
+                Number.isFinite(item.completedAt))
           )
           .map((item) => ({
             ...item,
@@ -81,6 +88,7 @@ const startDownload = (
   record.status = "downloading";
   record.loaded = 0;
   record.total = 0;
+  delete record.completedAt;
   delete record.error;
   const attempt = Symbol();
   attempts.set(record.id, attempt);
@@ -145,6 +153,7 @@ const startDownload = (
           attempts.delete(record.id);
           record.loaded = blob.size;
           record.total = blob.size;
+          record.completedAt = Date.now();
           publish();
         } catch (error) {
           const message = String(error);
@@ -166,17 +175,48 @@ const startDownload = (
         ontimeout?.call(this);
       },
       onabort: function (this) {
+        if (abortedAttempts.delete(attempt)) {
+          // 用户主动中止：记录已标记为中断，仍需通知调用方重置界面
+          onabort?.call(this);
+          return;
+        }
         if (!isActive()) return;
         fail("下载已取消");
         onabort?.call(this);
       },
     });
+    requests.set(record.id, pending);
     // GM.xmlHttpRequest 在触发错误回调后也可能拒绝 Promise。
-    void Promise.resolve(pending).catch((error: unknown) =>
-      fail(String(error))
-    );
+    void Promise.resolve(pending)
+      .catch((error: unknown) => fail(String(error)))
+      .finally(() => {
+        abortedAttempts.delete(attempt);
+        if (requests.get(record.id) === pending) requests.delete(record.id);
+      });
   } catch (error) {
     fail(String(error));
+  }
+};
+
+/** 中止下载中的作品，被中止的下载视为待重试 */
+export const abortDownload = (id: string) => {
+  getDownloads();
+  const record = downloads!.find((item) => item.id === id);
+  if (record?.status !== "downloading") return;
+  const pending = requests.get(id);
+  const attempt = attempts.get(id);
+  // 先使当前尝试失效，避免中止产生的回调改写记录状态
+  requests.delete(id);
+  attempts.delete(id);
+  if (attempt) abortedAttempts.add(attempt);
+  record.status = "interrupted";
+  delete record.error;
+  publish();
+  try {
+    pending?.abort();
+  } catch (error) {
+    if (attempt) abortedAttempts.delete(attempt);
+    iLog.e(`中止下载 ${record.filename} 失败：`, error);
   }
 };
 
