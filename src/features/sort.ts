@@ -7,7 +7,6 @@ import {
   SORT_NEXT_PAGE_EVENT_NAME,
 } from "../constants";
 import { AiType, IllustSortOrder, IllustSortType } from "../enums";
-import Texts from "../i18n";
 import heartIcon from "../icons/heart.svg";
 import heartFilledIcon from "../icons/heart-filled.svg";
 import pageIcon from "../icons/page.svg";
@@ -136,7 +135,11 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
             color: "initial",
           })
           .appendTo(this.progressElement);
-        this.sortButtonElement.text(Texts.label_sort);
+        this.sortButtonElement.attr({
+          title: "排序作品",
+          "aria-label": "排序作品",
+          "aria-busy": "false",
+        });
       } catch (error) {
         iLog.e(`An error occurred while resetting sorter:`, error);
         throw new Error(String(error), {
@@ -157,7 +160,11 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
       this.sorting = true;
       iLog.i("Start to sort illustrations.");
 
-      this.sortButtonElement.text(Texts.label_sorting);
+      this.sortButtonElement.attr({
+        title: "正在排序作品",
+        "aria-label": "正在排序作品",
+        "aria-busy": "true",
+      });
 
       try {
         //#region 获取作品分页列表
@@ -314,7 +321,11 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
 
       this.hideProgress();
       this.sorting = false;
-      this.sortButtonElement.text(Texts.label_sort);
+      this.sortButtonElement.attr({
+        title: "排序作品",
+        "aria-label": "排序作品",
+        "aria-busy": "false",
+      });
     }
 
     setProgress(text: string) {

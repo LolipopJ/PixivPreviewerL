@@ -798,6 +798,16 @@ class PreviewedIllust {
 
     const textSpan = this.downloadOriginalElement.find("span");
     const originalText = textSpan.text();
+    const downloadElement = this.downloadOriginalElement;
+    const onDownloadFailed = () => {
+      if (this.downloadOriginalElement !== downloadElement) return;
+      textSpan.text(originalText);
+      downloadElement.css({
+        backgroundImage: "",
+        backgroundSize: "",
+        pointerEvents: "",
+      });
+    };
 
     this.downloadOriginalElement.css({
       pointerEvents: "none",
@@ -812,6 +822,9 @@ class PreviewedIllust {
       url: currentImageOriginalUrl,
       filename: currentImageFilename,
       options: {
+        onerror: onDownloadFailed,
+        ontimeout: onDownloadFailed,
+        onabort: onDownloadFailed,
         onprogress: (ev) => {
           if (this.currentPage !== downloadPage) return;
 

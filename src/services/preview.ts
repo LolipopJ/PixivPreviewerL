@@ -44,7 +44,8 @@ export const downloadIllustWithProxy = ({
   const proxyUrl = `https://pixiv.cat/${illustId}${pageCount > 1 ? `-${page + 1}` : ""}.${extension}`;
   downloadFile(proxyUrl, filename, {
     ...options,
-    onerror: () => {
+    onerror: function (this, resp) {
+      options.onerror?.call(this, resp);
       window.open(proxyUrl, "__blank");
     },
   });

@@ -10,6 +10,7 @@ import {
 } from "./constants";
 import { deleteCachedIllustrationDetails } from "./databases";
 import { IllustSortOrder, LogLevel, PageType } from "./enums";
+import { loadDownloadPanel } from "./features/downloads";
 import { hideFavorites } from "./features/hide-favorites";
 import {
   interceptTagSearchRequests,
@@ -18,6 +19,9 @@ import {
 import { loadIllustPreview } from "./features/preview";
 import { loadIllustSort } from "./features/sort";
 import Texts from "./i18n";
+import hideFavoritesIcon from "./icons/hide-favorites.svg";
+import nextPageIcon from "./icons/next-page.svg";
+import sortIcon from "./icons/sort.svg";
 import type { GlobalSettings } from "./types";
 import { DoLog, iLog } from "./utils/logger";
 import {
@@ -441,13 +445,16 @@ const initializePixivPreviewer = () => {
     // 添加排序按钮
     if (!$(`#${SORT_BUTTON_ID}`).length) {
       const newListItem = document.createElement("div");
-      newListItem.title = "Sort artworks";
+      newListItem.title = "排序作品";
       newListItem.innerHTML = "";
       const newButton = document.createElement("button");
       newButton.id = SORT_BUTTON_ID;
-      newButton.style.cssText =
-        "box-sizing: border-box; background-color: rgba(0,0,0,0.32); color: #fff; margin-top: 5px; opacity: 0.8; cursor: pointer; border: none; padding: 0px; border-radius: 24px; width: 48px; height: 48px; font-size: 12px; font-weight: bold;";
-      newButton.innerHTML = Texts.label_sort;
+      newButton.className = "pp-toolbar-button";
+      newButton.type = "button";
+      newButton.title = "排序作品";
+      newButton.setAttribute("aria-label", "排序作品");
+      newButton.innerHTML = sortIcon;
+      newButton.querySelector("svg")?.setAttribute("aria-hidden", "true");
       newListItem.appendChild(newButton);
       toolBar.appendChild(newListItem);
 
@@ -460,13 +467,16 @@ const initializePixivPreviewer = () => {
     // 添加前往下一页按钮
     if (!$(`#${SORT_NEXT_PAGE_BUTTON_ID}`).length) {
       const newListItem = document.createElement("div");
-      newListItem.title = "Jump to next page";
+      newListItem.title = "前往下一页";
       newListItem.innerHTML = "";
       const newButton = document.createElement("button");
       newButton.id = SORT_NEXT_PAGE_BUTTON_ID;
-      newButton.style.cssText =
-        "box-sizing: border-box; background-color: rgba(0,0,0,0.32); color: #fff; margin-top: 5px; opacity: 0.8; cursor: pointer; border: none; padding: 0px; border-radius: 24px; width: 48px; height: 48px; font-size: 12px; font-weight: bold;";
-      newButton.innerHTML = Texts.label_nextPage;
+      newButton.className = "pp-toolbar-button";
+      newButton.type = "button";
+      newButton.title = "前往下一页";
+      newButton.setAttribute("aria-label", "前往下一页");
+      newButton.innerHTML = nextPageIcon;
+      newButton.querySelector("svg")?.setAttribute("aria-hidden", "true");
       newListItem.appendChild(newButton);
       toolBar.appendChild(newListItem);
 
@@ -480,13 +490,16 @@ const initializePixivPreviewer = () => {
     // 添加过滤已收藏作品按钮
     if (!$(`#${HIDE_FAVORITES_BUTTON_ID}`).length) {
       const newListItem = document.createElement("div");
-      newListItem.title = "Hide favorite illustrations";
+      newListItem.title = "隐藏已收藏作品";
       newListItem.innerHTML = "";
       const newButton = document.createElement("button");
       newButton.id = HIDE_FAVORITES_BUTTON_ID;
-      newButton.style.cssText =
-        "box-sizing: border-box; background-color: rgba(0,0,0,0.32); color: #fff; margin-top: 5px; opacity: 0.8; cursor: pointer; border: none; padding: 0px; border-radius: 24px; width: 48px; height: 48px; font-size: 12px; font-weight: bold;";
-      newButton.innerHTML = Texts.label_hideFav;
+      newButton.className = "pp-toolbar-button";
+      newButton.type = "button";
+      newButton.title = "隐藏已收藏作品";
+      newButton.setAttribute("aria-label", "隐藏已收藏作品");
+      newButton.innerHTML = hideFavoritesIcon;
+      newButton.querySelector("svg")?.setAttribute("aria-hidden", "true");
       newListItem.appendChild(newButton);
       toolBar.appendChild(newListItem);
 
@@ -494,6 +507,7 @@ const initializePixivPreviewer = () => {
         hideFavorites();
       });
     }
+    loadDownloadPanel(toolBar);
     //#endregion
   } catch (e) {
     DoLog(LogLevel.Error, "An error occurred while initializing:", e);
