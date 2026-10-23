@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             1.6.0-20261020
+// @version             1.7.0-20261023
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0
@@ -24,7 +24,7 @@
 // ==/UserScript==
 //#region src/constants/index.ts
 /** 版本号，发生改变时将会弹窗 */
-const g_version = "1.6.0";
+const g_version = "1.7.0";
 /** 默认设置 */
 const g_defaultSettings = {
 	enablePreview: true,
@@ -212,6 +212,447 @@ function deleteExpiredIllustrationDetails() {
 }
 
 //#endregion
+//#region src/icons/download.svg
+var download_default = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg t=\"1742281193586\"\n     class=\"icon\"\n     viewBox=\"0 0 1024 1024\"\n     version=\"1.1\"\n     xmlns=\"http://www.w3.org/2000/svg\"\n     p-id=\"24408\"\n     width=\"10\"\n     height=\"10\">\n    <path d=\"M1024 896v128H0v-320h128v192h768v-192h128v192zM576 554.688L810.688 320 896 405.312l-384 384-384-384L213.312 320 448 554.688V0h128v554.688z\"\n          fill=\"#ffffff\"\n          p-id=\"24409\" />\n</svg>";
+
+//#endregion
+//#region src/utils/utils.ts
+const pause = (ms) => {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+};
+const convertObjectKeysFromSnakeToCamel = (obj) => {
+	function snakeToCamel(snake) {
+		return snake.replace(/_([a-z])/g, (result) => result[1].toUpperCase());
+	}
+	const newResponse = {};
+	for (const key in obj) newResponse[snakeToCamel(key)] = obj[key];
+	return newResponse;
+};
+/**
+* 将 Pixiv 原图链接中形如 `123456-abcdef_p0.png` 的文件名规范化为 `123456_p0.png`
+* （部分作品原图链接文件名中会插入一段哈希值，与 Pixiv 网页端展示的文件名不一致）
+*/
+const sanitizeIllustFilename = (filename) => {
+	return filename.replace(/^(\d+)-[0-9a-zA-Z]+(_.*)$/, "$1$2");
+};
+const createLRUCache = (maxSize) => {
+	const map = /* @__PURE__ */ new Map();
+	return {
+		get(key) {
+			if (!map.has(key)) return void 0;
+			const val = map.get(key);
+			map.delete(key);
+			map.set(key, val);
+			return val;
+		},
+		set(key, val) {
+			if (map.has(key)) map.delete(key);
+			else if (map.size >= maxSize) map.delete(map.keys().next().value);
+			map.set(key, val);
+		}
+	};
+};
+
+//#endregion
+//#region src/services/request.ts
+const xmlHttpRequest = window.GM.xmlHttpRequest;
+const request = (options) => {
+	const { headers, ...restOptions } = options;
+	return xmlHttpRequest({
+		responseType: "json",
+		...restOptions,
+		headers: {
+			referer: "https://www.pixiv.net/",
+			...headers
+		}
+	});
+};
+const requestWithRetry = async (options) => {
+	const { retryDelay = 1e4, maxRetryTimes = Infinity, onRetry, ...restOptions } = options;
+	let response;
+	let retryTimes = 0;
+	while (retryTimes < maxRetryTimes) {
+		response = await request(restOptions);
+		if (response.status === 200) {
+			if (!response.response.error) return response;
+		}
+		retryTimes += 1;
+		onRetry?.(response, retryTimes);
+		await pause(retryDelay);
+	}
+	throw new Error(`Request for ${restOptions.url} failed: ${response?.responseText}`);
+};
+
+//#endregion
+//#region src/services/download.ts
+const STORAGE_KEY = "pp-downloads";
+const listeners = /* @__PURE__ */ new Set();
+const attempts = /* @__PURE__ */ new Map();
+let downloads;
+const getDownloads = () => {
+	if (!downloads) {
+		const saved = GM_getValue(STORAGE_KEY, []);
+		downloads = Array.isArray(saved) ? saved.filter((item) => item && typeof item.id === "string" && typeof item.url === "string" && /^https?:\/\//.test(item.url) && typeof item.filename === "string" && [
+			"downloading",
+			"completed",
+			"interrupted",
+			"failed"
+		].includes(item.status) && Number.isFinite(item.loaded) && Number.isFinite(item.total) && Number.isFinite(item.createdAt)).map((item) => ({
+			...item,
+			status: item.status === "downloading" ? "interrupted" : item.status
+		})) : [];
+	}
+	return downloads.map((item) => ({ ...item }));
+};
+const subscribeDownloads = (listener) => {
+	listeners.add(listener);
+	return () => listeners.delete(listener);
+};
+const publish = (persist = true) => {
+	if (persist) try {
+		GM_setValue(STORAGE_KEY, downloads);
+	} catch (error) {
+		iLog.e("保存下载记录失败：", error);
+	}
+	listeners.forEach((listener) => {
+		try {
+			listener();
+		} catch (error) {
+			iLog.e("更新下载列表失败：", error);
+		}
+	});
+};
+const startDownload = (record, options = {}) => {
+	const { onload, onerror, onprogress, ontimeout, onabort, ...restOptions } = options;
+	record.status = "downloading";
+	record.loaded = 0;
+	record.total = 0;
+	delete record.error;
+	const attempt = Symbol();
+	attempts.set(record.id, attempt);
+	const isActive = () => record.status === "downloading" && attempts.get(record.id) === attempt;
+	publish();
+	const fail = (message) => {
+		if (!isActive()) return;
+		record.status = "failed";
+		attempts.delete(record.id);
+		record.error = message;
+		publish();
+		iLog.e(`Download ${record.filename} from ${record.url} failed: ${message}`);
+	};
+	let lastProgressSave = 0;
+	try {
+		const pending = request({
+			...restOptions,
+			url: record.url,
+			method: "GET",
+			responseType: "blob",
+			onprogress: function(response) {
+				if (!isActive()) return;
+				record.loaded = Math.max(0, response.loaded || 0);
+				record.total = response.lengthComputable ? Math.max(0, response.total || 0) : 0;
+				const now = Date.now();
+				const persist = now - lastProgressSave >= 1e3;
+				if (persist) lastProgressSave = now;
+				publish(persist);
+				onprogress?.call(this, response);
+			},
+			onload: function(response) {
+				if (!isActive()) return;
+				if (response.status < 200 || response.status >= 300) {
+					const message = `HTTP ${response.status}`;
+					fail(message);
+					const errorResponse = {
+						...response,
+						error: message
+					};
+					onerror?.call(errorResponse, errorResponse);
+					return;
+				}
+				try {
+					const blob = response.response instanceof Blob ? response.response : new Blob([response.response]);
+					const blobUrl = URL.createObjectURL(blob);
+					const anchor = document.createElement("a");
+					try {
+						anchor.href = blobUrl;
+						anchor.download = record.filename;
+						document.body.appendChild(anchor);
+						anchor.click();
+					} finally {
+						document.body.removeChild(anchor);
+						URL.revokeObjectURL(blobUrl);
+					}
+					record.status = "completed";
+					attempts.delete(record.id);
+					record.loaded = blob.size;
+					record.total = blob.size;
+					publish();
+				} catch (error) {
+					const message = String(error);
+					fail(message);
+					const errorResponse = {
+						...response,
+						error: message
+					};
+					onerror?.call(errorResponse, errorResponse);
+					return;
+				}
+				onload?.call(this, response);
+			},
+			onerror: function(response) {
+				if (!isActive()) return;
+				fail(response.error || "网络错误");
+				onerror?.call(this, response);
+			},
+			ontimeout: function() {
+				if (!isActive()) return;
+				fail("下载超时");
+				ontimeout?.call(this);
+			},
+			onabort: function() {
+				if (!isActive()) return;
+				fail("下载已取消");
+				onabort?.call(this);
+			}
+		});
+		Promise.resolve(pending).catch((error) => fail(String(error)));
+	} catch (error) {
+		fail(String(error));
+	}
+};
+const downloadFile = (url, filename, options = {}) => {
+	getDownloads();
+	const record = {
+		id: crypto.randomUUID(),
+		url,
+		filename,
+		status: "downloading",
+		loaded: 0,
+		total: 0,
+		createdAt: Date.now()
+	};
+	downloads.unshift(record);
+	startDownload(record, options);
+};
+const retryDownload = (id) => {
+	getDownloads();
+	const record = downloads.find((item) => item.id === id);
+	if (record?.status === "failed" || record?.status === "interrupted") startDownload(record);
+};
+const clearCompletedDownloads = () => {
+	getDownloads();
+	downloads = downloads.filter((record) => record.status !== "completed");
+	publish();
+};
+const ignoreRetryableDownloads = () => {
+	getDownloads();
+	downloads = downloads.filter((record) => record.status !== "failed" && record.status !== "interrupted");
+	publish();
+};
+
+//#endregion
+//#region src/features/downloads.ts
+const BUTTON_ID = "pp-downloads-button";
+const PANEL_ID = "pp-downloads-panel";
+const formatBytes = (bytes) => bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.ceil(bytes / 1024)} KB`;
+const loadDownloadPanel = (toolbar) => {
+	if (document.getElementById(BUTTON_ID)) return;
+	$("<style>").text(`
+      .pp-toolbar-button {
+        position: relative; box-sizing: border-box; display: flex;
+        align-items: center; justify-content: center; width: 48px; height: 48px;
+        margin-top: 5px; padding: 0; border: 0; border-radius: 50%;
+        background: rgba(0, 0, 0, .55); color: #fff; cursor: pointer;
+      }
+      .pp-toolbar-button:hover { background: rgba(0, 0, 0, .75); }
+      .pp-toolbar-button:focus-visible { outline: 3px solid #0096fa; outline-offset: 3px; }
+      .pp-toolbar-button svg { display: block; width: 24px; height: 24px; }
+      #${BUTTON_ID} svg { width: 20px; height: 20px; }
+      .pp-toolbar-button[aria-busy="true"] svg { animation: pp-toolbar-pulse 1s ease-in-out infinite; }
+      #${BUTTON_ID}[data-active="true"] svg { animation: pp-download-bounce 1s ease-in-out infinite; }
+      #${BUTTON_ID}[data-attention="true"]::after {
+        content: ""; position: absolute; top: 3px; right: 3px;
+        width: 10px; height: 10px; border-radius: 50%; background: #e53935;
+        border: 2px solid #fff;
+      }
+      #${PANEL_ID} {
+        --pp-download-bg: #fff; --pp-download-fg: #222; --pp-download-muted: #666;
+        --pp-download-border: #ddd; --pp-download-action: #006eb8;
+        position: fixed; z-index: 100000; display: flex; flex-direction: column;
+        width: min(380px, calc(100vw - 24px)); max-height: min(480px, calc(100vh - 24px));
+        box-sizing: border-box; border: 1px solid var(--pp-download-border);
+        border-radius: 12px; background: var(--pp-download-bg); color: var(--pp-download-fg);
+        box-shadow: 0 8px 32px #0003; font: 14px/1.5 sans-serif;
+      }
+      #${PANEL_ID}[hidden], #${PANEL_ID} [hidden] { display: none; }
+      #${PANEL_ID} header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; }
+      #${PANEL_ID} h2 { margin: 0; font-size: 16px; color: inherit; }
+      #${PANEL_ID} button { border: 0; background: transparent; color: var(--pp-download-action); cursor: pointer; padding: 8px; font: inherit; }
+      #${PANEL_ID} button:disabled { color: var(--pp-download-muted); opacity: .6; cursor: default; }
+      #${PANEL_ID} button:focus-visible, #${PANEL_ID} a:focus-visible { outline: 2px solid var(--pp-download-action); outline-offset: 2px; }
+      #${PANEL_ID} .pp-download-summary { margin: 0; padding: 0 16px 4px; color: var(--pp-download-muted); }
+      #${PANEL_ID} .pp-download-actions { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 8px 8px; }
+      #${PANEL_ID} .pp-download-actions button { font-size: 12px; }
+      #${PANEL_ID} ul { list-style: none; margin: 0; padding: 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+      #${PANEL_ID} li { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--pp-download-border); }
+      #${PANEL_ID} .pp-download-info { flex: 1; min-width: 0; }
+      #${PANEL_ID} a { display: block; color: var(--pp-download-fg); overflow-wrap: anywhere; text-decoration: none; }
+      #${PANEL_ID} a:hover { text-decoration: underline; }
+      #${PANEL_ID} small { display: block; color: var(--pp-download-muted); overflow-wrap: anywhere; }
+      #${PANEL_ID} progress { display: block; width: 100%; height: 6px; margin-top: 8px; accent-color: #0096fa; }
+      #${PANEL_ID} .pp-download-retry { flex-shrink: 0; }
+      @keyframes pp-download-bounce { 0%, 100% { transform: translateY(-3px); } 50% { transform: translateY(3px); } }
+      @keyframes pp-toolbar-pulse { 50% { opacity: .35; } }
+      @media (prefers-reduced-motion: reduce) {
+        #${BUTTON_ID}[data-active="true"] svg, .pp-toolbar-button[aria-busy="true"] svg { animation: none; }
+      }
+      @media (prefers-color-scheme: dark) {
+        #${PANEL_ID} { --pp-download-bg: #222; --pp-download-fg: #eee;
+          --pp-download-muted: #bbb; --pp-download-border: #444; --pp-download-action: #72c5ff; }
+      }
+      `).appendTo("head");
+	const button = $("<button>").attr({
+		id: BUTTON_ID,
+		type: "button",
+		title: "下载记录",
+		"aria-label": "下载记录",
+		"aria-expanded": "false",
+		"aria-controls": PANEL_ID,
+		"aria-haspopup": "dialog"
+	}).addClass("pp-toolbar-button").html(download_default);
+	button.find("svg").attr("aria-hidden", "true");
+	$("<div>").append(button).appendTo(toolbar);
+	toolbar.style.zIndex = "10000";
+	const panel = $("<div>").attr({
+		id: PANEL_ID,
+		role: "dialog",
+		"aria-labelledby": "pp-downloads-heading"
+	}).prop("hidden", true).appendTo("body");
+	const closeButton = $("<button>").attr({
+		type: "button",
+		title: "关闭下载记录",
+		"aria-label": "关闭下载记录"
+	}).text("关闭");
+	$("<header>").append($("<h2>").attr("id", "pp-downloads-heading").text("下载记录"), closeButton).appendTo(panel);
+	const summary = $("<p>").addClass("pp-download-summary").appendTo(panel);
+	const actions = $("<div>").addClass("pp-download-actions").appendTo(panel);
+	const clearCompletedButton = $("<button>").attr({
+		type: "button",
+		title: "清空已完成的下载记录"
+	}).text("清空已完成记录").on("click", clearCompletedDownloads).appendTo(actions);
+	const ignoreRetryableButton = $("<button>").attr({
+		type: "button",
+		title: "移除所有失败和中断的下载记录"
+	}).text("忽略所有待重试记录").on("click", ignoreRetryableDownloads).appendTo(actions);
+	const list = $("<ul>").attr("aria-label", "图片下载列表").appendTo(panel);
+	const rows = /* @__PURE__ */ new Map();
+	const positionPanel = () => {
+		if (panel.prop("hidden")) return;
+		const rect = button.get(0).getBoundingClientRect();
+		const width = panel.outerWidth();
+		const height = panel.outerHeight();
+		panel.css({
+			left: Math.max(12, Math.min(rect.left - width - 12, window.innerWidth - width - 12)),
+			top: Math.max(12, Math.min(rect.bottom - height, window.innerHeight - height - 12))
+		});
+	};
+	const update = () => {
+		const records = getDownloads();
+		const active = records.filter((record) => record.status === "downloading").length;
+		const attention = records.filter((record) => ["failed", "interrupted"].includes(record.status)).length;
+		const completed = records.filter((record) => record.status === "completed").length;
+		clearCompletedButton.prop("disabled", completed === 0);
+		ignoreRetryableButton.prop("disabled", attention === 0);
+		const recordIds = new Set(records.map((record) => record.id));
+		for (const [id, row] of rows) if (!recordIds.has(id)) {
+			row.item.remove();
+			rows.delete(id);
+		}
+		const title = `下载记录（${active} 项下载中，${attention} 项待重试）`;
+		button.attr({
+			"data-active": String(active > 0),
+			"data-attention": String(attention > 0),
+			"aria-busy": String(active > 0),
+			title,
+			"aria-label": title
+		});
+		summary.text(records.length ? `${active} 项下载中 · ${completed} 项已完成 · ${attention} 项待重试` : "暂无下载记录，点击预览中的“原图”开始下载。");
+		for (const record of [...records].reverse()) {
+			let row = rows.get(record.id);
+			if (!row) {
+				const item = $("<li>");
+				const info = $("<div>").addClass("pp-download-info").appendTo(item);
+				const artworkId = record.filename.match(/^(\d+)_p\d+/)?.[1];
+				$("<a>").attr({
+					href: artworkId ? `https://www.pixiv.net/artworks/${artworkId}` : record.url,
+					target: "_blank",
+					rel: "noopener noreferrer",
+					title: "查看原作品"
+				}).text(record.filename).appendTo(info);
+				const status = $("<small>").appendTo(info);
+				const progress = $("<progress>").attr({
+					max: 100,
+					"aria-label": `${record.filename} 下载进度`
+				}).appendTo(info);
+				const retry = $("<button>").attr({
+					type: "button",
+					"aria-label": `重试下载 ${record.filename}`
+				}).addClass("pp-download-retry").text("重试").on("click", () => retryDownload(record.id)).appendTo(item);
+				list.prepend(item);
+				row = {
+					item,
+					status,
+					progress,
+					retry
+				};
+				rows.set(record.id, row);
+			}
+			const running = record.status === "downloading";
+			const percent = record.total > 0 ? Math.min(100, Math.floor(record.loaded / record.total * 100)) : void 0;
+			const labels = {
+				downloading: `下载中 ${percent === void 0 ? formatBytes(record.loaded) : `${percent}% · ${formatBytes(record.loaded)} / ${formatBytes(record.total)}`}`,
+				completed: `已下载 · ${formatBytes(record.loaded)}`,
+				interrupted: "下载已中断，点击重试重新下载",
+				failed: `下载失败：${record.error || "网络错误"}`
+			};
+			row.status.text(labels[record.status]);
+			row.retry.prop("hidden", running || record.status === "completed");
+			row.progress.prop("hidden", !running);
+			if (percent === void 0) row.progress.removeAttr("value");
+			else row.progress.val(percent);
+		}
+		positionPanel();
+	};
+	const close = (restoreFocus = false) => {
+		panel.prop("hidden", true);
+		button.attr("aria-expanded", "false");
+		if (restoreFocus) button.trigger("focus");
+	};
+	button.on("click", () => {
+		if (!panel.prop("hidden")) return close();
+		update();
+		panel.prop("hidden", false);
+		button.attr("aria-expanded", "true");
+		positionPanel();
+		closeButton.trigger("focus");
+	});
+	closeButton.on("click", () => close(true));
+	document.addEventListener("click", (event) => {
+		if (!event.isTrusted || panel.prop("hidden")) return;
+		if (!panel.get(0).contains(event.target) && !button.get(0).contains(event.target)) close();
+	});
+	document.addEventListener("keydown", (event) => {
+		if (event.key === "Escape" && !panel.prop("hidden")) {
+			event.preventDefault();
+			close(true);
+		}
+	});
+	window.addEventListener("resize", positionPanel);
+	subscribeDownloads(update);
+	update();
+};
+
+//#endregion
 //#region src/features/hide-favorites.ts
 let isHidden = false;
 const hideFavorites = () => {
@@ -326,74 +767,6 @@ const getTagFromPath = (pathname) => {
 	} catch {
 		return null;
 	}
-};
-
-//#endregion
-//#region src/utils/utils.ts
-const pause = (ms) => {
-	return new Promise((resolve) => setTimeout(resolve, ms));
-};
-const convertObjectKeysFromSnakeToCamel = (obj) => {
-	function snakeToCamel(snake) {
-		return snake.replace(/_([a-z])/g, (result) => result[1].toUpperCase());
-	}
-	const newResponse = {};
-	for (const key in obj) newResponse[snakeToCamel(key)] = obj[key];
-	return newResponse;
-};
-/**
-* 将 Pixiv 原图链接中形如 `123456-abcdef_p0.png` 的文件名规范化为 `123456_p0.png`
-* （部分作品原图链接文件名中会插入一段哈希值，与 Pixiv 网页端展示的文件名不一致）
-*/
-const sanitizeIllustFilename = (filename) => {
-	return filename.replace(/^(\d+)-[0-9a-zA-Z]+(_.*)$/, "$1$2");
-};
-const createLRUCache = (maxSize) => {
-	const map = /* @__PURE__ */ new Map();
-	return {
-		get(key) {
-			if (!map.has(key)) return void 0;
-			const val = map.get(key);
-			map.delete(key);
-			map.set(key, val);
-			return val;
-		},
-		set(key, val) {
-			if (map.has(key)) map.delete(key);
-			else if (map.size >= maxSize) map.delete(map.keys().next().value);
-			map.set(key, val);
-		}
-	};
-};
-
-//#endregion
-//#region src/services/request.ts
-const xmlHttpRequest = window.GM.xmlHttpRequest;
-const request = (options) => {
-	const { headers, ...restOptions } = options;
-	return xmlHttpRequest({
-		responseType: "json",
-		...restOptions,
-		headers: {
-			referer: "https://www.pixiv.net/",
-			...headers
-		}
-	});
-};
-const requestWithRetry = async (options) => {
-	const { retryDelay = 1e4, maxRetryTimes = Infinity, onRetry, ...restOptions } = options;
-	let response;
-	let retryTimes = 0;
-	while (retryTimes < maxRetryTimes) {
-		response = await request(restOptions);
-		if (response.status === 200) {
-			if (!response.response.error) return response;
-		}
-		retryTimes += 1;
-		onRetry?.(response, retryTimes);
-		await pause(retryDelay);
-	}
-	throw new Error(`Request for ${restOptions.url} failed: ${response?.responseText}`);
 };
 
 //#endregion
@@ -1177,44 +1550,12 @@ const loadLocalTags = () => {
 };
 
 //#endregion
-//#region src/icons/download.svg
-var download_default = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg t=\"1742281193586\"\n     class=\"icon\"\n     viewBox=\"0 0 1024 1024\"\n     version=\"1.1\"\n     xmlns=\"http://www.w3.org/2000/svg\"\n     p-id=\"24408\"\n     width=\"10\"\n     height=\"10\">\n    <path d=\"M1024 896v128H0v-320h128v192h768v-192h128v192zM576 554.688L810.688 320 896 405.312l-384 384-384-384L213.312 320 448 554.688V0h128v554.688z\"\n          fill=\"#ffffff\"\n          p-id=\"24409\" />\n</svg>";
-
-//#endregion
 //#region src/icons/loading.svg
 var loading_default = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg t=\"1742282291278\"\n     class=\"icon\"\n     viewBox=\"0 0 1024 1024\"\n     version=\"1.1\"\n     xmlns=\"http://www.w3.org/2000/svg\"\n     p-id=\"38665\"\n     width=\"48\"\n     height=\"48\">\n    <path d=\"M988 548c-19.9 0-36-16.1-36-36 0-59.4-11.6-117-34.6-171.3a440.45 440.45 0 0 0-94.3-139.9 437.71 437.71 0 0 0-139.9-94.3C629 83.6 571.4 72 512 72c-19.9 0-36-16.1-36-36s16.1-36 36-36c69.1 0 136.2 13.5 199.3 40.3C772.3 66 827 103 874 150c47 47 83.9 101.8 109.7 162.7 26.7 63.1 40.2 130.2 40.2 199.3 0.1 19.9-16 36-35.9 36z\"\n          p-id=\"38666\"\n          fill=\"#1296db\" />\n</svg>";
 
 //#endregion
 //#region src/icons/page.svg
 var page_default = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg viewBox=\"0 0 10 10\"\n     width=\"10\"\n     height=\"10\">\n    <path d=\"M 8 3 C 8.55228 3 9 3.44772 9 4 L 9 9 C 9 9.55228 8.55228 10 8 10 L 3 10 C 2.44772 10 2 9.55228 2 9 L 6 9 C 7.10457 9 8 8.10457 8 7 L 8 3 Z M 1 1 L 6 1 C 6.55228 1 7 1.44772 7 2 L 7 7 C 7 7.55228 6.55228 8 6 8 L 1 8 C 0.447715 8 0 7.55228 0 7 L 0 2 C 0 1.44772 0.447715 1 1 1 Z\"\n          fill=\"#ffffff\" />\n</svg>";
-
-//#endregion
-//#region src/services/download.ts
-const downloadFile = (url, filename, options = {}) => {
-	const { onload, onerror, ...restOptions } = options;
-	request({
-		...restOptions,
-		url,
-		method: "GET",
-		responseType: "blob",
-		onload: function(resp) {
-			onload?.call(this, resp);
-			const blob = new Blob([resp.response], { type: resp.responseType });
-			const blobUrl = URL.createObjectURL(blob);
-			const a = document.createElement("a");
-			a.href = blobUrl;
-			a.download = filename;
-			document.body.appendChild(a);
-			a.click();
-			document.body.removeChild(a);
-			URL.revokeObjectURL(blobUrl);
-		},
-		onerror: function(resp) {
-			onerror?.call(this, resp);
-			iLog.e(`Download ${filename} from ${url} failed: ${resp.responseText}`);
-		}
-	});
-};
 
 //#endregion
 //#region src/services/illustration.ts
@@ -2226,6 +2567,16 @@ var PreviewedIllust = class {
 		const currentImageFilename = sanitizeIllustFilename(currentImageOriginalUrl.split("/").pop() || "illust.jpg");
 		const textSpan = this.downloadOriginalElement.find("span");
 		const originalText = textSpan.text();
+		const downloadElement = this.downloadOriginalElement;
+		const onDownloadFailed = () => {
+			if (this.downloadOriginalElement !== downloadElement) return;
+			textSpan.text(originalText);
+			downloadElement.css({
+				backgroundImage: "",
+				backgroundSize: "",
+				pointerEvents: ""
+			});
+		};
 		this.downloadOriginalElement.css({
 			pointerEvents: "none",
 			backgroundImage: "linear-gradient(to right, rgba(0,150,250,0.28), rgba(0,150,250,0.28))",
@@ -2237,6 +2588,9 @@ var PreviewedIllust = class {
 			url: currentImageOriginalUrl,
 			filename: currentImageFilename,
 			options: {
+				onerror: onDownloadFailed,
+				ontimeout: onDownloadFailed,
+				onabort: onDownloadFailed,
 				onprogress: (ev) => {
 					if (this.currentPage !== downloadPage) return;
 					try {
@@ -2539,79 +2893,6 @@ var PreviewedIllust = class {
 };
 
 //#endregion
-//#region src/i18n/index.ts
-const Texts = {
-	install_title: "欢迎使用 Pixiv Previewer (LolipopJ Edition) v",
-	upgrade_body: `<div>
-  <p style="line-height: 1.6;">
-    本脚本基于
-    <a
-      style="color: skyblue"
-      href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer"
-      target="_blank"
-      >Pixiv Previewer</a
-    >
-    二次开发，旨在满足开发者自己需要的能力。如果您有不错的想法或建议，请前往原脚本的
-    <a
-      style="color: skyblue"
-      href="https://greasyfork.org/zh-CN/scripts/30766-pixiv-previewer/feedback"
-      target="_blank"
-      >Greasy Fork 反馈页面</a
-    >或开启一个新的
-    <a
-      style="color: skyblue"
-      href="https://github.com/Ocrosoft/PixivPreviewer/issues"
-      target="_blank"
-      >Github 议题</a
-    >！
-  </p>
-</div>
-`,
-	setting_language: "语言",
-	setting_preview: "预览",
-	setting_animePreview: "动图预览",
-	setting_sort: "搜索页自动排序",
-	setting_anime: "动图下载（动图预览及详情页生效）",
-	setting_origin: "预览时优先显示原图（慢）",
-	setting_previewDelay: "延迟显示预览图（毫秒）",
-	setting_previewByKey: "使用按键控制预览图展示（Ctrl）",
-	setting_previewByKeyHelp: "开启后鼠标移动到图片上不再展示预览图，按下Ctrl键才展示，同时“延迟显示预览”设置项不生效。",
-	setting_maxPage: "每次排序时统计的最大页数",
-	setting_hideWork: "隐藏收藏数少于设定值的作品",
-	setting_sortOrderByBookmark: "按照收藏数排序作品",
-	setting_hideAiWork: "排序时隐藏 AI 生成作品",
-	setting_hideAiAssistedWork: "排序时隐藏 AI 辅助作品",
-	setting_hideFav: "排序时隐藏已收藏的作品",
-	setting_hideFollowed: "排序时隐藏已关注画师作品",
-	setting_hideByTag: "排序时隐藏指定标签的作品",
-	setting_hideByTagPlaceholder: "输入标签名，多个标签用','分隔",
-	setting_clearFollowingCache: "清除缓存",
-	setting_clearFollowingCacheHelp: "关注画师信息会在本地保存一天，如果希望立即更新，请点击清除缓存",
-	setting_followingCacheCleared: "已清除缓存，请刷新页面。",
-	setting_blank: "使用新标签页打开作品详情页",
-	setting_turnPage: "使用键盘←→进行翻页（排序后的搜索页）",
-	setting_save: "保存设置",
-	setting_reset: "重置脚本",
-	setting_resetHint: "这会删除所有设置，相当于重新安装脚本，确定要重置吗？",
-	setting_novelSort: "小说排序",
-	setting_novelMaxPage: "小说排序时统计的最大页数",
-	setting_novelHideWork: "隐藏收藏数少于设定值的作品",
-	setting_novelHideFav: "排序时隐藏已收藏的作品",
-	sort_noWork: "没有可以显示的作品（隐藏了 %1 个作品）",
-	sort_getWorks: "正在获取第 %1/%2 页作品",
-	sort_getBookmarkCount: "获取收藏数：%1/%2",
-	sort_getPublicFollowing: "获取公开关注画师",
-	sort_getPrivateFollowing: "获取私有关注画师",
-	sort_filtering: "过滤%1收藏量低于%2的作品",
-	sort_filteringHideFavorite: "已收藏和",
-	sort_fullSizeThumb: "全尺寸缩略图（搜索页、用户页）",
-	label_sort: "排序",
-	label_sorting: "排序中",
-	label_nextPage: "下一页",
-	label_hideFav: "过滤收藏"
-};
-
-//#endregion
 //#region src/icons/heart.svg
 var heart_default = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg viewBox=\"0 0 32 32\"\n     width=\"32\"\n     height=\"32\">\n    <path d=\"&#xA;M21,5.5 C24.8659932,5.5 28,8.63400675 28,12.5 C28,18.2694439 24.2975093,23.1517313 17.2206059,27.1100183&#xA;C16.4622493,27.5342993 15.5379984,27.5343235 14.779626,27.110148 C7.70250208,23.1517462 4,18.2694529 4,12.5&#xA;C4,8.63400691 7.13400681,5.5 11,5.5 C12.829814,5.5 14.6210123,6.4144028 16,7.8282366&#xA;C17.3789877,6.4144028 19.170186,5.5 21,5.5 Z\" />\n    <path d=\"M16,11.3317089 C15.0857201,9.28334665 13.0491506,7.5 11,7.5&#xA;C8.23857625,7.5 6,9.73857647 6,12.5 C6,17.4386065 9.2519779,21.7268174 15.7559337,25.3646328&#xA;C15.9076021,25.4494645 16.092439,25.4494644 16.2441073,25.3646326 C22.7480325,21.7268037 26,17.4385986 26,12.5&#xA;C26,9.73857625 23.7614237,7.5 21,7.5 C18.9508494,7.5 16.9142799,9.28334665 16,11.3317089 Z\"\n          style=\"fill: #fafafa;\" />\n</svg>";
 
@@ -2687,7 +2968,11 @@ const loadIllustSort = (options) => {
 					"font-weight": "bold",
 					color: "initial"
 				}).appendTo(this.progressElement);
-				this.sortButtonElement.text(Texts.label_sort);
+				this.sortButtonElement.attr({
+					title: "排序作品",
+					"aria-label": "排序作品",
+					"aria-busy": "false"
+				});
 			} catch (error) {
 				iLog.e(`An error occurred while resetting sorter:`, error);
 				throw new Error(String(error), { cause: error });
@@ -2696,7 +2981,11 @@ const loadIllustSort = (options) => {
 		async sort({ type, api, searchParams }) {
 			this.sorting = true;
 			iLog.i("Start to sort illustrations.");
-			this.sortButtonElement.text(Texts.label_sorting);
+			this.sortButtonElement.attr({
+				title: "正在排序作品",
+				"aria-label": "正在排序作品",
+				"aria-busy": "true"
+			});
 			try {
 				let illustrations = [];
 				const startPage = Number(searchParams.get("p") ?? 1);
@@ -2772,7 +3061,11 @@ const loadIllustSort = (options) => {
 			}
 			this.hideProgress();
 			this.sorting = false;
-			this.sortButtonElement.text(Texts.label_sort);
+			this.sortButtonElement.attr({
+				title: "排序作品",
+				"aria-label": "排序作品",
+				"aria-busy": "false"
+			});
 		}
 		setProgress(text) {
 			this.progressText.text(text);
@@ -3018,6 +3311,82 @@ function getIllustrationsFromResponse(type, response) {
 	].includes(type)) return Object.values(response.body.works);
 	return [];
 }
+
+//#endregion
+//#region src/i18n/index.ts
+const Texts = {
+	install_title: "欢迎使用 Pixiv Previewer (LolipopJ Edition) v",
+	upgrade_body: `<div>
+  <p style="line-height: 1.6;">
+    本脚本基于
+    <a style="color: skyblue;" href="https://greasyfork.org/scripts/30766-pixiv-previewer" target="_blank">Pixiv
+      Previewer</a>
+    二次开发，旨在满足开发者自己需要的能力。如果您有不错的想法或建议，请前往原脚本的
+    <a style="color: skyblue;" href="https://greasyfork.org/scripts/30766-pixiv-previewer/feedback"
+      target="_blank">Greasy Fork 反馈页面</a>或开启一个新的
+    <a style="color: skyblue;" href="https://github.com/Ocrosoft/PixivPreviewer/issues" target="_blank">Github 议题</a>！
+  </p>
+  <p style="line-height: 1.6;">
+    如需查看功能更新记录，可前往此脚本的
+    <a style="color: skyblue;" href="https://greasyfork.org/scripts/533844-pixiv-previewer-l/versions" target="_blank"
+      rel="noopener noreferrer">版本历史页面</a>。
+  </p>
+</div>`,
+	setting_language: "语言",
+	setting_preview: "预览",
+	setting_animePreview: "动图预览",
+	setting_sort: "搜索页自动排序",
+	setting_anime: "动图下载（动图预览及详情页生效）",
+	setting_origin: "预览时优先显示原图（慢）",
+	setting_previewDelay: "延迟显示预览图（毫秒）",
+	setting_previewByKey: "使用按键控制预览图展示（Ctrl）",
+	setting_previewByKeyHelp: "开启后鼠标移动到图片上不再展示预览图，按下Ctrl键才展示，同时“延迟显示预览”设置项不生效。",
+	setting_maxPage: "每次排序时统计的最大页数",
+	setting_hideWork: "隐藏收藏数少于设定值的作品",
+	setting_sortOrderByBookmark: "按照收藏数排序作品",
+	setting_hideAiWork: "排序时隐藏 AI 生成作品",
+	setting_hideAiAssistedWork: "排序时隐藏 AI 辅助作品",
+	setting_hideFav: "排序时隐藏已收藏的作品",
+	setting_hideFollowed: "排序时隐藏已关注画师作品",
+	setting_hideByTag: "排序时隐藏指定标签的作品",
+	setting_hideByTagPlaceholder: "输入标签名，多个标签用','分隔",
+	setting_clearFollowingCache: "清除缓存",
+	setting_clearFollowingCacheHelp: "关注画师信息会在本地保存一天，如果希望立即更新，请点击清除缓存",
+	setting_followingCacheCleared: "已清除缓存，请刷新页面。",
+	setting_blank: "使用新标签页打开作品详情页",
+	setting_turnPage: "使用键盘←→进行翻页（排序后的搜索页）",
+	setting_save: "保存设置",
+	setting_reset: "重置脚本",
+	setting_resetHint: "这会删除所有设置，相当于重新安装脚本，确定要重置吗？",
+	setting_novelSort: "小说排序",
+	setting_novelMaxPage: "小说排序时统计的最大页数",
+	setting_novelHideWork: "隐藏收藏数少于设定值的作品",
+	setting_novelHideFav: "排序时隐藏已收藏的作品",
+	sort_noWork: "没有可以显示的作品（隐藏了 %1 个作品）",
+	sort_getWorks: "正在获取第 %1/%2 页作品",
+	sort_getBookmarkCount: "获取收藏数：%1/%2",
+	sort_getPublicFollowing: "获取公开关注画师",
+	sort_getPrivateFollowing: "获取私有关注画师",
+	sort_filtering: "过滤%1收藏量低于%2的作品",
+	sort_filteringHideFavorite: "已收藏和",
+	sort_fullSizeThumb: "全尺寸缩略图（搜索页、用户页）",
+	label_sort: "排序",
+	label_sorting: "排序中",
+	label_nextPage: "下一页",
+	label_hideFav: "过滤收藏"
+};
+
+//#endregion
+//#region src/icons/hide-favorites.svg
+var hide_favorites_default = "<svg\n  xmlns=\"http://www.w3.org/2000/svg\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path\n    d=\"M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z\"\n  />\n  <path d=\"M3 3 21 21\" />\n</svg>";
+
+//#endregion
+//#region src/icons/next-page.svg
+var next_page_default = "<svg\n  xmlns=\"http://www.w3.org/2000/svg\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"m6.5 5 7 7-7 7M17.5 5v14\" />\n</svg>";
+
+//#endregion
+//#region src/icons/sort.svg
+var sort_default = "<svg\n  xmlns=\"http://www.w3.org/2000/svg\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M4 6h16M4 12h10M4 18h4m9-4 3 3 3-3m-3-5v8\" />\n</svg>";
 
 //#endregion
 //#region src/utils/setting.ts
@@ -3276,7 +3645,7 @@ const initializePixivPreviewer = () => {
 		g_settings = registerSettingsMenu();
 		if (g_settings.enableLocalTags) loadLocalTags();
 		iLog.i("Start to initialize Pixiv Previewer with global settings:", g_settings);
-		if (g_settings.version !== "1.6.0") ShowUpgradeMessage();
+		if (g_settings.version !== "1.7.0") ShowUpgradeMessage();
 		if (g_settings.enablePreview) loadIllustPreview(g_settings);
 		$.get(location.href, function(data) {
 			const matched = data.match(/token\\":\\"([a-z0-9]{32})/);
@@ -3313,12 +3682,16 @@ const initializePixivPreviewer = () => {
 		}
 		if (!$(`#${"pp-sort"}`).length) {
 			const newListItem = document.createElement("div");
-			newListItem.title = "Sort artworks";
+			newListItem.title = "排序作品";
 			newListItem.innerHTML = "";
 			const newButton = document.createElement("button");
 			newButton.id = SORT_BUTTON_ID;
-			newButton.style.cssText = "box-sizing: border-box; background-color: rgba(0,0,0,0.32); color: #fff; margin-top: 5px; opacity: 0.8; cursor: pointer; border: none; padding: 0px; border-radius: 24px; width: 48px; height: 48px; font-size: 12px; font-weight: bold;";
-			newButton.innerHTML = Texts.label_sort;
+			newButton.className = "pp-toolbar-button";
+			newButton.type = "button";
+			newButton.title = "排序作品";
+			newButton.setAttribute("aria-label", "排序作品");
+			newButton.innerHTML = sort_default;
+			newButton.querySelector("svg")?.setAttribute("aria-hidden", "true");
 			newListItem.appendChild(newButton);
 			toolBar.appendChild(newListItem);
 			$(newButton).on("click", () => {
@@ -3328,12 +3701,16 @@ const initializePixivPreviewer = () => {
 		}
 		if (!$(`#${"pp-sort-next-page"}`).length) {
 			const newListItem = document.createElement("div");
-			newListItem.title = "Jump to next page";
+			newListItem.title = "前往下一页";
 			newListItem.innerHTML = "";
 			const newButton = document.createElement("button");
 			newButton.id = SORT_NEXT_PAGE_BUTTON_ID;
-			newButton.style.cssText = "box-sizing: border-box; background-color: rgba(0,0,0,0.32); color: #fff; margin-top: 5px; opacity: 0.8; cursor: pointer; border: none; padding: 0px; border-radius: 24px; width: 48px; height: 48px; font-size: 12px; font-weight: bold;";
-			newButton.innerHTML = Texts.label_nextPage;
+			newButton.className = "pp-toolbar-button";
+			newButton.type = "button";
+			newButton.title = "前往下一页";
+			newButton.setAttribute("aria-label", "前往下一页");
+			newButton.innerHTML = next_page_default;
+			newButton.querySelector("svg")?.setAttribute("aria-hidden", "true");
 			newListItem.appendChild(newButton);
 			toolBar.appendChild(newListItem);
 			$(newButton).on("click", () => {
@@ -3343,18 +3720,23 @@ const initializePixivPreviewer = () => {
 		}
 		if (!$(`#${"pp-hide-favorites"}`).length) {
 			const newListItem = document.createElement("div");
-			newListItem.title = "Hide favorite illustrations";
+			newListItem.title = "隐藏已收藏作品";
 			newListItem.innerHTML = "";
 			const newButton = document.createElement("button");
 			newButton.id = HIDE_FAVORITES_BUTTON_ID;
-			newButton.style.cssText = "box-sizing: border-box; background-color: rgba(0,0,0,0.32); color: #fff; margin-top: 5px; opacity: 0.8; cursor: pointer; border: none; padding: 0px; border-radius: 24px; width: 48px; height: 48px; font-size: 12px; font-weight: bold;";
-			newButton.innerHTML = Texts.label_hideFav;
+			newButton.className = "pp-toolbar-button";
+			newButton.type = "button";
+			newButton.title = "隐藏已收藏作品";
+			newButton.setAttribute("aria-label", "隐藏已收藏作品");
+			newButton.innerHTML = hide_favorites_default;
+			newButton.querySelector("svg")?.setAttribute("aria-hidden", "true");
 			newListItem.appendChild(newButton);
 			toolBar.appendChild(newListItem);
 			$(newButton).on("click", () => {
 				hideFavorites();
 			});
 		}
+		loadDownloadPanel(toolBar);
 	} catch (e) {
 		DoLog(1, "An error occurred while initializing:", e);
 	}
