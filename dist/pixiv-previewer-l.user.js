@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             1.7.0-20261023
+// @version             1.7.1-20261023
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0-only
@@ -24,7 +24,7 @@
 // ==/UserScript==
 //#region src/constants/index.ts
 /** 版本号，发生改变时将会弹窗 */
-const g_version = "1.7.0";
+const g_version = "1.7.1";
 /** 默认设置 */
 const g_defaultSettings = {
 	enablePreview: true,
@@ -216,6 +216,14 @@ function deleteExpiredIllustrationDetails() {
 var download_default = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg t=\"1742281193586\"\n     class=\"icon\"\n     viewBox=\"0 0 1024 1024\"\n     version=\"1.1\"\n     xmlns=\"http://www.w3.org/2000/svg\"\n     p-id=\"24408\"\n     width=\"10\"\n     height=\"10\">\n    <path d=\"M1024 896v128H0v-320h128v192h768v-192h128v192zM576 554.688L810.688 320 896 405.312l-384 384-384-384L213.312 320 448 554.688V0h128v554.688z\"\n          fill=\"#ffffff\"\n          p-id=\"24409\" />\n</svg>";
 
 //#endregion
+//#region src/icons/retry.svg
+var retry_default = "<svg\r\n  xmlns=\"http://www.w3.org/2000/svg\"\r\n  viewBox=\"0 0 24 24\"\r\n  fill=\"none\"\r\n  stroke=\"currentColor\"\r\n  stroke-width=\"2\"\r\n  stroke-linecap=\"round\"\r\n  stroke-linejoin=\"round\"\r\n  aria-hidden=\"true\"\r\n  focusable=\"false\"\r\n>\r\n  <path d=\"M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8\" />\r\n  <path d=\"M3 3v5h5\" />\r\n</svg>";
+
+//#endregion
+//#region src/icons/stop.svg
+var stop_default = "<svg\r\n  xmlns=\"http://www.w3.org/2000/svg\"\r\n  viewBox=\"0 0 24 24\"\r\n  fill=\"none\"\r\n  stroke=\"currentColor\"\r\n  stroke-width=\"2\"\r\n  stroke-linecap=\"round\"\r\n  stroke-linejoin=\"round\"\r\n  aria-hidden=\"true\"\r\n  focusable=\"false\"\r\n>\r\n  <rect x=\"5\" y=\"5\" width=\"14\" height=\"14\" rx=\"2\" />\r\n</svg>";
+
+//#endregion
 //#region src/utils/utils.ts
 const pause = (ms) => {
 	return new Promise((resolve) => setTimeout(resolve, ms));
@@ -286,34 +294,115 @@ const requestWithRetry = async (options) => {
 //#endregion
 //#region src/services/download.ts
 const STORAGE_KEY = "pp-downloads";
+/** 已完成的下载记录最多保留的条数 */
+const MAX_COMPLETED_RECORDS = 200;
+/** 待重试（失败或中断）的下载记录最多保留的条数 */
+const MAX_RETRYABLE_RECORDS = 200;
+/** 当前标签页的标识 */
+const TAB_ID = crypto.randomUUID();
+/** 执行下载的标签页超过该时长未更新状态时，视为该标签页已崩溃或卸载 */
+const OWNER_TIMEOUT = 18e4;
+/** 刷新下载状态存活时间的心跳间隔 */
+const HEARTBEAT_INTERVAL = 15e3;
 const listeners = /* @__PURE__ */ new Set();
 const attempts = /* @__PURE__ */ new Map();
+const requests = /* @__PURE__ */ new Map();
+/** 被用户主动中止的尝试 */
+const abortedAttempts = /* @__PURE__ */ new Set();
 let downloads;
-const getDownloads = () => {
+let heartbeat;
+/** 清除记录上的下载归属信息 */
+const releaseOwnership = (record) => {
+	delete record.owner;
+	record.updatedAt = Date.now();
+};
+/** 读取存储中由各标签页共享的下载记录 */
+const readStoredDownloads = () => {
+	const saved = GM_getValue(STORAGE_KEY, []);
+	if (!Array.isArray(saved)) return [];
+	const now = Date.now();
+	return saved.filter((item) => item && typeof item.id === "string" && typeof item.url === "string" && /^https?:\/\//.test(item.url) && typeof item.filename === "string" && [
+		"downloading",
+		"completed",
+		"interrupted",
+		"failed"
+	].includes(item.status) && Number.isFinite(item.loaded) && Number.isFinite(item.total) && Number.isFinite(item.createdAt) && (item.completedAt === void 0 || Number.isFinite(item.completedAt))).map((item) => {
+		const record = {
+			id: item.id,
+			url: item.url,
+			filename: item.filename,
+			status: item.status,
+			loaded: item.loaded,
+			total: item.total,
+			createdAt: item.createdAt
+		};
+		if (Number.isFinite(item.completedAt)) record.completedAt = item.completedAt;
+		if (typeof item.error === "string") record.error = item.error;
+		if (typeof item.owner === "string") record.owner = item.owner;
+		if (Number.isFinite(item.updatedAt)) record.updatedAt = item.updatedAt;
+		if (record.status === "downloading" && (!record.owner || record.updatedAt === void 0 || now - record.updatedAt > OWNER_TIMEOUT)) {
+			record.status = "interrupted";
+			releaseOwnership(record);
+		}
+		return record;
+	});
+};
+/** 本标签页已删除的记录，避免合并存储快照时被旧数据带回 */
+const removedIds = /* @__PURE__ */ new Set();
+/**
+* 合并存储快照与本地记录：按更新时间取较新状态，本标签页进行中的下载始终以本地对象为准。
+* `allowDelete` 用于同步其他标签页的删除操作。
+*/
+const applyStored = (stored, allowDelete) => {
+	const remote = stored.filter((record) => !removedIds.has(record.id));
 	if (!downloads) {
-		const saved = GM_getValue(STORAGE_KEY, []);
-		downloads = Array.isArray(saved) ? saved.filter((item) => item && typeof item.id === "string" && typeof item.url === "string" && /^https?:\/\//.test(item.url) && typeof item.filename === "string" && [
-			"downloading",
-			"completed",
-			"interrupted",
-			"failed"
-		].includes(item.status) && Number.isFinite(item.loaded) && Number.isFinite(item.total) && Number.isFinite(item.createdAt)).map((item) => ({
-			...item,
-			status: item.status === "downloading" ? "interrupted" : item.status
-		})) : [];
+		downloads = remote;
+		return;
 	}
-	return downloads.map((item) => ({ ...item }));
-};
-const subscribeDownloads = (listener) => {
-	listeners.add(listener);
-	return () => listeners.delete(listener);
-};
-const publish = (persist = true) => {
-	if (persist) try {
-		GM_setValue(STORAGE_KEY, downloads);
-	} catch (error) {
-		iLog.e("保存下载记录失败：", error);
+	const remoteById = new Map(remote.map((record) => [record.id, record]));
+	const result = [];
+	for (const record of downloads) {
+		if (attempts.has(record.id)) {
+			result.push(record);
+			continue;
+		}
+		const remoteRecord = remoteById.get(record.id);
+		if (!remoteRecord) {
+			if (!allowDelete) result.push(record);
+			continue;
+		}
+		result.push((remoteRecord.updatedAt ?? 0) >= (record.updatedAt ?? 0) ? remoteRecord : record);
 	}
+	const known = new Set(result.map((record) => record.id));
+	for (const record of remote) if (!known.has(record.id)) result.push(record);
+	downloads = result.sort((a, b) => b.createdAt - a.createdAt);
+};
+const syncFromStorage = (allowDelete = false) => {
+	applyStored(readStoredDownloads(), allowDelete);
+};
+/** 记录数超出上限时，移除最早的已完成记录和最早的待重试记录 */
+const trimDownloads = () => {
+	if (!downloads) return;
+	downloads = [...downloads].sort((a, b) => b.createdAt - a.createdAt);
+	const counts = {
+		completed: 0,
+		retryable: 0
+	};
+	const kept = downloads.filter((record) => {
+		const type = record.status === "completed" ? "completed" : record.status === "failed" || record.status === "interrupted" ? "retryable" : void 0;
+		if (!type) return true;
+		const limit = type === "completed" ? MAX_COMPLETED_RECORDS : MAX_RETRYABLE_RECORDS;
+		if (counts[type] < limit) {
+			counts[type] += 1;
+			return true;
+		}
+		removedIds.add(record.id);
+		return false;
+	});
+	if (kept.length === downloads.length) return;
+	downloads = kept;
+};
+const notify = () => {
 	listeners.forEach((listener) => {
 		try {
 			listener();
@@ -322,11 +411,80 @@ const publish = (persist = true) => {
 		}
 	});
 };
+const publish = (persist = true) => {
+	if (persist) {
+		const now = Date.now();
+		for (const record of downloads ?? []) if (record.status === "downloading" && attempts.has(record.id)) {
+			record.owner = TAB_ID;
+			record.updatedAt = now;
+		}
+		if (downloads) applyStored(readStoredDownloads(), true);
+		trimDownloads();
+		try {
+			GM_setValue(STORAGE_KEY, downloads);
+			removedIds.clear();
+		} catch (error) {
+			iLog.e("保存下载记录失败：", error);
+		}
+	}
+	notify();
+	ensureHeartbeat();
+};
+/** 刷新本标签页下载的存活时间，并将已关闭标签页遗留的下载标记为中断 */
+const tick = () => {
+	const now = Date.now();
+	let changed = false;
+	for (const record of downloads ?? []) {
+		if (record.status !== "downloading") continue;
+		if (attempts.has(record.id)) {
+			record.updatedAt = now;
+			changed = true;
+			continue;
+		}
+		if (now - (record.updatedAt ?? 0) <= OWNER_TIMEOUT) continue;
+		iLog.w(`下载所在标签页已关闭，标记为中断：${record.filename}`);
+		record.status = "interrupted";
+		releaseOwnership(record);
+		changed = true;
+	}
+	if (changed) publish();
+	if (!downloads?.some((record) => record.status === "downloading")) {
+		if (heartbeat !== void 0) clearInterval(heartbeat);
+		heartbeat = void 0;
+	}
+};
+const ensureHeartbeat = () => {
+	if (heartbeat !== void 0) return;
+	if (!downloads?.some((record) => record.status === "downloading")) return;
+	heartbeat = setInterval(tick, HEARTBEAT_INTERVAL);
+};
+GM_addValueChangeListener(STORAGE_KEY, (_key, _oldValue, _newValue, remote) => {
+	if (!remote) return;
+	syncFromStorage(true);
+	publish(false);
+});
+const getDownloads = () => {
+	if (!downloads) {
+		downloads = readStoredDownloads();
+		trimDownloads();
+		ensureHeartbeat();
+	}
+	return downloads.map((item) => ({ ...item }));
+};
+const subscribeDownloads = (listener) => {
+	listeners.add(listener);
+	return () => listeners.delete(listener);
+};
+/** 下载是否正在当前标签页执行 */
+const isDownloadingInThisTab = (id) => attempts.has(id);
 const startDownload = (record, options = {}) => {
 	const { onload, onerror, onprogress, ontimeout, onabort, ...restOptions } = options;
 	record.status = "downloading";
 	record.loaded = 0;
 	record.total = 0;
+	record.owner = TAB_ID;
+	record.updatedAt = Date.now();
+	delete record.completedAt;
 	delete record.error;
 	const attempt = Symbol();
 	attempts.set(record.id, attempt);
@@ -336,6 +494,7 @@ const startDownload = (record, options = {}) => {
 		if (!isActive()) return;
 		record.status = "failed";
 		attempts.delete(record.id);
+		releaseOwnership(record);
 		record.error = message;
 		publish();
 		iLog.e(`Download ${record.filename} from ${record.url} failed: ${message}`);
@@ -384,8 +543,10 @@ const startDownload = (record, options = {}) => {
 					}
 					record.status = "completed";
 					attempts.delete(record.id);
+					releaseOwnership(record);
 					record.loaded = blob.size;
 					record.total = blob.size;
+					record.completedAt = Date.now();
 					publish();
 				} catch (error) {
 					const message = String(error);
@@ -410,18 +571,49 @@ const startDownload = (record, options = {}) => {
 				ontimeout?.call(this);
 			},
 			onabort: function() {
+				if (abortedAttempts.delete(attempt)) {
+					onabort?.call(this);
+					return;
+				}
 				if (!isActive()) return;
 				fail("下载已取消");
 				onabort?.call(this);
 			}
 		});
-		Promise.resolve(pending).catch((error) => fail(String(error)));
+		requests.set(record.id, pending);
+		Promise.resolve(pending).catch((error) => fail(String(error))).finally(() => {
+			abortedAttempts.delete(attempt);
+			if (requests.get(record.id) === pending) requests.delete(record.id);
+		});
 	} catch (error) {
 		fail(String(error));
 	}
 };
+/** 中止下载中的作品，被中止的下载视为待重试 */
+const abortDownload = (id) => {
+	getDownloads();
+	const record = downloads.find((item) => item.id === id);
+	if (record?.status !== "downloading") return;
+	if (!attempts.has(id)) return;
+	const pending = requests.get(id);
+	const attempt = attempts.get(id);
+	requests.delete(id);
+	attempts.delete(id);
+	if (attempt) abortedAttempts.add(attempt);
+	record.status = "interrupted";
+	releaseOwnership(record);
+	delete record.error;
+	publish();
+	try {
+		pending?.abort();
+	} catch (error) {
+		if (attempt) abortedAttempts.delete(attempt);
+		iLog.e(`中止下载 ${record.filename} 失败：`, error);
+	}
+};
 const downloadFile = (url, filename, options = {}) => {
 	getDownloads();
+	syncFromStorage();
 	const record = {
 		id: crypto.randomUUID(),
 		url,
@@ -436,25 +628,69 @@ const downloadFile = (url, filename, options = {}) => {
 };
 const retryDownload = (id) => {
 	getDownloads();
+	syncFromStorage();
 	const record = downloads.find((item) => item.id === id);
 	if (record?.status === "failed" || record?.status === "interrupted") startDownload(record);
 };
 const clearCompletedDownloads = () => {
 	getDownloads();
+	syncFromStorage(true);
+	const removed = downloads.filter((record) => record.status === "completed");
+	for (const record of removed) removedIds.add(record.id);
 	downloads = downloads.filter((record) => record.status !== "completed");
 	publish();
 };
 const ignoreRetryableDownloads = () => {
 	getDownloads();
+	syncFromStorage(true);
+	const removed = downloads.filter((record) => record.status === "failed" || record.status === "interrupted");
+	for (const record of removed) removedIds.add(record.id);
 	downloads = downloads.filter((record) => record.status !== "failed" && record.status !== "interrupted");
 	publish();
 };
+window.addEventListener("pagehide", (event) => {
+	if (event.persisted) return;
+	const local = downloads?.filter((record) => record.status === "downloading" && attempts.has(record.id));
+	if (!local?.length) return;
+	for (const record of local) {
+		record.status = "interrupted";
+		releaseOwnership(record);
+	}
+	attempts.clear();
+	publish();
+});
+document.addEventListener("visibilitychange", () => {
+	if (document.visibilityState !== "visible") return;
+	syncFromStorage(true);
+	publish(false);
+});
+window.addEventListener("pageshow", (event) => {
+	if (!event.persisted) return;
+	attempts.clear();
+	requests.clear();
+	for (const record of downloads ?? []) if (record.status === "downloading" && record.owner === TAB_ID) {
+		record.status = "interrupted";
+		releaseOwnership(record);
+	}
+	syncFromStorage(true);
+	publish();
+});
 
 //#endregion
 //#region src/features/downloads.ts
 const BUTTON_ID = "pp-downloads-button";
 const PANEL_ID = "pp-downloads-panel";
 const formatBytes = (bytes) => bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.ceil(bytes / 1024)} KB`;
+const formatTime = (timestamp) => {
+	const date = new Date(timestamp);
+	const pad = (value) => String(value).padStart(2, "0");
+	return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+};
+const createIconButton$1 = (label, icon, className, onClick) => $("<button>").attr({
+	type: "button",
+	title: label,
+	"aria-label": label
+}).addClass(`pp-download-icon ${className}`).html(icon).on("click", onClick);
 const loadDownloadPanel = (toolbar) => {
 	if (document.getElementById(BUTTON_ID)) return;
 	$("<style>").text(`
@@ -470,8 +706,16 @@ const loadDownloadPanel = (toolbar) => {
       #${BUTTON_ID} svg { width: 20px; height: 20px; }
       .pp-toolbar-button[aria-busy="true"] svg { animation: pp-toolbar-pulse 1s ease-in-out infinite; }
       #${BUTTON_ID}[data-active="true"] svg { animation: pp-download-bounce 1s ease-in-out infinite; }
+      #${BUTTON_ID} .pp-download-count {
+        position: absolute; top: 0; right: 0; box-sizing: border-box;
+        display: flex; align-items: center; justify-content: center;
+        min-width: 18px; height: 18px; padding: 0 4px;
+        border: 2px solid #fff; border-radius: 9px;
+        background: #0096fa; color: #fff; font: 700 11px/14px sans-serif;
+      }
+      #${BUTTON_ID} .pp-download-count[hidden] { display: none; }
       #${BUTTON_ID}[data-attention="true"]::after {
-        content: ""; position: absolute; top: 3px; right: 3px;
+        content: ""; position: absolute; bottom: 3px; right: 3px;
         width: 10px; height: 10px; border-radius: 50%; background: #e53935;
         border: 2px solid #fff;
       }
@@ -500,7 +744,15 @@ const loadDownloadPanel = (toolbar) => {
       #${PANEL_ID} a:hover { text-decoration: underline; }
       #${PANEL_ID} small { display: block; color: var(--pp-download-muted); overflow-wrap: anywhere; }
       #${PANEL_ID} progress { display: block; width: 100%; height: 6px; margin-top: 8px; accent-color: #0096fa; }
-      #${PANEL_ID} .pp-download-retry { flex-shrink: 0; }
+      #${PANEL_ID} .pp-download-icon {
+        display: inline-flex; align-items: center; justify-content: center;
+        flex-shrink: 0; width: 32px; height: 32px; padding: 6px; border-radius: 50%;
+      }
+      #${PANEL_ID} .pp-download-icon:hover { background: rgba(0, 150, 250, .12); }
+      #${PANEL_ID} .pp-download-icon svg { display: block; width: 18px; height: 18px; }
+      #${PANEL_ID} .pp-download-icon[hidden] { display: none; }
+      #${PANEL_ID} .pp-download-abort { color: #d32f2f; }
+      #${PANEL_ID} .pp-download-abort:hover { background: rgba(211, 47, 47, .12); }
       @keyframes pp-download-bounce { 0%, 100% { transform: translateY(-3px); } 50% { transform: translateY(3px); } }
       @keyframes pp-toolbar-pulse { 50% { opacity: .35; } }
       @media (prefers-reduced-motion: reduce) {
@@ -521,6 +773,7 @@ const loadDownloadPanel = (toolbar) => {
 		"aria-haspopup": "dialog"
 	}).addClass("pp-toolbar-button").html(download_default);
 	button.find("svg").attr("aria-hidden", "true");
+	const countBadge = $("<span>").addClass("pp-download-count").attr("aria-hidden", "true").prop("hidden", true).appendTo(button);
 	$("<div>").append(button).appendTo(toolbar);
 	toolbar.style.zIndex = "10000";
 	const panel = $("<div>").attr({
@@ -569,6 +822,7 @@ const loadDownloadPanel = (toolbar) => {
 			rows.delete(id);
 		}
 		const title = `下载记录（${active} 项下载中，${attention} 项待重试）`;
+		countBadge.text(String(active)).prop("hidden", active === 0);
 		button.attr({
 			"data-active": String(active > 0),
 			"data-attention": String(attention > 0),
@@ -594,28 +848,30 @@ const loadDownloadPanel = (toolbar) => {
 					max: 100,
 					"aria-label": `${record.filename} 下载进度`
 				}).appendTo(info);
-				const retry = $("<button>").attr({
-					type: "button",
-					"aria-label": `重试下载 ${record.filename}`
-				}).addClass("pp-download-retry").text("重试").on("click", () => retryDownload(record.id)).appendTo(item);
+				const abort = createIconButton$1(`中止下载 ${record.filename}`, stop_default, "pp-download-abort", () => abortDownload(record.id)).appendTo(item);
+				const retry = createIconButton$1(`重试下载 ${record.filename}`, retry_default, "pp-download-retry", () => retryDownload(record.id)).appendTo(item);
 				list.prepend(item);
 				row = {
 					item,
 					status,
 					progress,
+					abort,
 					retry
 				};
 				rows.set(record.id, row);
 			}
 			const running = record.status === "downloading";
+			const local = running && isDownloadingInThisTab(record.id);
 			const percent = record.total > 0 ? Math.min(100, Math.floor(record.loaded / record.total * 100)) : void 0;
+			const progressText = `${percent === void 0 ? formatBytes(record.loaded) : `${percent}% · ${formatBytes(record.loaded)} / ${formatBytes(record.total)}`}`;
 			const labels = {
-				downloading: `下载中 ${percent === void 0 ? formatBytes(record.loaded) : `${percent}% · ${formatBytes(record.loaded)} / ${formatBytes(record.total)}`}`,
-				completed: `已下载 · ${formatBytes(record.loaded)}`,
+				downloading: local ? `下载中 ${progressText}` : `其他标签页下载中 ${progressText}`,
+				completed: `已下载 · ${formatBytes(record.loaded)}${record.completedAt === void 0 ? "" : ` · ${formatTime(record.completedAt)}`}`,
 				interrupted: "下载已中断，点击重试重新下载",
 				failed: `下载失败：${record.error || "网络错误"}`
 			};
 			row.status.text(labels[record.status]);
+			row.abort.prop("hidden", !local);
 			row.retry.prop("hidden", running || record.status === "completed");
 			row.progress.prop("hidden", !running);
 			if (percent === void 0) row.progress.removeAttr("value");
@@ -3645,7 +3901,7 @@ const initializePixivPreviewer = () => {
 		g_settings = registerSettingsMenu();
 		if (g_settings.enableLocalTags) loadLocalTags();
 		iLog.i("Start to initialize Pixiv Previewer with global settings:", g_settings);
-		if (g_settings.version !== "1.7.0") ShowUpgradeMessage();
+		if (g_settings.version !== "1.7.1") ShowUpgradeMessage();
 		if (g_settings.enablePreview) loadIllustPreview(g_settings);
 		$.get(location.href, function(data) {
 			const matched = data.match(/token\\":\\"([a-z0-9]{32})/);
