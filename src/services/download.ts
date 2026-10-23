@@ -19,6 +19,10 @@ export type DownloadRecord = {
 };
 
 const STORAGE_KEY = "pp-downloads";
+/** 已完成的下载记录最多保留的条数 */
+const MAX_COMPLETED_RECORDS = 200;
+/** 待重试（失败或中断）的下载记录最多保留的条数 */
+const MAX_RETRYABLE_RECORDS = 200;
 /** 当前标签页的标识 */
 const TAB_ID = crypto.randomUUID();
 /** 执行下载的标签页超过该时长未更新状态时，视为该标签页已崩溃或卸载 */
@@ -133,6 +137,33 @@ const syncFromStorage = (allowDelete = false) => {
   applyStored(readStoredDownloads(), allowDelete);
 };
 
+/** 记录数超出上限时，移除最早的已完成记录和最早的待重试记录 */
+const trimDownloads = () => {
+  if (!downloads) return;
+  // 按创建时间倒序排列，保证被移除的是最早的记录
+  downloads = [...downloads].sort((a, b) => b.createdAt - a.createdAt);
+  const counts = { completed: 0, retryable: 0 };
+  const kept = downloads.filter((record) => {
+    const type =
+      record.status === "completed"
+        ? "completed"
+        : record.status === "failed" || record.status === "interrupted"
+          ? "retryable"
+          : undefined;
+    if (!type) return true;
+    const limit =
+      type === "completed" ? MAX_COMPLETED_RECORDS : MAX_RETRYABLE_RECORDS;
+    if (counts[type] < limit) {
+      counts[type] += 1;
+      return true;
+    }
+    removedIds.add(record.id);
+    return false;
+  });
+  if (kept.length === downloads.length) return;
+  downloads = kept;
+};
+
 const notify = () => {
   listeners.forEach((listener) => {
     try {
@@ -155,6 +186,7 @@ const publish = (persist = true) => {
     }
     // 写入前先吸收其他标签页的改动，避免用过期快照覆盖（含删除）
     if (downloads) applyStored(readStoredDownloads(), true);
+    trimDownloads();
     try {
       GM_setValue(STORAGE_KEY, downloads);
       removedIds.clear();
@@ -205,6 +237,7 @@ GM_addValueChangeListener(STORAGE_KEY, (_key, _oldValue, _newValue, remote) => {
 export const getDownloads = (): readonly DownloadRecord[] => {
   if (!downloads) {
     downloads = readStoredDownloads();
+    trimDownloads();
     ensureHeartbeat();
   }
   return downloads.map((item) => ({ ...item }));

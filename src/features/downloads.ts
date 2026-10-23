@@ -56,8 +56,16 @@ export const loadDownloadPanel = (toolbar: HTMLElement) => {
       #${BUTTON_ID} svg { width: 20px; height: 20px; }
       .pp-toolbar-button[aria-busy="true"] svg { animation: pp-toolbar-pulse 1s ease-in-out infinite; }
       #${BUTTON_ID}[data-active="true"] svg { animation: pp-download-bounce 1s ease-in-out infinite; }
+      #${BUTTON_ID} .pp-download-count {
+        position: absolute; top: 0; right: 0; box-sizing: border-box;
+        display: flex; align-items: center; justify-content: center;
+        min-width: 18px; height: 18px; padding: 0 4px;
+        border: 2px solid #fff; border-radius: 9px;
+        background: #0096fa; color: #fff; font: 700 11px/14px sans-serif;
+      }
+      #${BUTTON_ID} .pp-download-count[hidden] { display: none; }
       #${BUTTON_ID}[data-attention="true"]::after {
-        content: ""; position: absolute; top: 3px; right: 3px;
+        content: ""; position: absolute; bottom: 3px; right: 3px;
         width: 10px; height: 10px; border-radius: 50%; background: #e53935;
         border: 2px solid #fff;
       }
@@ -121,6 +129,11 @@ export const loadDownloadPanel = (toolbar: HTMLElement) => {
     .addClass("pp-toolbar-button")
     .html(downloadIcon);
   button.find("svg").attr("aria-hidden", "true");
+  const countBadge = $("<span>")
+    .addClass("pp-download-count")
+    .attr("aria-hidden", "true")
+    .prop("hidden", true)
+    .appendTo(button);
   $("<div>").append(button).appendTo(toolbar);
   toolbar.style.zIndex = "10000";
 
@@ -207,6 +220,7 @@ export const loadDownloadPanel = (toolbar: HTMLElement) => {
       }
     }
     const title = `下载记录（${active} 项下载中，${attention} 项待重试）`;
+    countBadge.text(String(active)).prop("hidden", active === 0);
     button.attr({
       "data-active": String(active > 0),
       "data-attention": String(attention > 0),
