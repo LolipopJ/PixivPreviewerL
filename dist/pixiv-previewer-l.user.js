@@ -4,7 +4,7 @@
 // @version             1.7.0-20261023
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
-// @license             GPL-3.0
+// @license             GPL-3.0-only
 // @supportURL          https://github.com/LolipopJ/PixivPreviewer
 // @match               *://www.pixiv.net/*
 // @grant               GM_getValue
