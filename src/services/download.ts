@@ -12,42 +12,200 @@ export type DownloadRecord = {
   /** 下载完成时间 */
   completedAt?: number;
   error?: string;
+  /** 执行下载的标签页标识，仅下载中有效 */
+  owner?: string;
+  /** 下载状态的最后更新时间，用于判断执行下载的标签页是否仍存活 */
+  updatedAt?: number;
 };
 
 const STORAGE_KEY = "pp-downloads";
+/** 当前标签页的标识 */
+const TAB_ID = crypto.randomUUID();
+/** 执行下载的标签页超过该时长未更新状态时，视为该标签页已崩溃或卸载 */
+const OWNER_TIMEOUT = 180_000;
+/** 刷新下载状态存活时间的心跳间隔 */
+const HEARTBEAT_INTERVAL = 15_000;
+
 const listeners = new Set<() => void>();
 const attempts = new Map<string, symbol>();
 const requests = new Map<string, { abort: () => void }>();
 /** 被用户主动中止的尝试 */
 const abortedAttempts = new Set<symbol>();
 let downloads: DownloadRecord[] | undefined;
+let heartbeat: ReturnType<typeof setInterval> | undefined;
+
+/** 清除记录上的下载归属信息 */
+const releaseOwnership = (record: DownloadRecord) => {
+  delete record.owner;
+  record.updatedAt = Date.now();
+};
+
+/** 读取存储中由各标签页共享的下载记录 */
+const readStoredDownloads = (): DownloadRecord[] => {
+  const saved: unknown = GM_getValue(STORAGE_KEY, []);
+  if (!Array.isArray(saved)) return [];
+  const now = Date.now();
+  return saved
+    .filter(
+      (item): item is DownloadRecord =>
+        item &&
+        typeof item.id === "string" &&
+        typeof item.url === "string" &&
+        /^https?:\/\//.test(item.url) &&
+        typeof item.filename === "string" &&
+        ["downloading", "completed", "interrupted", "failed"].includes(
+          item.status
+        ) &&
+        Number.isFinite(item.loaded) &&
+        Number.isFinite(item.total) &&
+        Number.isFinite(item.createdAt) &&
+        (item.completedAt === undefined || Number.isFinite(item.completedAt))
+    )
+    .map((item) => {
+      const record: DownloadRecord = {
+        id: item.id,
+        url: item.url,
+        filename: item.filename,
+        status: item.status,
+        loaded: item.loaded,
+        total: item.total,
+        createdAt: item.createdAt,
+      };
+      if (Number.isFinite(item.completedAt)) {
+        record.completedAt = item.completedAt;
+      }
+      if (typeof item.error === "string") record.error = item.error;
+      if (typeof item.owner === "string") record.owner = item.owner;
+      if (Number.isFinite(item.updatedAt)) record.updatedAt = item.updatedAt;
+      if (
+        record.status === "downloading" &&
+        (!record.owner ||
+          record.updatedAt === undefined ||
+          now - record.updatedAt > OWNER_TIMEOUT)
+      ) {
+        // 执行下载的标签页已关闭，保留记录以便重试
+        record.status = "interrupted";
+        releaseOwnership(record);
+      }
+      return record;
+    });
+};
+
+/** 本标签页已删除的记录，避免合并存储快照时被旧数据带回 */
+const removedIds = new Set<string>();
+
+/**
+ * 合并存储快照与本地记录：按更新时间取较新状态，本标签页进行中的下载始终以本地对象为准。
+ * `allowDelete` 用于同步其他标签页的删除操作。
+ */
+const applyStored = (stored: DownloadRecord[], allowDelete: boolean) => {
+  const remote = stored.filter((record) => !removedIds.has(record.id));
+  if (!downloads) {
+    downloads = remote;
+    return;
+  }
+  const remoteById = new Map(remote.map((record) => [record.id, record]));
+  const result: DownloadRecord[] = [];
+  for (const record of downloads) {
+    if (attempts.has(record.id)) {
+      result.push(record);
+      continue;
+    }
+    const remoteRecord = remoteById.get(record.id);
+    if (!remoteRecord) {
+      if (!allowDelete) result.push(record);
+      continue;
+    }
+    result.push(
+      (remoteRecord.updatedAt ?? 0) >= (record.updatedAt ?? 0)
+        ? remoteRecord
+        : record
+    );
+  }
+  const known = new Set(result.map((record) => record.id));
+  for (const record of remote) {
+    if (!known.has(record.id)) result.push(record);
+  }
+  downloads = result.sort((a, b) => b.createdAt - a.createdAt);
+};
+
+const syncFromStorage = (allowDelete = false) => {
+  applyStored(readStoredDownloads(), allowDelete);
+};
+
+const notify = () => {
+  listeners.forEach((listener) => {
+    try {
+      listener();
+    } catch (error) {
+      iLog.e("更新下载列表失败：", error);
+    }
+  });
+};
+
+const publish = (persist = true) => {
+  if (persist) {
+    // 刷新本标签页负责的下载的存活时间，作为心跳之外的保底刷新
+    const now = Date.now();
+    for (const record of downloads ?? []) {
+      if (record.status === "downloading" && attempts.has(record.id)) {
+        record.owner = TAB_ID;
+        record.updatedAt = now;
+      }
+    }
+    // 写入前先吸收其他标签页的改动，避免用过期快照覆盖（含删除）
+    if (downloads) applyStored(readStoredDownloads(), true);
+    try {
+      GM_setValue(STORAGE_KEY, downloads);
+      removedIds.clear();
+    } catch (error) {
+      iLog.e("保存下载记录失败：", error);
+    }
+  }
+  notify();
+  ensureHeartbeat();
+};
+
+/** 刷新本标签页下载的存活时间，并将已关闭标签页遗留的下载标记为中断 */
+const tick = () => {
+  const now = Date.now();
+  let changed = false;
+  for (const record of downloads ?? []) {
+    if (record.status !== "downloading") continue;
+    if (attempts.has(record.id)) {
+      record.updatedAt = now;
+      changed = true;
+      continue;
+    }
+    if (now - (record.updatedAt ?? 0) <= OWNER_TIMEOUT) continue;
+    iLog.w(`下载所在标签页已关闭，标记为中断：${record.filename}`);
+    record.status = "interrupted";
+    releaseOwnership(record);
+    changed = true;
+  }
+  if (changed) publish();
+  if (!downloads?.some((record) => record.status === "downloading")) {
+    if (heartbeat !== undefined) clearInterval(heartbeat);
+    heartbeat = undefined;
+  }
+};
+
+const ensureHeartbeat = () => {
+  if (heartbeat !== undefined) return;
+  if (!downloads?.some((record) => record.status === "downloading")) return;
+  heartbeat = setInterval(tick, HEARTBEAT_INTERVAL);
+};
+
+GM_addValueChangeListener(STORAGE_KEY, (_key, _oldValue, _newValue, remote) => {
+  if (!remote) return;
+  syncFromStorage(true);
+  publish(false);
+});
 
 export const getDownloads = (): readonly DownloadRecord[] => {
   if (!downloads) {
-    const saved: unknown = GM_getValue(STORAGE_KEY, []);
-    downloads = Array.isArray(saved)
-      ? saved
-          .filter(
-            (item): item is DownloadRecord =>
-              item &&
-              typeof item.id === "string" &&
-              typeof item.url === "string" &&
-              /^https?:\/\//.test(item.url) &&
-              typeof item.filename === "string" &&
-              ["downloading", "completed", "interrupted", "failed"].includes(
-                item.status
-              ) &&
-              Number.isFinite(item.loaded) &&
-              Number.isFinite(item.total) &&
-              Number.isFinite(item.createdAt) &&
-              (item.completedAt === undefined ||
-                Number.isFinite(item.completedAt))
-          )
-          .map((item) => ({
-            ...item,
-            status: item.status === "downloading" ? "interrupted" : item.status,
-          }))
-      : [];
+    downloads = readStoredDownloads();
+    ensureHeartbeat();
   }
   return downloads.map((item) => ({ ...item }));
 };
@@ -57,22 +215,8 @@ export const subscribeDownloads = (listener: () => void) => {
   return () => listeners.delete(listener);
 };
 
-const publish = (persist = true) => {
-  if (persist) {
-    try {
-      GM_setValue(STORAGE_KEY, downloads);
-    } catch (error) {
-      iLog.e("保存下载记录失败：", error);
-    }
-  }
-  listeners.forEach((listener) => {
-    try {
-      listener();
-    } catch (error) {
-      iLog.e("更新下载列表失败：", error);
-    }
-  });
-};
+/** 下载是否正在当前标签页执行 */
+export const isDownloadingInThisTab = (id: string) => attempts.has(id);
 
 type DownloadOptions = Omit<
   Tampermonkey.Request,
@@ -88,6 +232,8 @@ const startDownload = (
   record.status = "downloading";
   record.loaded = 0;
   record.total = 0;
+  record.owner = TAB_ID;
+  record.updatedAt = Date.now();
   delete record.completedAt;
   delete record.error;
   const attempt = Symbol();
@@ -100,6 +246,7 @@ const startDownload = (
     if (!isActive()) return;
     record.status = "failed";
     attempts.delete(record.id);
+    releaseOwnership(record);
     record.error = message;
     publish();
     iLog.e(`Download ${record.filename} from ${record.url} failed: ${message}`);
@@ -151,6 +298,7 @@ const startDownload = (
           }
           record.status = "completed";
           attempts.delete(record.id);
+          releaseOwnership(record);
           record.loaded = blob.size;
           record.total = blob.size;
           record.completedAt = Date.now();
@@ -203,6 +351,8 @@ export const abortDownload = (id: string) => {
   getDownloads();
   const record = downloads!.find((item) => item.id === id);
   if (record?.status !== "downloading") return;
+  // 其他标签页执行的下载无法在此中止，只能等待其完成或所在标签页关闭
+  if (!attempts.has(id)) return;
   const pending = requests.get(id);
   const attempt = attempts.get(id);
   // 先使当前尝试失效，避免中止产生的回调改写记录状态
@@ -210,6 +360,7 @@ export const abortDownload = (id: string) => {
   attempts.delete(id);
   if (attempt) abortedAttempts.add(attempt);
   record.status = "interrupted";
+  releaseOwnership(record);
   delete record.error;
   publish();
   try {
@@ -226,6 +377,7 @@ export const downloadFile = (
   options: DownloadOptions = {}
 ) => {
   getDownloads();
+  syncFromStorage();
   const record: DownloadRecord = {
     id: crypto.randomUUID(),
     url,
@@ -241,6 +393,7 @@ export const downloadFile = (
 
 export const retryDownload = (id: string) => {
   getDownloads();
+  syncFromStorage();
   const record = downloads!.find((item) => item.id === id);
   if (record?.status === "failed" || record?.status === "interrupted") {
     startDownload(record);
@@ -249,14 +402,60 @@ export const retryDownload = (id: string) => {
 
 export const clearCompletedDownloads = () => {
   getDownloads();
+  syncFromStorage(true);
+  const removed = downloads!.filter((record) => record.status === "completed");
+  for (const record of removed) removedIds.add(record.id);
   downloads = downloads!.filter((record) => record.status !== "completed");
   publish();
 };
 
 export const ignoreRetryableDownloads = () => {
   getDownloads();
+  syncFromStorage(true);
+  const removed = downloads!.filter(
+    (record) => record.status === "failed" || record.status === "interrupted"
+  );
+  for (const record of removed) removedIds.add(record.id);
   downloads = downloads!.filter(
     (record) => record.status !== "failed" && record.status !== "interrupted"
   );
   publish();
 };
+
+// 标签页关闭时立即把本页负责的下载标记为中断，其他标签页可据此重试
+window.addEventListener("pagehide", (event) => {
+  // 进入往返缓存时页面可能恢复，且下载请求仍在进行，不做中断处理
+  if (event.persisted) return;
+  const local = downloads?.filter(
+    (record) => record.status === "downloading" && attempts.has(record.id)
+  );
+  if (!local?.length) return;
+  for (const record of local) {
+    record.status = "interrupted";
+    releaseOwnership(record);
+  }
+  attempts.clear();
+  publish();
+});
+
+// 切回标签页时重新读取共享状态，避免后台节流导致的状态滞后
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") return;
+  syncFromStorage(true);
+  publish(false);
+});
+
+// 从往返缓存恢复的页面中，下载请求已随页面冻结失效，需按中断处理
+window.addEventListener("pageshow", (event) => {
+  if (!event.persisted) return;
+  attempts.clear();
+  requests.clear();
+  for (const record of downloads ?? []) {
+    if (record.status === "downloading" && record.owner === TAB_ID) {
+      record.status = "interrupted";
+      releaseOwnership(record);
+    }
+  }
+  syncFromStorage(true);
+  publish();
+});

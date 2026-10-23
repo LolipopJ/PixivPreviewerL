@@ -7,6 +7,7 @@ import {
   type DownloadRecord,
   getDownloads,
   ignoreRetryableDownloads,
+  isDownloadingInThisTab,
   retryDownload,
   subscribeDownloads,
 } from "../services/download";
@@ -256,18 +257,22 @@ export const loadDownloadPanel = (toolbar: HTMLElement) => {
         rows.set(record.id, row);
       }
       const running = record.status === "downloading";
+      const local = running && isDownloadingInThisTab(record.id);
       const percent =
         record.total > 0
           ? Math.min(100, Math.floor((record.loaded / record.total) * 100))
           : undefined;
+      const progressText = `${percent === undefined ? formatBytes(record.loaded) : `${percent}% · ${formatBytes(record.loaded)} / ${formatBytes(record.total)}`}`;
       const labels: Record<DownloadRecord["status"], string> = {
-        downloading: `下载中 ${percent === undefined ? formatBytes(record.loaded) : `${percent}% · ${formatBytes(record.loaded)} / ${formatBytes(record.total)}`}`,
+        downloading: local
+          ? `下载中 ${progressText}`
+          : `其他标签页下载中 ${progressText}`,
         completed: `已下载 · ${formatBytes(record.loaded)}${record.completedAt === undefined ? "" : ` · ${formatTime(record.completedAt)}`}`,
         interrupted: "下载已中断，点击重试重新下载",
         failed: `下载失败：${record.error || "网络错误"}`,
       };
       row.status.text(labels[record.status]);
-      row.abort.prop("hidden", !running);
+      row.abort.prop("hidden", !local);
       row.retry.prop("hidden", running || record.status === "completed");
       row.progress.prop("hidden", !running);
       if (percent === undefined) row.progress.removeAttr("value");
