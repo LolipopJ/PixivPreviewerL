@@ -68,7 +68,10 @@ export const loadIllustPreview = (
     }
     const illustId = illustHrefMatch[1];
     // 页码锚点异常时（例如 0 或负数），回退到第一页，避免数组越界
-    const previewPage = Math.max(1, Number(illustHrefMatch[3] ?? 1));
+    // 无锚点时保持 undefined，交由预览组件沿用该作品上次预览的页码
+    const previewPage = illustHrefMatch[3]
+      ? Math.max(1, Number(illustHrefMatch[3]))
+      : undefined;
 
     const ugoiraSvg = imgLink.children("div:first").find("svg:first");
     const playIcon = imgLink
@@ -185,7 +188,7 @@ export const loadIllustPreview = (
     }: {
       target: JQuery<HTMLElement>;
       illustId: string;
-      previewPage: number;
+      previewPage?: number;
       regularUrls: string[];
       originalUrls: string[];
       illustDetailsPromise: Promise<IllustrationDetails | null>;
@@ -220,7 +223,7 @@ export const loadIllustPreview = (
     return ({
       target,
       illustId,
-      previewPage = 1,
+      previewPage,
       illustType,
     }: {
       target: JQuery<HTMLElement>;
@@ -594,11 +597,11 @@ class PreviewedIllust {
   }
 
   //#region 预览图片功能
-  /** 初始化预览容器，优先恢复当前页面中记忆的预览页码 */
+  /** 初始化预览容器，优先显示指定页码，其次恢复当前页面中记忆的预览页码 */
   setImage({
     illustId,
     illustElement,
-    previewPage = 1,
+    previewPage,
     regularUrls,
     originalUrls,
     illustrationDetails,
@@ -619,7 +622,8 @@ class PreviewedIllust {
     this.regularUrls = regularUrls;
     this.originalUrls = originalUrls;
     this.pageCount = regularUrls.length;
-    const initialPage = this.#previewPages.get(illustId) ?? previewPage;
+    // 链接带有页码锚点（例如下载记录里的 `_p4`）时以其为准，否则恢复该作品上次预览的页码
+    const initialPage = previewPage ?? this.#previewPages.get(illustId) ?? 1;
     this.currentPage =
       initialPage >= 1 && initialPage <= this.pageCount ? initialPage : 1;
 

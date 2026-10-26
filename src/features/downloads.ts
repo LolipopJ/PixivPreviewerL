@@ -219,14 +219,13 @@ export const loadDownloadPanel = (toolbar: HTMLElement) => {
         rows.delete(id);
       }
     }
-    const title = `下载记录（${active} 项下载中，${attention} 项待重试）`;
+    const title = `下载记录`;
     countBadge.text(String(active)).prop("hidden", active === 0);
     button.attr({
       "data-active": String(active > 0),
       "data-attention": String(attention > 0),
       "aria-busy": String(active > 0),
       title,
-      "aria-label": title,
     });
     summary.text(
       records.length
@@ -238,15 +237,19 @@ export const loadDownloadPanel = (toolbar: HTMLElement) => {
       if (!row) {
         const item = $("<li>");
         const info = $("<div>").addClass("pp-download-info").appendTo(item);
-        const artworkId = record.filename.match(/^(\d+)_p\d+/)?.[1];
+        const filenameMatch = record.filename.match(
+          /^(\d+)(?:-[0-9a-zA-Z]+)?_p(\d+)/
+        );
+        const artworkId = filenameMatch?.[1];
+        // 文件名中的页码从 0 开始（`_p4` 表示第 5 页）；锚点让悬浮预览直接显示该页
+        const artworkPage = filenameMatch ? Number(filenameMatch[2]) + 1 : 0;
         $("<a>")
           .attr({
             href: artworkId
-              ? `https://www.pixiv.net/artworks/${artworkId}`
+              ? `https://www.pixiv.net/artworks/${artworkId}${artworkPage ? `#${artworkPage}` : ""}`
               : record.url,
             target: "_blank",
             rel: "noopener noreferrer",
-            title: "查看原作品",
           })
           .text(record.filename)
           .appendTo(info);
