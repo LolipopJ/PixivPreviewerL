@@ -1,12 +1,14 @@
 // @ts-check
 
 import eslint from "@eslint/js";
+import { defineConfig, globalIgnores } from "eslint/config";
 import eslintPluginPrettierRecommended from "eslint-plugin-prettier/recommended";
 import simpleImportSort from "eslint-plugin-simple-import-sort";
 import globals from "globals";
 import tseslint from "typescript-eslint";
 
-export default tseslint.config(
+export default defineConfig(
+  globalIgnores(["dist/", "node_modules/"]),
   eslint.configs.recommended,
   tseslint.configs.recommended,
   {
@@ -23,13 +25,9 @@ export default tseslint.config(
     languageOptions: {
       globals: {
         ...globals.browser,
-        ...globals.node,
         ...globals.jquery,
       },
     },
   },
-  eslintPluginPrettierRecommended,
-  {
-    ignores: ["dist/", "node_modules/"],
-  }
+  eslintPluginPrettierRecommended
 );
