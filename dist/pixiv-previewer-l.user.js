@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             1.7.1-20261023
+// @version             1.7.2-20261026
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0-only
@@ -14,6 +14,7 @@
 // @grant               GM_registerMenuCommand
 // @grant               GM_unregisterMenuCommand
 // @grant               GM.xmlHttpRequest
+// @grant               GM_download
 // @grant               unsafeWindow
 // @icon                https://t0.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&size=32&url=https://www.pixiv.net
 // @icon64              https://t0.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&size=64&url=https://www.pixiv.net
@@ -24,7 +25,7 @@
 // ==/UserScript==
 //#region src/constants/index.ts
 /** 版本号，发生改变时将会弹窗 */
-const g_version = "1.7.1";
+const g_version = "1.7.2";
 /** 默认设置 */
 const g_defaultSettings = {
 	enablePreview: true,
@@ -56,6 +57,8 @@ const SORT_NEXT_PAGE_BUTTON_ID = "pp-sort-next-page";
 const SORT_NEXT_PAGE_EVENT_NAME = "PIXIV_PREVIEWER_JUMP_TO_NEXT_PAGE";
 /** 隐藏已收藏作品按钮 */
 const HIDE_FAVORITES_BUTTON_ID = "pp-hide-favorites";
+/** R18G 作品原图下载目录 */
+const R18G_DOWNLOAD_DIRECTORY = "r18-g";
 /** R18 标签列表，全小写 */
 const R18_TAGS = ["r-18", "r18"];
 /** R18G 标签列表，全小写 */
@@ -336,6 +339,7 @@ const readStoredDownloads = () => {
 			total: item.total,
 			createdAt: item.createdAt
 		};
+		if (typeof item.directory === "string" && item.directory) record.directory = item.directory;
 		if (Number.isFinite(item.completedAt)) record.completedAt = item.completedAt;
 		if (typeof item.error === "string") record.error = item.error;
 		if (typeof item.owner === "string") record.owner = item.owner;
@@ -477,6 +481,49 @@ const subscribeDownloads = (listener) => {
 };
 /** 下载是否正在当前标签页执行 */
 const isDownloadingInThisTab = (id) => attempts.has(id);
+let hasWarnedDirectoryFallback = false;
+/** 使用 `<a download>` 保存文件，子目录会被浏览器替换为下划线，仅用于无目录场景 */
+const saveWithAnchor = (blob, filename) => {
+	const blobUrl = URL.createObjectURL(blob);
+	const anchor = document.createElement("a");
+	try {
+		anchor.href = blobUrl;
+		anchor.download = filename;
+		document.body.appendChild(anchor);
+		anchor.click();
+	} finally {
+		anchor.remove();
+		URL.revokeObjectURL(blobUrl);
+	}
+};
+/**
+* 保存下载的文件。存在子目录时借助 `GM_download` 保存到子目录，
+* 该能力依赖 Tampermonkey 的「浏览器 API」下载模式，不可用时回退到默认下载目录。
+*/
+const saveBlob = (blob, record) => {
+	const { directory, filename } = record;
+	const saveToDefaultDirectory = () => {
+		if (directory && !hasWarnedDirectoryFallback) {
+			hasWarnedDirectoryFallback = true;
+			iLog.w(`无法保存到子目录 ${directory}，已改为默认下载目录。如需按子目录保存，请在 Tampermonkey 设置中将「下载模式」设为「浏览器 API」。`);
+		}
+		saveWithAnchor(blob, filename);
+	};
+	const canSaveToDirectory = globalThis.GM_info?.downloadMode !== "native" && globalThis.GM_info?.downloadMode !== "disabled" && typeof GM_download === "function";
+	if (!directory || !canSaveToDirectory) {
+		saveToDefaultDirectory();
+		return;
+	}
+	try {
+		GM_download({
+			url: blob,
+			name: `${directory}/${filename}`,
+			onerror: saveToDefaultDirectory
+		});
+	} catch {
+		saveToDefaultDirectory();
+	}
+};
 const startDownload = (record, options = {}) => {
 	const { onload, onerror, onprogress, ontimeout, onabort, ...restOptions } = options;
 	record.status = "downloading";
@@ -530,17 +577,7 @@ const startDownload = (record, options = {}) => {
 				}
 				try {
 					const blob = response.response instanceof Blob ? response.response : new Blob([response.response]);
-					const blobUrl = URL.createObjectURL(blob);
-					const anchor = document.createElement("a");
-					try {
-						anchor.href = blobUrl;
-						anchor.download = record.filename;
-						document.body.appendChild(anchor);
-						anchor.click();
-					} finally {
-						document.body.removeChild(anchor);
-						URL.revokeObjectURL(blobUrl);
-					}
+					saveBlob(blob, record);
 					record.status = "completed";
 					attempts.delete(record.id);
 					releaseOwnership(record);
@@ -611,7 +648,7 @@ const abortDownload = (id) => {
 		iLog.e(`中止下载 ${record.filename} 失败：`, error);
 	}
 };
-const downloadFile = (url, filename, options = {}) => {
+const downloadFile = (url, filename, options = {}, directory) => {
 	getDownloads();
 	syncFromStorage();
 	const record = {
@@ -623,6 +660,7 @@ const downloadFile = (url, filename, options = {}) => {
 		total: 0,
 		createdAt: Date.now()
 	};
+	if (directory) record.directory = directory;
 	downloads.unshift(record);
 	startDownload(record, options);
 };
@@ -821,14 +859,13 @@ const loadDownloadPanel = (toolbar) => {
 			row.item.remove();
 			rows.delete(id);
 		}
-		const title = `下载记录（${active} 项下载中，${attention} 项待重试）`;
+		const title = `下载记录`;
 		countBadge.text(String(active)).prop("hidden", active === 0);
 		button.attr({
 			"data-active": String(active > 0),
 			"data-attention": String(attention > 0),
 			"aria-busy": String(active > 0),
-			title,
-			"aria-label": title
+			title
 		});
 		summary.text(records.length ? `${active} 项下载中 · ${completed} 项已完成 · ${attention} 项待重试` : "暂无下载记录，点击预览中的“原图”开始下载。");
 		for (const record of [...records].reverse()) {
@@ -836,12 +873,13 @@ const loadDownloadPanel = (toolbar) => {
 			if (!row) {
 				const item = $("<li>");
 				const info = $("<div>").addClass("pp-download-info").appendTo(item);
-				const artworkId = record.filename.match(/^(\d+)_p\d+/)?.[1];
+				const filenameMatch = record.filename.match(/^(\d+)(?:-[0-9a-zA-Z]+)?_p(\d+)/);
+				const artworkId = filenameMatch?.[1];
+				const artworkPage = filenameMatch ? Number(filenameMatch[2]) + 1 : 0;
 				$("<a>").attr({
-					href: artworkId ? `https://www.pixiv.net/artworks/${artworkId}` : record.url,
+					href: artworkId ? `https://www.pixiv.net/artworks/${artworkId}${artworkPage ? `#${artworkPage}` : ""}` : record.url,
 					target: "_blank",
-					rel: "noopener noreferrer",
-					title: "查看原作品"
+					rel: "noopener noreferrer"
 				}).text(record.filename).appendTo(info);
 				const status = $("<small>").appendTo(info);
 				const progress = $("<progress>").attr({
@@ -1865,14 +1903,14 @@ const getUserIllustrationsWithCache = async (userId, { onRequesting } = {}) => {
 //#endregion
 //#region src/services/preview.ts
 /** 下载作品 */
-const downloadIllust = ({ url, filename, options = {} }) => {
+const downloadIllust = ({ url, filename, directory, options = {} }) => {
 	downloadFile(url, filename, {
 		...options,
 		onerror: function(resp) {
 			options.onerror?.call(this, resp);
 			window.open(url, "__blank");
 		}
-	});
+	}, directory);
 };
 /** 获取图片分页信息和访问链接 */
 const getIllustPagesRequestUrl = (id) => {
@@ -1900,6 +1938,14 @@ const checkIsR18 = (tags) => {
 };
 const checkIsR18G = (tags) => {
 	return checkUsingTags(tags, R18G_TAGS);
+};
+/**
+* 获取作品原图下载时使用的子目录。
+* R18G 作品优先归入 r18-g 目录，R18 作品归入 r18 目录，其他作品返回 `undefined`。
+*/
+const getDownloadDirectory = (tags) => {
+	if (checkIsR18G(tags)) return R18G_DOWNLOAD_DIRECTORY;
+	if (checkIsR18(tags)) return "r18";
 };
 const checkIsUgoira = (illustType) => {
 	return illustType === 2;
@@ -2357,7 +2403,7 @@ const loadIllustPreview = (options) => {
 		const illustHrefMatch = imgLink.attr("href")?.match(/\/artworks\/(\d+)(#(\d+))?/);
 		if (!illustHrefMatch) return null;
 		const illustId = illustHrefMatch[1];
-		const previewPage = Math.max(1, Number(illustHrefMatch[3] ?? 1));
+		const previewPage = illustHrefMatch[3] ? Math.max(1, Number(illustHrefMatch[3])) : void 0;
 		const ugoiraSvg = imgLink.children("div:first").find("svg:first");
 		const playIcon = imgLink.children("div:first").find("pixiv-icon[name=\"24/Play\"]");
 		return {
@@ -2445,7 +2491,7 @@ const loadIllustPreview = (options) => {
 				illustrationDetails
 			});
 		};
-		return ({ target, illustId, previewPage = 1, illustType }) => {
+		return ({ target, illustId, previewPage, illustType }) => {
 			getIllustPagesRequest?.abort();
 			currentHoveredIllustId = illustId;
 			if (illustType === 2 && !enableAnimePreview) {
@@ -2707,8 +2753,8 @@ var PreviewedIllust = class {
 		this.unbindPreviewImageEvents();
 		this.unbindUgoiraPreviewEvents();
 	}
-	/** 初始化预览容器，优先恢复当前页面中记忆的预览页码 */
-	setImage({ illustId, illustElement, previewPage = 1, regularUrls, originalUrls, illustrationDetails }) {
+	/** 初始化预览容器，优先显示指定页码，其次恢复当前页面中记忆的预览页码 */
+	setImage({ illustId, illustElement, previewPage, regularUrls, originalUrls, illustrationDetails }) {
 		this.reset();
 		this.initPreviewWrapper();
 		this.illustId = illustId;
@@ -2717,7 +2763,7 @@ var PreviewedIllust = class {
 		this.regularUrls = regularUrls;
 		this.originalUrls = originalUrls;
 		this.pageCount = regularUrls.length;
-		const initialPage = this.#previewPages.get(illustId) ?? previewPage;
+		const initialPage = previewPage ?? this.#previewPages.get(illustId) ?? 1;
 		this.currentPage = initialPage >= 1 && initialPage <= this.pageCount ? initialPage : 1;
 		this.preloadImages();
 		this.bindPreviewImageEvents();
@@ -2843,6 +2889,7 @@ var PreviewedIllust = class {
 		downloadIllust({
 			url: currentImageOriginalUrl,
 			filename: currentImageFilename,
+			directory: getDownloadDirectory(this.illustDetails?.tags ?? []),
 			options: {
 				onerror: onDownloadFailed,
 				ontimeout: onDownloadFailed,
@@ -3901,7 +3948,7 @@ const initializePixivPreviewer = () => {
 		g_settings = registerSettingsMenu();
 		if (g_settings.enableLocalTags) loadLocalTags();
 		iLog.i("Start to initialize Pixiv Previewer with global settings:", g_settings);
-		if (g_settings.version !== "1.7.1") ShowUpgradeMessage();
+		if (g_settings.version !== "1.7.2") ShowUpgradeMessage();
 		if (g_settings.enablePreview) loadIllustPreview(g_settings);
 		$.get(location.href, function(data) {
 			const matched = data.match(/token\\":\\"([a-z0-9]{32})/);
