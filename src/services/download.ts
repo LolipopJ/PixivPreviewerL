@@ -103,6 +103,9 @@ const readStoredDownloads = (): DownloadRecord[] => {
 /** 本标签页已删除的记录，避免合并存储快照时被旧数据带回 */
 const removedIds = new Set<string>();
 
+/** 其他标签页写入存储后置为 `true`，下次落盘前才需要重新读取 */
+let remoteChangePending = false;
+
 /**
  * 合并存储快照与本地记录：按更新时间取较新状态，本标签页进行中的下载始终以本地对象为准。
  * `allowDelete` 用于同步其他标签页的删除操作。
@@ -189,8 +192,11 @@ const publish = (persist = true) => {
         record.updatedAt = now;
       }
     }
-    // 写入前先吸收其他标签页的改动，避免用过期快照覆盖（含删除）
-    if (downloads) applyStored(readStoredDownloads(), true);
+    // 只有其他标签页写入过新数据时才需要读回存储，避免每次进度更新都全量反序列化
+    if (remoteChangePending) {
+      remoteChangePending = false;
+      if (downloads) applyStored(readStoredDownloads(), true);
+    }
     trimDownloads();
     try {
       GM_setValue(STORAGE_KEY, downloads);
@@ -235,6 +241,7 @@ const ensureHeartbeat = () => {
 
 GM_addValueChangeListener(STORAGE_KEY, (_key, _oldValue, _newValue, remote) => {
   if (!remote) return;
+  remoteChangePending = true;
   syncFromStorage(true);
   publish(false);
 });

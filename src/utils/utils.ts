@@ -52,3 +52,27 @@ export const createLRUCache = <V>(maxSize: number) => {
     },
   };
 };
+
+/**
+ * 为 `GM_getValue` 一类全量反序列化的读取提供内存缓存。
+ * 调用 `invalidate()` 后下次读取会重新从存储加载。
+ */
+export const createReadThroughCache = <V>(read: () => V) => {
+  let cached: V | undefined;
+  let valid = false;
+  const load = () => {
+    if (!valid) {
+      cached = read();
+      valid = true;
+    }
+    return cached!;
+  };
+  return {
+    get: load,
+    /** 直接修改缓存值（调用方负责持久化） */
+    peek: load,
+    invalidate(): void {
+      valid = false;
+    },
+  };
+};

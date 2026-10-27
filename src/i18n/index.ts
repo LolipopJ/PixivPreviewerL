@@ -37,8 +37,12 @@ const Texts = {
   setting_hideByTagPlaceholder: "输入标签名，多个标签用','分隔",
   setting_clearFollowingCache: "清除缓存",
   setting_clearFollowingCacheHelp:
-    "关注画师信息会在本地保存一天，如果希望立即更新，请点击清除缓存",
+    "本地缓存了作品详情、作品分页、动图帧与标签信息。清除后再次访问会重新请求接口。",
   setting_followingCacheCleared: "已清除缓存，请刷新页面。",
+  setting_clearCacheFailed: "部分缓存清除失败，请稍后重试。",
+  cache_usage: "缓存占用",
+  cache_usageHelp:
+    "作品详情 %1 个 · 作品分页 %2 个 · 动图帧 %3 个（%4）· 标签翻译 %5 个",
   setting_blank: "使用新标签页打开作品详情页",
   setting_turnPage: "使用键盘←→进行翻页（排序后的搜索页）",
   setting_save: "保存设置",

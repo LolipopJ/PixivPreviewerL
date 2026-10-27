@@ -11,11 +11,13 @@ import { iLog } from "../utils/logger";
 import { getLocalTagColor } from "../utils/tag-colors";
 import {
   addLocalTag,
+  flushLocalTagState,
   getLocalTag,
   getLocalTagState,
   getSortedLocalTags,
   getTagFromPath,
   hasLocalTag,
+  invalidateLocalTagState,
   LOCAL_TAGS_KEY,
   type LocalTag,
   moveLocalTag,
@@ -766,9 +768,13 @@ export const loadLocalTags = () => {
   GM_addValueChangeListener(
     LOCAL_TAGS_KEY,
     (_key, _oldValue, _newValue, remote) => {
-      if (remote) refresh();
+      if (!remote) return;
+      invalidateLocalTagState();
+      refresh();
     }
   );
+  // 标签页隐藏时立即落盘，避免未提交的批量写入丢失
+  window.addEventListener("pagehide", flushLocalTagState);
   const observer = new MutationObserver(
     debounce(() => {
       if (activeLink && !$.contains($("html").get(0)!, activeLink))

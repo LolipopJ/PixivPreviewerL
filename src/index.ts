@@ -22,6 +22,12 @@ import Texts from "./i18n";
 import hideFavoritesIcon from "./icons/hide-favorites.svg";
 import nextPageIcon from "./icons/next-page.svg";
 import sortIcon from "./icons/sort.svg";
+import {
+  clearAllLocalCaches,
+  formatCacheBytes,
+  getCacheUsage,
+  pruneCachesOnStartup,
+} from "./services/cache";
 import type { GlobalSettings } from "./types";
 import { DoLog, iLog } from "./utils/logger";
 import {
@@ -331,6 +337,33 @@ const registerSettingsMenu = () => {
         resetSettings();
         location.reload();
       }
+    }),
+    GM_registerMenuCommand(`🧹 ${Texts.setting_clearFollowingCache}`, () => {
+      if (
+        !confirm(`${Texts.setting_clearFollowingCacheHelp}\n\n确定要清除吗？`)
+      )
+        return;
+      void clearAllLocalCaches().then((cleared) => {
+        if (!cleared) {
+          // 清空失败时不能提示成功并刷新，否则用户会以为缓存已被清除
+          alert(Texts.setting_clearCacheFailed);
+          return;
+        }
+        alert(Texts.setting_followingCacheCleared);
+        location.reload();
+      });
+    }),
+    GM_registerMenuCommand(`📊 ${Texts.cache_usage}`, () => {
+      void getCacheUsage().then((usage) => {
+        alert(
+          Texts.cache_usageHelp
+            .replace("%1", String(usage.illustrationDetails))
+            .replace("%2", String(usage.illustPages))
+            .replace("%3", String(usage.ugoiraFrames))
+            .replace("%4", formatCacheBytes(usage.ugoiraBytes))
+            .replace("%5", String(usage.tagTranslations))
+        );
+      });
     })
   );
 
@@ -374,6 +407,9 @@ const initializePixivPreviewer = () => {
       "Start to initialize Pixiv Previewer with global settings:",
       g_settings
     );
+
+    // 清理过期的持久化缓存
+    void pruneCachesOnStartup();
 
     // 显示更新信息窗口
     if (g_settings.version !== g_version) {

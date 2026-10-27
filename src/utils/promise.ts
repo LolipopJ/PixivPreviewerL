@@ -22,3 +22,22 @@ export const execLimitConcurrentPromises = async <T>(
   await Promise.all(initialPromises);
   return results;
 };
+
+/**
+ * 合并同一 key 的并发请求：在 `task` 完成前重复调用会复用同一个 Promise。
+ * 用于避免同一作品的详情被同时请求多次。
+ */
+export const createPendingPromiseCache = <T>() => {
+  const pending = new Map<string, Promise<T>>();
+  return {
+    run(key: string, task: () => Promise<T>): Promise<T> {
+      const existing = pending.get(key);
+      if (existing) return existing;
+      const promise = task().finally(() => {
+        if (pending.get(key) === promise) pending.delete(key);
+      });
+      pending.set(key, promise);
+      return promise;
+    },
+  };
+};

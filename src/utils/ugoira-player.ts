@@ -17,6 +17,23 @@ export interface ZipImagePlayerOptions {
   chunkSize?: number;
   autosize?: boolean;
   loop?: boolean;
+  /**
+   * 逐帧交出解包后的帧数据，用于写入帧缓存。
+   * 未提供 `source`（散装帧模式）时不调用。
+   */
+  onFrameDecoded?: (frame: UgoiraDecodedFrame) => void;
+  /**
+   * 已缓存的帧数据，按 `metadata.frames` 的顺序提供。
+   * 提供且长度匹配时直接播放缓存帧，跳过 zip 下载与解包。
+   */
+  cachedFrames?: Blob[] | null;
+}
+
+export interface UgoiraDecodedFrame {
+  index: number;
+  file: string;
+  delay: number;
+  blob: Blob;
 }
 
 interface ZipFileEntry {
@@ -219,6 +236,12 @@ class ZipImagePlayer {
   }
 
   private _startLoad(): void {
+    // 命中帧缓存时直接解码播放，跳过 zip 下载与解包
+    if (this.op.cachedFrames?.length === this._frameCount) {
+      this._debugLog("Use cached frames.");
+      this._loadCachedFrame();
+      return;
+    }
     if (!this.op.source) {
       // Unpacked mode (individiual frame URLs) - just load the frames.
       this._loadNextFrame();
@@ -381,6 +404,11 @@ class ZipImagePlayer {
   }
 
   private _loadNextFrame(): void {
+    // 命中帧缓存时优先从缓存加载
+    if (this.op.cachedFrames?.length === this._frameCount) {
+      this._loadCachedFrame();
+      return;
+    }
     if (this._dead) {
       return;
     }
@@ -414,6 +442,12 @@ class ZipImagePlayer {
       }
       const blob = new Blob([slice], { type: mime_type });
       // _this._debugLog("Loading " + meta.file + " to frame " + frame);
+      this.op.onFrameDecoded?.({
+        index: frame,
+        file: meta.file,
+        delay: meta.delay,
+        blob,
+      });
       url = this._URL.createObjectURL(blob);
       this._loadImage(frame, url, true);
     } else {
@@ -424,6 +458,20 @@ class ZipImagePlayer {
         base64ArrayBuffer(this._buf!, off, end - off);
       this._loadImage(frame, url, false);
     }
+  }
+
+  /** 从帧缓存中加载下一帧 */
+  private _loadCachedFrame(): void {
+    if (this._dead) {
+      return;
+    }
+    const frame = this._loadFrame;
+    if (frame >= this._frameCount) {
+      return;
+    }
+    this._loadFrame += 1;
+    const blob = this.op.cachedFrames![frame];
+    this._loadImage(frame, this._URL.createObjectURL(blob), true);
   }
 
   private _loadImage(frame: number, url: string, isBlob: boolean): void {

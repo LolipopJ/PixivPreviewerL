@@ -1,6 +1,9 @@
+import { createPendingPromiseCache } from "../utils/promise";
 import {
   cacheLocalTagDetails,
+  cacheTagTranslation,
   getCachedLocalTagDetails,
+  getCachedTagTranslation,
   hasLocalTag,
   recordLocalTagTotal,
 } from "../utils/tags";
@@ -19,8 +22,9 @@ interface TagSearchBody {
   tagTranslation?: Record<string, { zh?: string }>;
 }
 
-const pendingDetails = new Map<string, Promise<TagDetails>>();
-const pendingTotals = new Map<string, Promise<number | undefined>>();
+const pendingDetails = createPendingPromiseCache<TagDetails>();
+const pendingTotals = createPendingPromiseCache<number | undefined>();
+const pendingTranslations = createPendingPromiseCache<string>();
 
 /** 从标签搜索响应中提取插画漫画作品总数 */
 const getIllustMangaTotal = (body: unknown): number | undefined => {
@@ -56,37 +60,42 @@ const requestTagTopBody = async (tag: string) => {
   return data.body;
 };
 
-/** 获取标签的中文翻译，未找到翻译或翻译与标签相同时返回空字符串 */
-export const getTagTranslation = async (tag: string) => {
-  const body = await requestTagTopBody(tag);
+/** 提取中文翻译，未找到翻译或翻译与标签相同时返回空字符串 */
+const getBodyTranslation = (tag: string, body: TagSearchBody) => {
   const translation = body.tagTranslation?.[tag]?.zh?.trim() ?? "";
   return translation === tag ? "" : translation;
 };
 
-/** 获取标签当前的插画漫画作品总数，同时记录为上次访问总数 */
-export const getTagCurrentTotal = (tag: string) => {
-  const pending = pendingTotals.get(tag);
-  if (pending) return pending;
+/** 获取标签的中文翻译，优先使用本地缓存 */
+export const getTagTranslation = (tag: string) => {
+  const cached = getCachedTagTranslation(tag);
+  if (cached !== undefined) return Promise.resolve(cached);
 
-  const loading = requestTagTopBody(tag)
-    .then(getIllustMangaTotal)
-    .finally(() => pendingTotals.delete(tag));
-  pendingTotals.set(tag, loading);
-  return loading;
+  return pendingTranslations.run(tag, async () => {
+    const body = await requestTagTopBody(tag);
+    const translation = getBodyTranslation(tag, body);
+    // 空字符串代表“已确认没有翻译”，同样需要缓存，避免反复请求
+    cacheTagTranslation(tag, translation);
+    return translation;
+  });
 };
 
+/** 获取标签当前的插画漫画作品总数，同时记录为上次访问总数 */
+export const getTagCurrentTotal = (tag: string) =>
+  pendingTotals.run(tag, () =>
+    requestTagTopBody(tag).then((body) => getIllustMangaTotal(body))
+  );
+
 export const getTagDetails = (tag: string): Promise<TagDetails> => {
-  const pending = pendingDetails.get(tag);
-  if (pending) return pending;
   const cached = getCachedLocalTagDetails(tag);
   if (cached) return Promise.resolve(cached);
 
-  const requestDetails = request({
-    method: "GET",
-    url: `/ajax/tag/info?tag=${encodeURIComponent(tag)}&lang=zh`,
-    timeout: 10000,
-  })
-    .then((response) => {
+  return pendingDetails.run(tag, () =>
+    request({
+      method: "GET",
+      url: `/ajax/tag/info?tag=${encodeURIComponent(tag)}&lang=zh`,
+      timeout: 10000,
+    }).then((response) => {
       const data = response.response as PixivStandardResponse<TagDetails>;
       if (response.status !== 200 || data.error || !data.body) {
         throw new Error(data.message || "标签详情加载失败");
@@ -94,10 +103,5 @@ export const getTagDetails = (tag: string): Promise<TagDetails> => {
       cacheLocalTagDetails(tag, data.body);
       return data.body;
     })
-    .finally(() => {
-      pendingDetails.delete(tag);
-    });
-
-  pendingDetails.set(tag, requestDetails);
-  return requestDetails;
+  );
 };

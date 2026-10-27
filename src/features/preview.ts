@@ -1,10 +1,19 @@
 import {
   PREVIEW_CACHE_MAX_SIZE,
+  PREVIEW_DETAILS_MAX_STALE_TIME,
+  PREVIEW_IMAGE_CACHE_MAX_SIZE,
   PREVIEW_PRELOAD_NUM,
   PREVIEW_WRAPPER_BORDER_RADIUS,
   PREVIEW_WRAPPER_BORDER_WIDTH,
   PREVIEW_WRAPPER_DISTANCE_TO_MOUSE,
 } from "../constants";
+import {
+  cacheIllustPages,
+  cacheUgoiraFrames,
+  getCachedIllustPages,
+  getCachedUgoiraFrames,
+  type UgoiraCachedFrame,
+} from "../databases";
 import { IllustType } from "../enums";
 import downloadIcon from "../icons/download.svg";
 import loadingIcon from "../icons/loading.svg";
@@ -37,6 +46,18 @@ import ZipImagePlayer, {
 import { createLRUCache, sanitizeIllustFilename } from "../utils/utils";
 
 const ONE_HANDED_MODE_HOLD_MS = 500;
+
+/**
+ * 已解码预览图片的 LRU 缓存。同一个作品反复悬停时复用最近解码的位图，
+ * 无需等待浏览器重新解码。数量上限刻意保守：原图预览单张解码后可达数 MB，
+ * 超出上限的记录交给浏览器自身的图片缓存。
+ */
+const decodedPreviewImages = createLRUCache<HTMLImageElement>(
+  PREVIEW_IMAGE_CACHE_MAX_SIZE
+);
+
+const getDecodedImageCacheKey = (illustId: string, page: number) =>
+  `${illustId}_p${page}`;
 
 let isInitialized = false;
 export const loadIllustPreview = (
@@ -123,53 +144,59 @@ export const loadIllustPreview = (
       illustId: string;
       illustDetailsPromise: Promise<IllustrationDetails | null>;
     }) => {
+      // 元数据就绪后立即打开动图预览窗口，作品详情（标签、收藏数）稍后补渲染，
+      // 否则详情请求的耗时会让命中缓存的动图也要等网络
+      const showUgoira = (
+        metadata: GetUgoiraMetaResponseData,
+        placeholderShown = false
+      ) => {
+        // 占位窗口已被鼠标移出关闭时不再重新打开
+        if (placeholderShown && !previewedIllust.isActiveIllust(illustId))
+          return;
+
+        previewedIllust.setUgoira({
+          illustId,
+          illustElement: target,
+          illustrationDetails: null,
+          ...metadata,
+        });
+
+        void illustDetailsPromise.then((illustrationDetails) => {
+          if (currentHoveredIllustId !== illustId) return;
+          previewedIllust.updateIllustrationDetails(illustrationDetails);
+        });
+      };
+
       const ugoiraMetadataCached = getUgoiraMetadataCache.get(illustId);
       if (ugoiraMetadataCached) {
         // 命中缓存，直接使用缓存中的元数据
-        illustDetailsPromise.then((illustrationDetails) => {
-          if (currentHoveredIllustId !== illustId) return;
-          previewedIllust.setUgoira({
-            illustId,
-            illustElement: target,
-            illustrationDetails,
-            ...ugoiraMetadataCached,
-          });
-        });
+        showUgoira(ugoiraMetadataCached);
         return;
       }
+
+      // 元数据请求期间先开窗，避免窗口等到数据就绪才出现
+      previewedIllust.showLoading({ illustId, illustElement: target });
 
       // 根据动图的 ID 获取动图的元数据
       getIllustPagesRequest = $.ajax(getUgoiraMetadataRequestUrl(illustId), {
         method: "GET",
-        success: async (data: GetUgoiraMetaResponse) => {
+        success: (data: GetUgoiraMetaResponse) => {
           if (data.error) {
             iLog.e(
               `An error occurred while requesting metadata of ugoira ${illustId}: ${data.message}`
             );
+            previewedIllust.dismissLoading(illustId);
             return;
           }
 
           getUgoiraMetadataCache.set(illustId, data.body);
-
           if (currentHoveredIllustId !== illustId) return;
-
-          const illustrationDetails = await illustDetailsPromise;
-          if (currentHoveredIllustId !== illustId) return;
-
-          const { src, originalSrc, mime_type, frames } = data.body;
-          previewedIllust.setUgoira({
-            illustId,
-            illustElement: target,
-            src,
-            originalSrc,
-            mime_type,
-            frames,
-            illustrationDetails,
-          });
+          showUgoira(data.body, true);
         },
         error: (jqXHR, textStatus) => {
           // 切换悬浮目标时会主动 abort 上一个请求，属于预期行为，无需记录为错误
           if (textStatus === "abort") return;
+          previewedIllust.dismissLoading(illustId);
           iLog.e(
             `An error occurred while requesting metadata of ugoira ${illustId}: ${jqXHR.responseText}`
           );
@@ -178,13 +205,14 @@ export const loadIllustPreview = (
     };
 
     /** 获取图片分页信息并展示插画预览；若作品详情标签显示实际为动图，则切换为动图预览 */
-    const previewAsIllust = async ({
+    const previewAsIllust = ({
       target,
       illustId,
       previewPage,
       regularUrls,
       originalUrls,
       illustDetailsPromise,
+      placeholderShown = false,
     }: {
       target: JQuery<HTMLElement>;
       illustId: string;
@@ -192,31 +220,42 @@ export const loadIllustPreview = (
       regularUrls: string[];
       originalUrls: string[];
       illustDetailsPromise: Promise<IllustrationDetails | null>;
+      placeholderShown?: boolean;
     }) => {
-      const illustrationDetails = await illustDetailsPromise;
-      if (currentHoveredIllustId !== illustId) return;
+      // 占位窗口已被鼠标移出关闭时不再重新打开
+      if (placeholderShown && !previewedIllust.isActiveIllust(illustId)) return;
 
-      if (
-        enableAnimePreview &&
-        illustrationDetails &&
-        checkIsUgoiraUsingTags(illustrationDetails.tags)
-      ) {
-        // 作品详情标签显示该作品实际为动图，切换为动图预览
-        previewAsUgoira({
-          target,
-          illustId,
-          illustDetailsPromise: Promise.resolve(illustrationDetails),
-        });
-        return;
-      }
-
+      // 分页信息已就绪，立即打开预览窗口；作品详情稍后补渲染。
+      // 详情中的标签可能表明该作品实际是动图，此时再切换为动图预览。
       previewedIllust.setImage({
         illustId,
         illustElement: target,
         previewPage,
         regularUrls,
         originalUrls,
-        illustrationDetails,
+        illustrationDetails: null,
+      });
+
+      void illustDetailsPromise.then((illustrationDetails) => {
+        if (currentHoveredIllustId !== illustId) return;
+        // 鼠标已移开、窗口已关闭时不再重新打开（例如标签判定为动图后切到动图预览）
+        if (!previewedIllust.isActiveIllust(illustId)) return;
+
+        if (
+          enableAnimePreview &&
+          illustrationDetails &&
+          checkIsUgoiraUsingTags(illustrationDetails.tags)
+        ) {
+          // 作品详情标签显示该作品实际为动图，切换为动图预览
+          previewAsUgoira({
+            target,
+            illustId,
+            illustDetailsPromise: Promise.resolve(illustrationDetails),
+          });
+          return;
+        }
+
+        previewedIllust.updateIllustrationDetails(illustrationDetails);
       });
     };
 
@@ -244,8 +283,13 @@ export const loadIllustPreview = (
       }
 
       // 与获取图片/动图信息同时发起，避免因串行等待造成的延迟
+      // 预览对收藏数的实时性要求较低，容忍更久的缓存以减少请求
       const illustDetailsPromise = getIllustrationDetailsWithCache(
-        illustId
+        illustId,
+        false,
+        {
+          maxStale: PREVIEW_DETAILS_MAX_STALE_TIME,
+        }
       ).catch((error) => {
         iLog.e(
           `An error occurred while fetching illustration details of ${illustId}: ${error}`
@@ -267,47 +311,72 @@ export const loadIllustPreview = (
           return;
         }
 
-        // 根据作品的 ID 获取作品的页数和访问链接
-        // 例如：`125424620` -> `https://i.pximg.net/img-master/img/2024/12/22/19/13/41/125424620_p0_master1200.jpg`
-        getIllustPagesRequest = $.ajax(getIllustPagesRequestUrl(illustId), {
-          method: "GET",
-          success: (data: GetIllustPagesResponse) => {
-            if (data.error) {
-              iLog.e(
-                `An error occurred while requesting preview urls of illust ${illustId}: ${data.message}`
-              );
-              return;
-            }
+        // 内存缓存未命中：先把预览窗口打开，再查持久化缓存并发起请求，
+        // 避免窗口要等到数据全部就绪才出现
+        previewedIllust.showLoading({ illustId, illustElement: target });
 
-            const urls = data.body.map((item) => item.urls);
-            const regularUrls = urls.map((url) => url.regular);
-            const originalUrls = urls.map((url) => url.original);
-
-            // 设置缓存
-            getIllustPagesCache.set(illustId, {
-              regularUrls,
-              originalUrls,
-            });
-
-            // 当前鼠标悬浮的作品发生了改变，结束处理
-            if (currentHoveredIllustId !== illustId) return;
-
+        // 查询 IndexedDB 中的持久化缓存
+        void getCachedIllustPages(illustId).then((persistedPages) => {
+          if (currentHoveredIllustId !== illustId) return;
+          if (persistedPages) {
+            getIllustPagesCache.set(illustId, persistedPages);
             previewAsIllust({
               target,
               illustId,
               previewPage,
-              regularUrls,
-              originalUrls,
               illustDetailsPromise,
+              placeholderShown: true,
+              ...persistedPages,
             });
-          },
-          error: (jqXHR, textStatus) => {
-            // 切换悬浮目标时会主动 abort 上一个请求，属于预期行为，无需记录为错误
-            if (textStatus === "abort") return;
-            iLog.e(
-              `An error occurred while requesting preview urls of illust ${illustId}: ${jqXHR.responseText || textStatus}`
-            );
-          },
+            return;
+          }
+
+          // 根据作品的 ID 获取作品的页数和访问链接
+          // 例如：`125424620` -> `https://i.pximg.net/img-master/img/2024/12/22/19/13/41/125424620_p0_master1200.jpg`
+          getIllustPagesRequest = $.ajax(getIllustPagesRequestUrl(illustId), {
+            method: "GET",
+            success: (data: GetIllustPagesResponse) => {
+              if (data.error) {
+                iLog.e(
+                  `An error occurred while requesting preview urls of illust ${illustId}: ${data.message}`
+                );
+                previewedIllust.dismissLoading(illustId);
+                return;
+              }
+
+              const urls = data.body.map((item) => item.urls);
+              const regularUrls = urls.map((url) => url.regular);
+              const originalUrls = urls.map((url) => url.original);
+
+              // 设置内存缓存与持久化缓存
+              getIllustPagesCache.set(illustId, {
+                regularUrls,
+                originalUrls,
+              });
+              void cacheIllustPages(illustId, { regularUrls, originalUrls });
+
+              // 当前鼠标悬浮的作品发生了改变，结束处理
+              if (currentHoveredIllustId !== illustId) return;
+
+              previewAsIllust({
+                target,
+                illustId,
+                previewPage,
+                regularUrls,
+                originalUrls,
+                illustDetailsPromise,
+                placeholderShown: true,
+              });
+            },
+            error: (jqXHR, textStatus) => {
+              // 切换悬浮目标时会主动 abort 上一个请求，属于预期行为，无需记录为错误
+              if (textStatus === "abort") return;
+              previewedIllust.dismissLoading(illustId);
+              iLog.e(
+                `An error occurred while requesting preview urls of illust ${illustId}: ${jqXHR.responseText || textStatus}`
+              );
+            },
+          });
         });
       } else if (illustType === IllustType.UGOIRA) {
         previewAsUgoira({ target, illustId, illustDetailsPromise });
@@ -486,8 +555,6 @@ class PreviewedIllust {
   /** 当前预览的图片或动图 DOM */
   previewImageElement: JQuery<HTMLElement> = $();
 
-  /** 预加载图片的列表 */
-  #images: (HTMLImageElement | undefined)[] = [];
   /** 当前页面中各多图作品上次预览的页码，重置预览组件时保留 */
   #previewPages = new Map<string, number>();
   /** 下载按钮重置定时器 */
@@ -498,6 +565,10 @@ class PreviewedIllust {
   #currentIllustSize: [number, number] = [0, 0];
   /** 当前预览的动图播放器 */
   #currentUgoiraPlayer: ZipImagePlayer | null = null;
+  /** 预览窗口是否已由 `showLoading` 提前展示、尚未填入内容 */
+  #isPlaceholder = false;
+  /** 预览窗口的鼠标事件是否已绑定，避免重复绑定 */
+  #mouseEventsBound = false;
 
   constructor() {
     this.reset();
@@ -513,6 +584,7 @@ class PreviewedIllust {
     this.illustDetails = null;
     this.illustElement = $();
     this.illustLoaded = false;
+    this.#isPlaceholder = false;
 
     this.regularUrls = [];
     this.originalUrls = [];
@@ -577,15 +649,13 @@ class PreviewedIllust {
       .hide()
       .appendTo(this.previewWrapperElement);
 
-    // 初始化私有变量值
-    this.#images.forEach((image) => {
-      // 取消未开始的预加载图片请求
-      if (image) image.src = "";
-    });
-    this.#images = [];
+    // 预加载的图片由 `decodedPreviewImages` 统一持有，这里只需解除引用
     this.#prevMousePos = [0, 0];
     this.#currentIllustSize = [0, 0];
     this.#currentUgoiraPlayer?.stop();
+    // 必须置空：`loadUgoiraPlayer` 在等待缓存后才创建播放器，
+    // 残留的旧实例会让重建逻辑误判为「已创建」，也会阻断去重
+    this.#currentUgoiraPlayer = null;
     if (this.#downloadResetTimeout !== null) {
       clearTimeout(this.#downloadResetTimeout);
       this.#downloadResetTimeout = null;
@@ -597,6 +667,65 @@ class PreviewedIllust {
   }
 
   //#region 预览图片功能
+  /**
+   * 立即显示预览窗口并停留在加载状态。
+   * 缓存未命中时先开窗再发请求，避免窗口要等到数据全部就绪才出现。
+   * 若当前窗口已在展示同一个作品，则不做任何处理，避免反复重置打断已显示的内容。
+   */
+  showLoading({
+    illustId,
+    illustElement,
+  }: {
+    illustId: string;
+    illustElement: JQuery<HTMLElement>;
+  }) {
+    // 已在展示同一个作品时不做任何处理，避免打断已显示的内容
+    if (this.isActiveIllust(illustId)) return;
+
+    this.reset();
+    this.initPreviewWrapper();
+
+    this.illustId = illustId;
+    this.illustElement = illustElement;
+    this.#isPlaceholder = true;
+
+    // 加载期间同样需要响应鼠标移出与长按，否则窗口无法关闭
+    this.bindPreviewMouseEvents();
+  }
+
+  /**
+   * 指定作品的内容仍停留在加载状态时关闭窗口，避免请求或初始化失败后一直转圈。
+   * 已经显示出内容时不做处理，否则会把正常显示中的预览关掉。
+   */
+  dismissLoading(illustId: string) {
+    if (this.illustId === illustId && !this.illustLoaded) {
+      this.reset();
+    }
+  }
+
+  /**
+   * 预览窗口当前是否仍在展示（或正在加载）指定作品。
+   * 异步回调返回时用它校验，避免鼠标已移开、窗口已关闭后又把窗口重新打开。
+   * 以 `illustId` 作为唯一事实：`reset()` 会把它清空。
+   */
+  isActiveIllust(illustId: string) {
+    return this.illustId === illustId;
+  }
+
+  /**
+   * 准备预览窗口并接管占位状态。
+   * 占位窗口仍在展示同一个作品时直接复用其 DOM 节点 —— 重建会让
+   * 加载动画的 CSS animation 从头播放，视觉上像是又加载了一次。
+   */
+  #prepareWrapper(illustId: string) {
+    if (this.#isPlaceholder && this.illustId === illustId) {
+      this.#isPlaceholder = false;
+      return;
+    }
+    this.reset();
+    this.initPreviewWrapper();
+  }
+
   /** 初始化预览容器，优先显示指定页码，其次恢复当前页面中记忆的预览页码 */
   setImage({
     illustId,
@@ -613,8 +742,7 @@ class PreviewedIllust {
     originalUrls: string[];
     illustrationDetails: IllustrationDetails | null;
   }) {
-    this.reset();
-    this.initPreviewWrapper();
+    this.#prepareWrapper(illustId);
 
     this.illustId = illustId;
     this.illustDetails = illustrationDetails;
@@ -742,14 +870,13 @@ class PreviewedIllust {
     from: number = this.currentPage - 1,
     to: number = this.currentPage - 1 + PREVIEW_PRELOAD_NUM
   ) {
-    if (!this.#images.length) {
-      this.#images = new Array(this.regularUrls.length);
-    }
-
     for (let i = from; i < to && i < this.regularUrls.length; i += 1) {
+      const cacheKey = getDecodedImageCacheKey(this.illustId, i + 1);
+      if (decodedPreviewImages.get(cacheKey)) continue;
+
       const preloadImage = new Image();
       preloadImage.src = this.regularUrls[i];
-      this.#images[i] = preloadImage;
+      decodedPreviewImages.set(cacheKey, preloadImage);
     }
   }
 
@@ -884,9 +1011,7 @@ class PreviewedIllust {
     illustElement: JQuery<HTMLElement>;
     illustrationDetails: IllustrationDetails | null;
   }) {
-    this.reset();
-
-    this.initPreviewWrapper();
+    this.#prepareWrapper(illustId);
 
     this.illustId = illustId;
     this.illustDetails = illustrationDetails;
@@ -895,21 +1020,69 @@ class PreviewedIllust {
     // 鼠标悬浮在动图中间播放图标上，不关闭预览窗口
     illustElement.siblings("svg").css({ "pointer-events": "none" });
 
-    this.#currentUgoiraPlayer = this.createUgoiraPlayer({
-      source: src,
-      metadata: {
-        mime_type,
-        frames,
-      },
-    });
+    // 播放器需要等待帧缓存读取，期间先绑定鼠标事件，保证窗口可被关闭
+    this.bindPreviewMouseEvents();
 
-    this.bindUgoiraPreviewEvents();
+    void this.loadUgoiraPlayer({ illustId, src, mime_type, frames });
 
     this.renderIllustrationDetails(illustrationDetails);
   }
 
+  /**
+   * 先查询帧缓存，再决定使用缓存帧还是解包 zip。
+   * 解包到全部帧时把帧写入缓存，供下次悬停时直接播放。
+   */
+  async loadUgoiraPlayer({
+    illustId,
+    src,
+    mime_type,
+    frames,
+  }: {
+    illustId: string;
+    src: string;
+    mime_type: string;
+    frames: { file: string; delay: number }[];
+  }) {
+    const cached = await getCachedUgoiraFrames(illustId).catch(() => null);
+    // 等待缓存期间用户可能已切换到其他作品；同一个作品被重复触发时
+    // （鼠标在缩略图的子元素间移动）只允许第一个调用创建播放器，
+    // 否则旧播放器会被直接覆盖而不 stop()，继续下载 zip 并触发异常
+    if (this.illustId !== illustId || this.#currentUgoiraPlayer) return;
+
+    const decodedFrames: UgoiraCachedFrame[] = [];
+    let decodedFrameCount = 0;
+    const hasCachedFrames = cached?.frames.length === frames.length;
+
+    try {
+      this.#currentUgoiraPlayer = this.createUgoiraPlayer({
+        source: src,
+        metadata: { mime_type, frames },
+        cachedFrames: hasCachedFrames
+          ? cached.frames.map((frame) => frame.blob)
+          : null,
+        onFrameDecoded: ({ index, file, delay, blob }) => {
+          decodedFrames[index] = { file, delay, blob };
+          decodedFrameCount += 1;
+          if (decodedFrameCount < frames.length) return;
+          // 全部帧解包完毕，写入缓存供下次悬停时直接播放
+          void cacheUgoiraFrames(illustId, decodedFrames);
+        },
+      });
+    } catch (error) {
+      // 播放器构造失败（例如无法获得 canvas 上下文）时关闭占位窗口，
+      // 否则预览会一直停在加载动画上
+      iLog.e(`Failed to create ugoira player of illust ${illustId}:`, error);
+      this.dismissLoading(illustId);
+      return;
+    }
+    this.bindUgoiraPreviewEvents();
+  }
+
   createUgoiraPlayer(
-    options: Pick<ZipImagePlayerOptions, "source" | "metadata">
+    options: Pick<
+      ZipImagePlayerOptions,
+      "source" | "metadata" | "cachedFrames" | "onFrameDecoded"
+    >
   ) {
     const canvas = document.createElement("canvas");
     const p = new ZipImagePlayer({
@@ -964,6 +1137,19 @@ class PreviewedIllust {
   //#endregion
 
   //#region 预览组件通用能力
+  /**
+   * 补渲染作品详情。
+   * 预览窗口会在作品详情返回前就打开，因此详情是异步补上的；
+   * 期间用户可能已切换到其他作品，需要校验 ID 避免渲染到错误的窗口。
+   */
+  updateIllustrationDetails(illustrationDetails: IllustrationDetails | null) {
+    if (!illustrationDetails || illustrationDetails.id !== this.illustId) {
+      return;
+    }
+    this.illustDetails = illustrationDetails;
+    this.renderIllustrationDetails(illustrationDetails);
+  }
+
   /** 展示作品详情信息（标签、收藏数等） */
   renderIllustrationDetails(illustrationDetails: IllustrationDetails | null) {
     if (illustrationDetails && illustrationDetails.id === this.illustId) {
@@ -1054,6 +1240,9 @@ class PreviewedIllust {
   }
 
   bindPreviewMouseEvents() {
+    if (this.#mouseEventsBound) return;
+    this.#mouseEventsBound = true;
+
     $(document).on("mousemove", this.onMouseMove);
     document.addEventListener("mousedown", this.onMouseDown, true);
     document.addEventListener("mouseup", this.cancelLongPress, true);
@@ -1065,6 +1254,7 @@ class PreviewedIllust {
   }
 
   unbindPreviewMouseEvents() {
+    this.#mouseEventsBound = false;
     this.cancelLongPress();
     $(document).off("mousemove", this.onMouseMove);
     document.removeEventListener("mousedown", this.onMouseDown, true);
