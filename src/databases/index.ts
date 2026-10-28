@@ -3,6 +3,7 @@ export {
   type CacheTableKey,
   clearCacheTables,
   countCacheTable,
+  getDatabase,
   ILLUST_PAGES_CACHE_TABLE_KEY,
   ILLUSTRATION_DETAILS_CACHE_TABLE_KEY,
   UGOIRA_FRAMES_CACHE_TABLE_KEY,

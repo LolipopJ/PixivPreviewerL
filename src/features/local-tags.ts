@@ -1,3 +1,4 @@
+import { LOCAL_TAGS_STYLE_ID } from "../constants";
 import settingsIcon from "../icons/settings.svg";
 import trashIcon from "../icons/trash.svg";
 import {
@@ -7,6 +8,7 @@ import {
   recordTagTotal,
 } from "../services/tags";
 import debounce from "../utils/debounce";
+import { injectStyle } from "../utils/dom";
 import { iLog } from "../utils/logger";
 import { getLocalTagColor } from "../utils/tag-colors";
 import {
@@ -175,9 +177,8 @@ const getTagLink = (target: EventTarget | null) => {
 export const loadLocalTags = () => {
   if ($(`#${POPOVER_ID}`).length) return;
 
-  $("<style>")
-    .text(
-      `
+  injectStyle(
+    `
     #${POPOVER_ID}, #${MANAGER_ID}, .${STRIP_CLASS} {
       --pp-tag-bg: #fff; --pp-tag-fg: #333; --pp-tag-muted: #666;
       --pp-tag-border: #ddd; --pp-tag-chip: #f0f6fa;
@@ -271,9 +272,9 @@ export const loadLocalTags = () => {
         --pp-tag-border: #555; --pp-tag-chip: #303c45;
       }
     }
-  `
-    )
-    .appendTo("head");
+  `,
+    LOCAL_TAGS_STYLE_ID
+  );
 
   const popover = $("<div>")
     .attr({ id: POPOVER_ID, role: "dialog", "aria-label": "标签详情" })

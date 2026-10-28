@@ -87,6 +87,11 @@ export const SORT_NEXT_PAGE_EVENT_NAME = "PIXIV_PREVIEWER_JUMP_TO_NEXT_PAGE";
 /** 隐藏已收藏作品按钮 */
 export const HIDE_FAVORITES_BUTTON_ID = "pp-hide-favorites";
 
+/** 各模块注入的 `<style>` 节点 ID，用于避免重复注入 */
+export const PREVIEW_STYLE_ID = "pp-preview-styles";
+export const LOCAL_TAGS_STYLE_ID = "pp-local-tags-styles";
+export const DOWNLOADS_STYLE_ID = "pp-downloads-styles";
+
 /** R18 作品原图下载目录 */
 export const R18_DOWNLOAD_DIRECTORY = "r18";
 /** R18G 作品原图下载目录 */

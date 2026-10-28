@@ -2,6 +2,7 @@ import {
   CACHE_TABLE_KEYS,
   clearCacheTables,
   countCacheTable,
+  getDatabase,
   getUgoiraFrameCacheStats,
   ILLUST_PAGES_CACHE_TABLE_KEY,
   ILLUSTRATION_DETAILS_CACHE_TABLE_KEY,
@@ -28,14 +29,37 @@ export interface CacheUsage {
 
 let hasPruned = false;
 
-/** 启动后清理一次过期缓存；失败不影响功能，仅记录日志并允许后续重试 */
+/** 页面解析期间不抢占主线程，空闲时再执行重型清理 */
+const whenIdle = (task: () => void) => {
+  if (typeof requestIdleCallback === "function") {
+    requestIdleCallback(task, { timeout: 3000 });
+  } else {
+    setTimeout(task, 1000);
+  }
+};
+
+/**
+ * 提前建立 IndexedDB 连接。
+ * 连接需在首次读写缓存时才建立，提前打开可让悬浮预览直接命中缓存，
+ * 不必等页面渲染完成后才开始握手。
+ */
+export const warmUpCacheDatabase = () => {
+  void getDatabase();
+};
+
+/**
+ * 启动后清理一次过期缓存。
+ * 清理过程中的失败都在数据库层降级为日志，不会抛出；
+ * 本流程在页面生命周期内只执行一次。
+ */
 export const pruneCachesOnStartup = async () => {
   if (hasPruned) return;
+  hasPruned = true;
+  await new Promise<void>((resolve) => whenIdle(resolve));
   try {
     await Promise.all([pruneIllustrationCaches(), pruneUgoiraFrameCache()]);
-    hasPruned = true;
   } catch (error) {
-    // 保留未清理状态，下次初始化（例如数据库正忙的情况过去后）可以重试
+    // 各清理函数内部已把失败降级为日志，此处仅防御未来改动抛出的异常
     iLog.w("Failed to prune caches on startup:", error);
   }
 };

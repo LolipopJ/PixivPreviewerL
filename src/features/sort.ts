@@ -38,7 +38,7 @@ type LoadIllustSortOptions = Pick<
   | "hideByTagList"
   | "aiFilter"
   | "aiAssistedFilter"
-> & { csrfToken: string };
+>;
 
 const BOOKMARK_USER_PAGE_ILLUSTRATION_LIST_SELECTOR = "ul.sc-e967f3f1-1.cEOodl";
 
@@ -57,7 +57,6 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
     hideByTagList: hideByTagListString,
     aiFilter = false,
     aiAssistedFilter = false,
-    // csrfToken,
   } = options;
 
   // 修正不符合实际的参数
@@ -90,7 +89,10 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
     progressElement = $();
     progressText = $();
 
-    sortButtonElement = $(`#${SORT_BUTTON_ID}`);
+    /** 按钮由本脚本创建，构造时可能尚未挂载，因此每次使用前再查询 */
+    get sortButtonElement() {
+      return $(`#${SORT_BUTTON_ID}`);
+    }
 
     reset({ type }: { type: IllustSortType }) {
       try {

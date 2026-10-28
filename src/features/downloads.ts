@@ -1,3 +1,4 @@
+import { DOWNLOADS_STYLE_ID } from "../constants";
 import downloadIcon from "../icons/download.svg";
 import retryIcon from "../icons/retry.svg";
 import stopIcon from "../icons/stop.svg";
@@ -11,6 +12,7 @@ import {
   retryDownload,
   subscribeDownloads,
 } from "../services/download";
+import { injectStyle } from "../utils/dom";
 
 const BUTTON_ID = "pp-downloads-button";
 const PANEL_ID = "pp-downloads-panel";
@@ -38,12 +40,9 @@ const createIconButton = (
     .html(icon)
     .on("click", onClick);
 
-export const loadDownloadPanel = (toolbar: HTMLElement) => {
-  if (document.getElementById(BUTTON_ID)) return;
-
-  $("<style>")
-    .text(
-      `
+const injectDownloadPanelStyles = () => {
+  injectStyle(
+    `
       .pp-toolbar-button {
         position: relative; box-sizing: border-box; display: flex;
         align-items: center; justify-content: center; width: 48px; height: 48px;
@@ -112,9 +111,15 @@ export const loadDownloadPanel = (toolbar: HTMLElement) => {
         #${PANEL_ID} { --pp-download-bg: #222; --pp-download-fg: #eee;
           --pp-download-muted: #bbb; --pp-download-border: #444; --pp-download-action: #72c5ff; }
       }
-      `
-    )
-    .appendTo("head");
+      `,
+    DOWNLOADS_STYLE_ID
+  );
+};
+
+export const loadDownloadPanel = (toolbar: HTMLElement) => {
+  if (document.getElementById(BUTTON_ID)) return;
+
+  injectDownloadPanelStyles();
 
   const button = $("<button>")
     .attr({

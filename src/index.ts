@@ -27,8 +27,10 @@ import {
   formatCacheBytes,
   getCacheUsage,
   pruneCachesOnStartup,
+  warmUpCacheDatabase,
 } from "./services/cache";
 import type { GlobalSettings } from "./types";
+import { onDomReady, waitFor } from "./utils/dom";
 import { DoLog, iLog } from "./utils/logger";
 import {
   getSettings,
@@ -38,21 +40,32 @@ import {
   toggleSettingBooleanValue,
 } from "./utils/setting";
 
-// 添加收藏需要这个
-let g_csrfToken = "";
 // 当前页面类型
-let g_pageType: PageType;
+let g_pageType: PageType | undefined;
 // 设置
 let g_settings: GlobalSettings;
 
 //#region 页面
+/**
+ * 工具栏来源：脚本自建，或复用页面自带的工具栏。
+ * 用联合类型表达，避免出现「两者都没有」这种无法处理的页面配置。
+ */
+type PageToolBarSource =
+  | {
+      /** 创建（或复用）脚本自有的工具栏，不依赖页面渲染 */
+      CreateToolBar: () => HTMLElement;
+    }
+  | {
+      /** 页面自带工具栏（如动态页），必须等它渲染出来 */
+      FindToolBar: () => HTMLElement | null;
+    };
+
 const Pages: Record<
   PageType,
   {
     PageTypeString: string;
     CheckUrl: (url: string) => boolean;
-    GetToolBar: () => HTMLElement;
-  }
+  } & PageToolBarSource
 > = {
   [PageType.Search]: {
     PageTypeString: "SearchPage",
@@ -64,7 +77,7 @@ const Pages: Record<
         ) || /^https?:\/\/www.pixiv.net(\/en)?\/search/.test(url)
       );
     },
-    GetToolBar: getToolbar,
+    CreateToolBar: createToolbar,
   },
   [PageType.BookMarkNew]: {
     PageTypeString: "BookMarkNewPage",
@@ -73,21 +86,21 @@ const Pages: Record<
         url
       );
     },
-    GetToolBar: getToolbar,
+    CreateToolBar: createToolbar,
   },
   [PageType.Discovery]: {
     PageTypeString: "DiscoveryPage",
     CheckUrl: function (url) {
       return /^https?:\/\/www.pixiv.net(\/en)?\/discovery.*/.test(url);
     },
-    GetToolBar: getToolbar,
+    CreateToolBar: createToolbar,
   },
   [PageType.Member]: {
     PageTypeString: "MemberPage/MemberIllustPage/MemberBookMark",
     CheckUrl: function (url) {
       return /^https?:\/\/www.pixiv.net(\/en)?\/users\/\d+/.test(url);
     },
-    GetToolBar: getToolbar,
+    CreateToolBar: createToolbar,
   },
   [PageType.Home]: {
     PageTypeString: "HomePage",
@@ -99,74 +112,75 @@ const Pages: Record<
         /https?:\/\/www.pixiv.net(\/en)?\/cate_r18\.php$/.test(url)
       );
     },
-    GetToolBar: getToolbar,
+    CreateToolBar: createToolbar,
   },
   [PageType.Ranking]: {
     PageTypeString: "RankingPage",
     CheckUrl: function (url) {
       return /^https?:\/\/www.pixiv.net(\/en)?\/ranking.php.*/.test(url);
     },
-    GetToolBar: getToolbar,
+    CreateToolBar: createToolbar,
   },
   [PageType.NewIllust]: {
     PageTypeString: "NewIllustPage",
     CheckUrl: function (url) {
       return /^https?:\/\/www.pixiv.net(\/en)?\/new_illust.php.*/.test(url);
     },
-    GetToolBar: getToolbar,
+    CreateToolBar: createToolbar,
   },
   [PageType.R18]: {
     PageTypeString: "R18Page",
     CheckUrl: function (url) {
       return /^https?:\/\/www.pixiv.net(\/en)?\/cate_r18.php.*/.test(url);
     },
-    GetToolBar: getToolbar,
+    CreateToolBar: createToolbar,
   },
   [PageType.Stacc]: {
     PageTypeString: "StaccPage",
     CheckUrl: function (url) {
       return /^https:\/\/www.pixiv.net(\/en)?\/stacc.*/.test(url);
     },
-    GetToolBar: function () {
-      return getToolbarOld();
-    },
+    // 动态页复用页面自带工具栏，只能等它渲染
+    FindToolBar: findToolbarOld,
   },
   [PageType.Artwork]: {
     PageTypeString: "ArtworkPage",
     CheckUrl: function (url) {
       return /^https:\/\/www.pixiv.net(\/en)?\/artworks\/.*/.test(url);
     },
-    GetToolBar: getToolbar,
+    CreateToolBar: createToolbar,
   },
   [PageType.NovelSearch]: {
     PageTypeString: "NovelSearchPage",
     CheckUrl: function (url) {
       return /^https:\/\/www.pixiv.net(\/en)?\/tags\/.*\/novels/.test(url);
     },
-    GetToolBar: getToolbar,
+    CreateToolBar: createToolbar,
   },
   [PageType.SearchTop]: {
     PageTypeString: "SearchTopPage",
     CheckUrl: function (url) {
       return /^https?:\/\/www.pixiv.net(\/en)?\/tags\/[^/*]/.test(url);
     },
-    GetToolBar: getToolbar,
+    CreateToolBar: createToolbar,
   },
 };
 
-function getToolbar() {
-  const toolbar = $(`#${TOOLBAR_ID}`);
-  if (toolbar.length > 0) {
-    return toolbar.get(0)!;
-  }
+function findToolbar() {
+  return $(`#${TOOLBAR_ID}`).get(0) ?? null;
+}
+
+function createToolbar() {
+  const toolbar = findToolbar();
+  if (toolbar) return toolbar;
   $("body").append(
     `<div id="${TOOLBAR_ID}" style="position: fixed; right: 28px; bottom: 96px;"></div>`
   );
-  return $(`#${TOOLBAR_ID}`).get(0)!;
+  return findToolbar()!;
 }
 
-function getToolbarOld() {
-  return $("._toolmenu").get(0)!;
+function findToolbarOld() {
+  return $("._toolmenu").get(0) ?? null;
 }
 
 // Replaces deleted artwork indicators with search engine links.
@@ -395,164 +409,175 @@ const ShowUpgradeMessage = () => {
 };
 //#endregion
 
+//#region 工具栏
+/** 向工具栏追加按钮。按钮可能已由上一次初始化创建，因此先确认其不存在 */
+const appendToolbarButton = (
+  toolBar: HTMLElement,
+  {
+    id,
+    title,
+    icon,
+    onClick,
+  }: {
+    id: string;
+    title: string;
+    icon: string;
+    onClick: () => void;
+  }
+) => {
+  if ($(`#${id}`).length) return;
+
+  const newListItem = document.createElement("div");
+  newListItem.title = title;
+  const newButton = document.createElement("button");
+  newButton.id = id;
+  newButton.className = "pp-toolbar-button";
+  newButton.type = "button";
+  newButton.title = title;
+  newButton.setAttribute("aria-label", title);
+  newButton.innerHTML = icon;
+  newButton.querySelector("svg")?.setAttribute("aria-hidden", "true");
+  newListItem.appendChild(newButton);
+
+  $(newButton).on("click", onClick);
+  toolBar.appendChild(newListItem);
+};
+
+const mountToolbar = (toolBar: HTMLElement) => {
+  DoLog(LogLevel.Elements, toolBar);
+
+  appendToolbarButton(toolBar, {
+    id: SORT_BUTTON_ID,
+    title: "排序作品",
+    icon: sortIcon,
+    onClick: () => window.dispatchEvent(new Event(SORT_EVENT_NAME)),
+  });
+  appendToolbarButton(toolBar, {
+    id: SORT_NEXT_PAGE_BUTTON_ID,
+    title: "前往下一页",
+    icon: nextPageIcon,
+    onClick: () => window.dispatchEvent(new Event(SORT_NEXT_PAGE_EVENT_NAME)),
+  });
+  appendToolbarButton(toolBar, {
+    id: HIDE_FAVORITES_BUTTON_ID,
+    title: "隐藏已收藏作品",
+    icon: hideFavoritesIcon,
+    onClick: hideFavorites,
+  });
+
+  loadDownloadPanel(toolBar);
+};
+//#endregion
+
 //#region 主函数
-const initializePixivPreviewer = () => {
+
+/** 匹配当前页面类型。仅依赖 URL，可在 `document-start` 执行 */
+const matchPageType = () => {
+  for (const key of Object.keys(Pages)) {
+    const pageType = Number(key) as PageType;
+    if (Pages[pageType].CheckUrl(location.href)) return pageType;
+  }
+  return undefined;
+};
+
+/**
+ * 初始化不依赖 DOM 的功能。
+ * 在 `document-start` 执行，避免页面渲染期间功能尚不可用。
+ */
+const initializeEarly = () => {
   try {
-    // 注册设置菜单
     g_settings = registerSettingsMenu();
-    if (g_settings.enableLocalTags) {
-      loadLocalTags();
-    }
     iLog.i(
       "Start to initialize Pixiv Previewer with global settings:",
       g_settings
     );
 
-    // 清理过期的持久化缓存
+    // 清理过期的持久化缓存。提前打开数据库，后续读取缓存时无需再等待连接
+    warmUpCacheDatabase();
     void pruneCachesOnStartup();
+
+    g_pageType = matchPageType();
+    if (g_pageType === undefined) {
+      DoLog(LogLevel.Info, "Unsupported page.");
+    } else {
+      DoLog(
+        LogLevel.Info,
+        "Current page is " + Pages[g_pageType].PageTypeString
+      );
+
+      if (g_pageType === PageType.Artwork) {
+        // 用户来到作品详情页时，可能会对当前作品进行收藏等操作，因此主动使当前作品的缓存失效
+        const artworkId = location.pathname.match(/\/artworks\/(\d+)/)?.[1];
+        if (artworkId) {
+          void deleteCachedIllustrationDetails([artworkId]);
+        }
+      }
+    }
+
+    // 初始化作品预览功能。仅绑定事件委托，悬停时才创建预览容器
+    if (g_settings.enablePreview) {
+      loadIllustPreview(g_settings);
+    }
+
+    // 初始化作品排序功能。按钮稍后创建，事件监听先就位，避免点击无响应
+    loadIllustSort(g_settings);
+  } catch (e) {
+    DoLog(LogLevel.Error, "An error occurred while initializing:", e);
+  }
+};
+
+/**
+ * 初始化需要 DOM 的功能。
+ * `body` 就绪后即可执行，无需等待页面内容渲染完成。
+ */
+const initializeDom = () => {
+  try {
+    // 设置读取失败时 `initializeEarly` 已记录错误，此处不再重复执行
+    if (!g_settings) return;
+
+    if (g_settings.enableLocalTags) {
+      loadLocalTags();
+    }
 
     // 显示更新信息窗口
     if (g_settings.version !== g_version) {
       ShowUpgradeMessage();
     }
 
-    // 初始化作品预览功能
-    if (g_settings.enablePreview) {
-      loadIllustPreview(g_settings);
-    }
-
-    // 初始化作品排序功能
-    $.get(location.href, function (data) {
-      const matched = data.match(/token\\":\\"([a-z0-9]{32})/);
-      if (matched.length > 0) {
-        g_csrfToken = matched[1];
-        DoLog(LogLevel.Info, "Got g_csrfToken: " + g_csrfToken);
-
-        loadIllustSort({ ...g_settings, csrfToken: g_csrfToken });
-      } else {
-        DoLog(
-          LogLevel.Error,
-          "Can not get g_csrfToken, sort function is disabled."
-        );
-      }
-    });
-
-    // 匹配当前页面
-    for (let i = 0; i < Object.keys(Pages).length; i++) {
-      if (Pages[i as PageType].CheckUrl(location.href)) {
-        g_pageType = i as PageType;
-        break;
-      }
-    }
-
-    if (g_pageType !== undefined) {
-      DoLog(
-        LogLevel.Info,
-        "Current page is " + Pages[g_pageType].PageTypeString
-      );
-    } else {
-      DoLog(LogLevel.Info, "Unsupported page.");
-      return;
-    }
+    if (g_pageType === undefined) return;
 
     if (g_pageType === PageType.Member) {
-      showSearchLinksForDeletedArtworks();
-    } else if (g_pageType === PageType.Artwork) {
-      // 用户来到作品详情页时，可能会对当前作品进行收藏等操作，因此主动使当前作品的缓存失效
-      const artworkId =
-        window.location.pathname.match(/\/artworks\/(\d+)/)?.[1];
-      if (artworkId) {
-        setTimeout(() => {
-          deleteCachedIllustrationDetails([artworkId]);
-        });
-      }
+      // Pixiv 是 SPA，探测窗口内可能已跳转到其它页面；
+      // 复核页面类型，避免把搜索结果链接处理逻辑套用到新页面
+      waitFor(
+        () =>
+          matchPageType() === PageType.Member &&
+          document.querySelector("span[to]"),
+        () => showSearchLinksForDeletedArtworks()
+      );
     }
 
-    //#region 初始化工具栏按钮
-    // 获取工具栏按钮
-    const toolBar = Pages[g_pageType].GetToolBar();
-    if (toolBar) {
-      DoLog(LogLevel.Elements, toolBar);
+    // 工具栏只需要挂载一次；页面自带工具栏的页面（如动态页）需等其渲染
+    const page = Pages[g_pageType];
+    if ("CreateToolBar" in page) {
+      mountToolbar(page.CreateToolBar());
     } else {
-      DoLog(LogLevel.Warning, "Get toolbar failed.");
-      return;
-    }
-
-    // 添加排序按钮
-    if (!$(`#${SORT_BUTTON_ID}`).length) {
-      const newListItem = document.createElement("div");
-      newListItem.title = "排序作品";
-      newListItem.innerHTML = "";
-      const newButton = document.createElement("button");
-      newButton.id = SORT_BUTTON_ID;
-      newButton.className = "pp-toolbar-button";
-      newButton.type = "button";
-      newButton.title = "排序作品";
-      newButton.setAttribute("aria-label", "排序作品");
-      newButton.innerHTML = sortIcon;
-      newButton.querySelector("svg")?.setAttribute("aria-hidden", "true");
-      newListItem.appendChild(newButton);
-      toolBar.appendChild(newListItem);
-
-      $(newButton).on("click", () => {
-        const sortEvent = new Event(SORT_EVENT_NAME);
-        window.dispatchEvent(sortEvent);
+      waitFor(page.FindToolBar, mountToolbar, {
+        interval: 200,
+        maxAttempts: 25,
+        onGiveUp: () => DoLog(LogLevel.Warning, "Get toolbar failed."),
       });
     }
-
-    // 添加前往下一页按钮
-    if (!$(`#${SORT_NEXT_PAGE_BUTTON_ID}`).length) {
-      const newListItem = document.createElement("div");
-      newListItem.title = "前往下一页";
-      newListItem.innerHTML = "";
-      const newButton = document.createElement("button");
-      newButton.id = SORT_NEXT_PAGE_BUTTON_ID;
-      newButton.className = "pp-toolbar-button";
-      newButton.type = "button";
-      newButton.title = "前往下一页";
-      newButton.setAttribute("aria-label", "前往下一页");
-      newButton.innerHTML = nextPageIcon;
-      newButton.querySelector("svg")?.setAttribute("aria-hidden", "true");
-      newListItem.appendChild(newButton);
-      toolBar.appendChild(newListItem);
-
-      $(newButton).on("click", () => {
-        const sortEvent = new Event(SORT_NEXT_PAGE_EVENT_NAME);
-        window.dispatchEvent(sortEvent);
-      });
-    }
-    //#endregion
-
-    // 添加过滤已收藏作品按钮
-    if (!$(`#${HIDE_FAVORITES_BUTTON_ID}`).length) {
-      const newListItem = document.createElement("div");
-      newListItem.title = "隐藏已收藏作品";
-      newListItem.innerHTML = "";
-      const newButton = document.createElement("button");
-      newButton.id = HIDE_FAVORITES_BUTTON_ID;
-      newButton.className = "pp-toolbar-button";
-      newButton.type = "button";
-      newButton.title = "隐藏已收藏作品";
-      newButton.setAttribute("aria-label", "隐藏已收藏作品");
-      newButton.innerHTML = hideFavoritesIcon;
-      newButton.querySelector("svg")?.setAttribute("aria-hidden", "true");
-      newListItem.appendChild(newButton);
-      toolBar.appendChild(newListItem);
-
-      $(newButton).on("click", () => {
-        hideFavorites();
-      });
-    }
-    loadDownloadPanel(toolBar);
-    //#endregion
   } catch (e) {
     DoLog(LogLevel.Error, "An error occurred while initializing:", e);
   }
 };
 
+// 必须在 `document-start` 劫持页面自身的标签搜索请求，否则会漏掉最早的一批请求
 if (getSettings().enableLocalTags) interceptTagSearchRequests();
 
-window.addEventListener("DOMContentLoaded", () => {
-  setTimeout(initializePixivPreviewer, 1000);
-});
+// 预览、排序、缓存清理与页面识别不依赖 DOM，尽早启动
+initializeEarly();
+
+onDomReady(initializeDom);
 //#endregion

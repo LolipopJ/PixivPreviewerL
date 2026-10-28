@@ -3,6 +3,7 @@ import {
   PREVIEW_DETAILS_MAX_STALE_TIME,
   PREVIEW_IMAGE_CACHE_MAX_SIZE,
   PREVIEW_PRELOAD_NUM,
+  PREVIEW_STYLE_ID,
   PREVIEW_WRAPPER_BORDER_RADIUS,
   PREVIEW_WRAPPER_BORDER_WIDTH,
   PREVIEW_WRAPPER_DISTANCE_TO_MOUSE,
@@ -29,6 +30,7 @@ import {
 } from "../services";
 import type { GlobalSettings, IllustrationDetails } from "../types";
 import debounce from "../utils/debounce";
+import { injectStyle } from "../utils/dom";
 import { stopEventPropagation } from "../utils/event";
 import {
   checkIsAiAssisted,
@@ -463,29 +465,28 @@ export const loadIllustPreview = (
 
   //#region 取消预期外节点的鼠标事件
   (function inactiveUnexpectedDoms() {
-    const styleRules = $("<style>").prop("type", "text/css");
     // 添加旋转动画样式
-    styleRules.append(`
+    // https://www.pixiv.net/ranking.php 排行榜页面加载后续作品时，
+    // 会插入一个影响鼠标悬浮判定的空节点，在此处将其设置为不触发鼠标事件
+    // https://www.pixiv.net/ranking.php?content=ugoira 排行榜动图页面
+    // 会在动图封面上插入一个 svg 播放图标，在此处将其设置为不触发鼠标事件
+    injectStyle(
+      `
 @keyframes pp-spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
-    }
-    @keyframes pp-one-handed-progress {
-      to { stroke-dashoffset: 0; }
-}`);
-    // https://www.pixiv.net/ranking.php 排行榜页面加载后续作品时，
-    // 会插入一个影响鼠标悬浮判定的空节点，在此处将其设置为不触发鼠标事件
-    styleRules.append(`
+}
+@keyframes pp-one-handed-progress {
+  to { stroke-dashoffset: 0; }
+}
 ._layout-thumbnail img + div {
   pointer-events: none;
-}`);
-    // https://www.pixiv.net/ranking.php?content=ugoira 排行榜动图页面
-    // 会在动图封面上插入一个 svg 播放图标，在此处将其设置为不触发鼠标事件
-    styleRules.append(`
+}
 pixiv-icon[name="24/Play"] {
   pointer-events: none;
-}`);
-    styleRules.appendTo("head");
+}`,
+      PREVIEW_STYLE_ID
+    );
   })();
   //#endregion
 
@@ -591,8 +592,46 @@ class PreviewedIllust {
     this.currentPage = 1;
     this.pageCount = 1;
 
-    // 重新创建预览容器节点
+    // 销毁预览容器节点，下次显示预览时由 `#ensureWrapperDom` 重建
+    this.#destroyWrapperDom();
+
+    // 预加载的图片由 `decodedPreviewImages` 统一持有，这里只需解除引用
+    this.#prevMousePos = [0, 0];
+    this.#currentIllustSize = [0, 0];
+    this.#currentUgoiraPlayer?.stop();
+    // 必须置空：`loadUgoiraPlayer` 在等待缓存后才创建播放器，
+    // 残留的旧实例会让重建逻辑误判为「已创建」，也会阻断去重
+    this.#currentUgoiraPlayer = null;
+    if (this.#downloadResetTimeout !== null) {
+      clearTimeout(this.#downloadResetTimeout);
+      this.#downloadResetTimeout = null;
+    }
+
+    // 取消所有绑定的监听事件
+    this.unbindPreviewImageEvents();
+    this.unbindUgoiraPreviewEvents();
+  }
+
+  /** 移除预览容器节点，重置时不立即重建 */
+  #destroyWrapperDom() {
     this.previewWrapperElement?.remove();
+    this.previewWrapperElement = $();
+    this.previewWrapperHeader = $();
+    this.illustMeta = $();
+    this.pageCountElement = $();
+    this.pageCountText = $();
+    this.downloadOriginalElement = $();
+    this.previewLoadingElement = $();
+    this.previewImageElement = $();
+  }
+
+  /**
+   * 创建预览容器节点。
+   * 延迟到真正需要显示预览时才创建，使初始化不再依赖 `body` 是否已存在。
+   */
+  #ensureWrapperDom() {
+    if (this.previewWrapperElement.length) return;
+
     this.previewWrapperElement = $(document.createElement("div"))
       .attr({ id: "pp-wrapper" })
       .css({
@@ -648,22 +687,6 @@ class PreviewedIllust {
       })
       .hide()
       .appendTo(this.previewWrapperElement);
-
-    // 预加载的图片由 `decodedPreviewImages` 统一持有，这里只需解除引用
-    this.#prevMousePos = [0, 0];
-    this.#currentIllustSize = [0, 0];
-    this.#currentUgoiraPlayer?.stop();
-    // 必须置空：`loadUgoiraPlayer` 在等待缓存后才创建播放器，
-    // 残留的旧实例会让重建逻辑误判为「已创建」，也会阻断去重
-    this.#currentUgoiraPlayer = null;
-    if (this.#downloadResetTimeout !== null) {
-      clearTimeout(this.#downloadResetTimeout);
-      this.#downloadResetTimeout = null;
-    }
-
-    // 取消所有绑定的监听事件
-    this.unbindPreviewImageEvents();
-    this.unbindUgoiraPreviewEvents();
   }
 
   //#region 预览图片功能
@@ -1232,6 +1255,7 @@ class PreviewedIllust {
 
   /** 初始化显示预览容器 */
   initPreviewWrapper() {
+    this.#ensureWrapperDom();
     this.previewWrapperElement.show();
     this.previewLoadingElement.show();
     this.adjustPreviewWrapper({
