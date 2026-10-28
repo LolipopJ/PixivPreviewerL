@@ -38,6 +38,11 @@ export const PREVIEW_WRAPPER_BORDER_RADIUS = 8;
 export const PREVIEW_WRAPPER_DISTANCE_TO_MOUSE = 20;
 /** 预览容器预加载图片数量。仅适用于插画类型作品 */
 export const PREVIEW_PRELOAD_NUM = 5;
+/**
+ * 翻页后新图片超过该时间仍未就绪时才显示毛玻璃加载遮罩。
+ * 预加载命中缓存时图片几乎瞬时就绪，直接显示遮罩会闪一下。
+ */
+export const PAGE_LOADING_OVERLAY_DELAY_MS = 120;
 /** 预览缓存最大条目数 */
 export const PREVIEW_CACHE_MAX_SIZE = 100;
 /** 预览图片解码缓存最大条目数，至少覆盖一次预加载窗口 */

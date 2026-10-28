@@ -1,4 +1,5 @@
 import {
+  PAGE_LOADING_OVERLAY_DELAY_MS,
   PREVIEW_CACHE_MAX_SIZE,
   PREVIEW_DETAILS_MAX_STALE_TIME,
   PREVIEW_IMAGE_CACHE_MAX_SIZE,
@@ -60,6 +61,13 @@ const decodedPreviewImages = createLRUCache<HTMLImageElement>(
 
 const getDecodedImageCacheKey = (illustId: string, page: number) =>
   `${illustId}_p${page}`;
+
+/** 创建带旋转动画的 loading 图标，预览窗口的加载状态共用 */
+const createLoadingSpinner = () =>
+  $(loadingIcon).css({
+    padding: "12px",
+    animation: "pp-spin 1s linear infinite",
+  });
 
 let isInitialized = false;
 export const loadIllustPreview = (
@@ -553,6 +561,8 @@ class PreviewedIllust {
   downloadOriginalElement: JQuery<HTMLElement> = $();
   /** 预览图片或动图加载状态 DOM */
   previewLoadingElement: JQuery<HTMLElement> = $();
+  /** 翻页加载新图片时覆盖在图片上方的毛玻璃遮罩 DOM */
+  pageLoadingOverlayElement: JQuery<HTMLElement> = $();
   /** 当前预览的图片或动图 DOM */
   previewImageElement: JQuery<HTMLElement> = $();
 
@@ -560,6 +570,10 @@ class PreviewedIllust {
   #previewPages = new Map<string, number>();
   /** 下载按钮重置定时器 */
   #downloadResetTimeout: ReturnType<typeof setTimeout> | null = null;
+  /** 翻页加载遮罩的延迟显示定时器 */
+  #pageLoadingOverlayTimeout: ReturnType<typeof setTimeout> | null = null;
+  /** 当前页图片是否仍在加载（用于判断遮罩是否需要常驻） */
+  #isPageImageLoading = false;
   /** 保存的鼠标位置 */
   #prevMousePos: [number, number] = [0, 0];
   /** 当前预览图片的实际尺寸 */
@@ -606,6 +620,8 @@ class PreviewedIllust {
       clearTimeout(this.#downloadResetTimeout);
       this.#downloadResetTimeout = null;
     }
+    this.#clearPageLoadingOverlayTimeout();
+    this.#isPageImageLoading = false;
 
     // 取消所有绑定的监听事件
     this.unbindPreviewImageEvents();
@@ -622,6 +638,7 @@ class PreviewedIllust {
     this.pageCountText = $();
     this.downloadOriginalElement = $();
     this.previewLoadingElement = $();
+    this.pageLoadingOverlayElement = $();
     this.previewImageElement = $();
   }
 
@@ -656,6 +673,7 @@ class PreviewedIllust {
         display: "flex",
         gap: "5px",
         "align-items": "center",
+        "z-index": "2",
       })
       .hide()
       .appendTo(this.previewWrapperElement);
@@ -678,14 +696,35 @@ class PreviewedIllust {
       .css(INTERACTIVE_BADGE_CSS)
       .append(`${downloadIcon}<span>原图</span>`)
       .appendTo(this.previewWrapperHeader);
-    this.previewLoadingElement = $(loadingIcon)
-      .css({ padding: "12px", animation: "pp-spin 1s linear infinite" })
-      .appendTo(this.previewWrapperElement);
+    this.previewLoadingElement = createLoadingSpinner().appendTo(
+      this.previewWrapperElement
+    );
     this.previewImageElement = $(new Image())
       .css({
         "border-radius": `${PREVIEW_WRAPPER_BORDER_RADIUS}px`,
       })
       .hide()
+      .appendTo(this.previewWrapperElement);
+    // 翻页时覆盖在旧图上方的毛玻璃加载遮罩，新图就绪后隐藏
+    this.pageLoadingOverlayElement = $(document.createElement("div"))
+      .css({
+        position: "absolute",
+        top: "0px",
+        left: "0px",
+        right: "0px",
+        bottom: "0px",
+        "z-index": "1",
+        display: "flex",
+        "align-items": "center",
+        "justify-content": "center",
+        "border-radius": `${PREVIEW_WRAPPER_BORDER_RADIUS}px`,
+        background: "rgba(31, 31, 31, 0.32)",
+        "backdrop-filter": "blur(4px)",
+        // 遮罩不拦截鼠标事件，保持原有的点击切换与一键模式交互
+        "pointer-events": "none",
+      })
+      .hide()
+      .append(createLoadingSpinner())
       .appendTo(this.previewWrapperElement);
   }
 
@@ -794,6 +833,8 @@ class PreviewedIllust {
   bindPreviewImageEvents() {
     // 监听图片加载完毕事件
     this.previewImageElement.on("load", this.onImageLoad);
+    // 监听图片加载失败事件，避免翻页遮罩一直停留
+    this.previewImageElement.on("error", this.onImageError);
     // 监听鼠标点击切换图片事件
     this.previewImageElement.on("click", this.onPreviewImageMouseClick);
     // 监听点击下载按钮事件
@@ -818,6 +859,21 @@ class PreviewedIllust {
   /** 显示 pageIndex 指向的图片 */
   updatePreviewImage(page: number = this.currentPage) {
     const currentImageUrl = this.regularUrls[page - 1];
+    const isSameImage =
+      this.previewImageElement.attr("src") === currentImageUrl;
+
+    // 已经有图片在显示时，翻页期间先盖上毛玻璃遮罩，
+    // 避免新图尚未就绪时用户看到的仍是上一页的画面。
+    // 单页作品重复设同一地址不会触发 load，不能进入加载态；
+    // 预加载已解码完成的图片同样跳过加载态，避免多余的闪烁
+    if (this.illustLoaded && !isSameImage && !this.#isPageImageDecoded(page)) {
+      this.#isPageImageLoading = true;
+      this.#schedulePageLoadingOverlay();
+    } else {
+      // 目标页无需等待时立即收起上一页残留的遮罩
+      this.#finishPageLoading();
+    }
+
     this.previewImageElement.attr("src", currentImageUrl);
 
     this.pageCountText.text(`${page}/${this.pageCount}`);
@@ -826,7 +882,35 @@ class PreviewedIllust {
     }
   }
 
+  /** 延迟显示翻页加载遮罩，图片在延迟内就绪时不显示，避免闪烁 */
+  #schedulePageLoadingOverlay() {
+    // 每次切换到未就绪的页面都重新计时，否则上一个页面遗留的定时器
+    // 会让新页面的遮罩提前显示（遮罩已显示时重复 show 无副作用，不会闪烁）
+    this.#clearPageLoadingOverlayTimeout();
+    this.#pageLoadingOverlayTimeout = setTimeout(() => {
+      this.#pageLoadingOverlayTimeout = null;
+      if (!this.#isPageImageLoading) return;
+      this.pageLoadingOverlayElement.show();
+    }, PAGE_LOADING_OVERLAY_DELAY_MS);
+  }
+
+  #clearPageLoadingOverlayTimeout() {
+    if (this.#pageLoadingOverlayTimeout !== null) {
+      clearTimeout(this.#pageLoadingOverlayTimeout);
+      this.#pageLoadingOverlayTimeout = null;
+    }
+  }
+
+  /** 当前页图片已就绪（或加载失败）时收起翻页加载遮罩 */
+  #finishPageLoading() {
+    this.#isPageImageLoading = false;
+    this.#clearPageLoadingOverlayTimeout();
+    this.pageLoadingOverlayElement.hide();
+  }
+
   onImageLoad = () => {
+    this.#finishPageLoading();
+
     this.illustLoaded = true;
     this.previewLoadingElement.hide();
     this.previewImageElement.show();
@@ -850,6 +934,11 @@ class PreviewedIllust {
     this.adjustPreviewWrapper({
       baseOnMousePos: false,
     });
+  };
+
+  onImageError = () => {
+    // 加载失败时同样要收起遮罩，否则会一直停在加载动画上
+    this.#finishPageLoading();
   };
 
   nextPage() {
@@ -887,6 +976,14 @@ class PreviewedIllust {
       backgroundSize: "",
       backgroundRepeat: "",
     });
+  }
+
+  /** 指定页的图片是否已经预加载解码完成，可直接显示而无需等待 */
+  #isPageImageDecoded(page: number) {
+    const cachedImage = decodedPreviewImages.get(
+      getDecodedImageCacheKey(this.illustId, page)
+    );
+    return !!cachedImage?.complete && cachedImage.naturalWidth > 0;
   }
 
   preloadImages(
