@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             1.7.2-20261026
+// @version             1.8.0-20261028
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0-only
@@ -23,9 +23,9 @@
 // @require             https://code.jquery.com/jquery-migrate-4.0.2.min.js
 // @run-at              document-start
 // ==/UserScript==
-//#region src/constants/index.ts
+// src/constants/index.ts
 /** 版本号，发生改变时将会弹窗 */
-const g_version = "1.7.2";
+const g_version = "1.8.0";
 /** 默认设置 */
 const g_defaultSettings = {
 	enablePreview: true,
@@ -45,6 +45,30 @@ const g_defaultSettings = {
 };
 /** 加载中占位图片 */
 const g_loadingImage = "https://pp-1252089172.cos.ap-chengdu.myqcloud.com/loading.gif";
+/** 预览时允许使用的详情缓存可变字段（收藏数等）最大缓存时长 */
+const PREVIEW_DETAILS_MAX_STALE_TIME = 864e5;
+/** 作品详情缓存中可变字段（收藏数、收藏状态等）的有效期 */
+const ILLUSTRATION_DETAILS_CACHE_TIME = 216e5;
+/** 作品详情缓存中静态字段（标题、标签、页数等）的有效期 */
+const ILLUSTRATION_STATIC_CACHE_TIME = 2592e6;
+/** 作品详情缓存最多保留的条目数 */
+const ILLUSTRATION_DETAILS_CACHE_MAX_ENTRIES = 5e3;
+/** 作品分页信息缓存最多保留的条目数 */
+const ILLUST_PAGES_CACHE_MAX_ENTRIES = 1500;
+/** 发布未超过该时长的作品不缓存详情，避免发布初期的信息被固化 */
+const NEW_ILLUSTRATION_NOT_CACHE_TIME = 36e5;
+/** 作品分页信息缓存有效期 */
+const ILLUST_PAGES_CACHE_TIME = 6048e5;
+/** 标签翻译缓存有效期 */
+const TAG_TRANSLATION_CACHE_TIME = 6048e5;
+/** 用户作品列表（Session Storage）缓存有效期 */
+const USER_ILLUSTRATIONS_CACHE_TIME = 108e5;
+/** 动图帧缓存允许占用的最大字节数 */
+const UGOIRA_FRAME_CACHE_MAX_BYTES = 67108864;
+/** 动图帧缓存有效期 */
+const UGOIRA_FRAME_CACHE_TIME = 6048e5;
+/** 本地标签详情缓存有效期 */
+const LOCAL_TAG_METADATA_CACHE_TIME = 2592e6;
 /** 工具栏 ID */
 const TOOLBAR_ID = "pp-toolbar";
 /** 排序按钮 ID */
@@ -57,6 +81,10 @@ const SORT_NEXT_PAGE_BUTTON_ID = "pp-sort-next-page";
 const SORT_NEXT_PAGE_EVENT_NAME = "PIXIV_PREVIEWER_JUMP_TO_NEXT_PAGE";
 /** 隐藏已收藏作品按钮 */
 const HIDE_FAVORITES_BUTTON_ID = "pp-hide-favorites";
+/** 各模块注入的 `<style>` 节点 ID，用于避免重复注入 */
+const PREVIEW_STYLE_ID = "pp-preview-styles";
+const LOCAL_TAGS_STYLE_ID = "pp-local-tags-styles";
+const DOWNLOADS_STYLE_ID = "pp-downloads-styles";
 /** R18G 作品原图下载目录 */
 const R18G_DOWNLOAD_DIRECTORY = "r18-g";
 /** R18 标签列表，全小写 */
@@ -85,8 +113,7 @@ const UGOIRA_TAGS = [
 	"動圖"
 ];
 
-//#endregion
-//#region src/utils/logger.ts
+// src/utils/logger.ts
 var ILog = class {
 	prefix = "%c Pixiv Preview";
 	v(...values) {
@@ -123,111 +150,427 @@ function DoLog(level = 3, ...msgOrElement) {
 	}
 }
 
-//#endregion
-//#region src/databases/index.ts
+// src/databases/connection.ts
 const INDEX_DB_NAME = "PIXIV_PREVIEWER_L";
-const INDEX_DB_VERSION = 1;
+/** 2：拆分静态/可变字段的缓存时间，并新增动图帧缓存表 */
+const INDEX_DB_VERSION = 2;
 const ILLUSTRATION_DETAILS_CACHE_TABLE_KEY = "illustrationDetailsCache";
-/** 缓存过期时间 */
-const ILLUSTRATION_DETAILS_CACHE_TIME = 216e5;
-/** 新作品发布初期不添加缓存 */
-const NEW_ILLUSTRATION_NOT_CACHE_TIME = 36e5;
-const request$1 = indexedDB.open(INDEX_DB_NAME, INDEX_DB_VERSION);
-let db;
-request$1.onupgradeneeded = (event) => {
-	event.target.result.createObjectStore(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY, { keyPath: "id" });
-};
-request$1.onsuccess = (event) => {
-	db = event.target.result;
-	console.log("Open IndexedDB successfully:", db);
-	deleteExpiredIllustrationDetails();
-};
-request$1.onerror = (event) => {
-	iLog.e(`An error occurred while requesting IndexedDB`, event);
-};
-const cacheIllustrationDetails = (illustrations, now = /* @__PURE__ */ new Date()) => {
-	return new Promise(() => {
-		const cachedIllustrationDetailsObjectStore = db.transaction(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY, "readwrite").objectStore(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY);
-		illustrations.forEach((illustration) => {
-			const uploadTimestamp = illustration.uploadTimestamp * 1e3;
-			if (now.getTime() - uploadTimestamp > NEW_ILLUSTRATION_NOT_CACHE_TIME) {
-				const illustrationDetails = {
-					...illustration,
-					cacheDate: now
-				};
-				const addCachedIllustrationDetailsRequest = cachedIllustrationDetailsObjectStore.put(illustrationDetails);
-				addCachedIllustrationDetailsRequest.onerror = (event) => {
-					iLog.e(`An error occurred while caching illustration details`, event);
-				};
-			}
+const ILLUST_PAGES_CACHE_TABLE_KEY = "illustPagesCache";
+const UGOIRA_FRAMES_CACHE_TABLE_KEY = "ugoiraFramesCache";
+const STATIC_DATE_INDEX = "staticDate";
+const CACHE_DATE_INDEX = "cacheDate";
+const CACHE_TABLE_KEYS = [
+	ILLUSTRATION_DETAILS_CACHE_TABLE_KEY,
+	ILLUST_PAGES_CACHE_TABLE_KEY,
+	UGOIRA_FRAMES_CACHE_TABLE_KEY
+];
+let dbPromise = null;
+let hasLoggedOpenError = false;
+/** 等待打开数据库的超时时间：升级被其他标签页阻塞时不能无限挂起 */
+const OPEN_DATABASE_TIMEOUT = 1e4;
+const openDatabase = () => new Promise((resolve, reject) => {
+	if (typeof indexedDB === "undefined") {
+		reject(/* @__PURE__ */ new Error("IndexedDB is not available"));
+		return;
+	}
+	let settled = false;
+	const settle = (action) => {
+		if (settled) return;
+		settled = true;
+		clearTimeout(timeout);
+		action();
+	};
+	const timeout = setTimeout(() => {
+		settle(() => reject(/* @__PURE__ */ new Error("Opening IndexedDB timed out")));
+	}, OPEN_DATABASE_TIMEOUT);
+	const request = indexedDB.open(INDEX_DB_NAME, INDEX_DB_VERSION);
+	request.onupgradeneeded = () => {
+		const db = request.result;
+		CACHE_TABLE_KEYS.forEach((key) => {
+			if (db.objectStoreNames.contains(key)) db.deleteObjectStore(key);
 		});
+		db.createObjectStore(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY, { keyPath: "id" }).createIndex(STATIC_DATE_INDEX, "staticDate");
+		db.createObjectStore(ILLUST_PAGES_CACHE_TABLE_KEY, { keyPath: "id" }).createIndex(CACHE_DATE_INDEX, "cacheDate");
+		db.createObjectStore(UGOIRA_FRAMES_CACHE_TABLE_KEY, { keyPath: "id" }).createIndex(CACHE_DATE_INDEX, "cacheDate");
+	};
+	request.onsuccess = () => {
+		const db = request.result;
+		iLog.d("Open IndexedDB successfully:", db);
+		db.onversionchange = () => {
+			db.close();
+			dbPromise = null;
+		};
+		settle(() => resolve(db));
+	};
+	request.onerror = () => {
+		if (!hasLoggedOpenError) {
+			hasLoggedOpenError = true;
+			iLog.e("An error occurred while requesting IndexedDB", request.error);
+		}
+		settle(() => reject(request.error ?? /* @__PURE__ */ new Error("Failed to open IndexedDB")));
+	};
+	request.onblocked = () => {
+		iLog.w("IndexedDB upgrade is blocked by another tab, cache disabled.");
+		settle(() => reject(/* @__PURE__ */ new Error("IndexedDB upgrade is blocked")));
+	};
+});
+/** 获取数据库连接；打开失败时返回 `null`，所有缓存操作降级为直接回源 */
+const getDatabase = () => {
+	if (!dbPromise) dbPromise = openDatabase().catch((error) => {
+		dbPromise = null;
+		throw error;
+	});
+	return dbPromise.catch((error) => {
+		iLog.e("IndexedDB is unavailable, cache is disabled:", error);
+		return null;
 	});
 };
-const getCachedIllustrationDetails = (id, now = /* @__PURE__ */ new Date()) => {
+/** 执行单次请求，任何失败都返回 `null` 而不是抛出 */
+const runRequest = async (storeName, mode, createRequest) => {
+	const db = await getDatabase();
+	if (!db) return null;
 	return new Promise((resolve) => {
-		const cachedIllustrationDetailsObjectStore = db.transaction(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY, "readwrite").objectStore(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY);
-		const getCachedIllustrationDetailsRequest = cachedIllustrationDetailsObjectStore.get(id);
-		getCachedIllustrationDetailsRequest.onsuccess = (event) => {
-			const illustrationDetails = event.target.result;
-			if (illustrationDetails) {
-				const { cacheDate } = illustrationDetails;
-				if (now.getTime() - cacheDate.getTime() <= ILLUSTRATION_DETAILS_CACHE_TIME) resolve(illustrationDetails);
-				else cachedIllustrationDetailsObjectStore.delete(id).onerror = (event) => {
-					iLog.e(`An error occurred while deleting outdated illustration details`, event);
-				};
-			}
-			resolve(null);
-		};
-		getCachedIllustrationDetailsRequest.onerror = (event) => {
-			iLog.e(`An error occurred while getting cached illustration details`, event);
-			resolve(null);
-		};
-	});
-};
-const deleteCachedIllustrationDetails = (ids) => {
-	return new Promise((resolve) => {
-		const cachedIllustrationDetailsObjectStore = db.transaction(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY, "readwrite").objectStore(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY);
-		for (const id of ids) {
-			const deleteCachedIllustrationDetailsRequest = cachedIllustrationDetailsObjectStore.delete(id);
-			deleteCachedIllustrationDetailsRequest.onsuccess = () => {
-				resolve();
+		try {
+			const transaction = db.transaction(storeName, mode);
+			const request = createRequest(transaction.objectStore(storeName));
+			request.onsuccess = () => resolve(request.result);
+			request.onerror = () => {
+				iLog.e(`IndexedDB request on \`${storeName}\` failed`, request.error);
+				resolve(null);
 			};
-			deleteCachedIllustrationDetailsRequest.onerror = (event) => {
-				iLog.w(`An error occurred while deleting cached details of illustration ${id}`, event);
-				resolve();
+			transaction.onabort = () => {
+				iLog.e(`IndexedDB transaction on \`${storeName}\` aborted`, transaction.error);
+				resolve(null);
 			};
+		} catch (error) {
+			iLog.e(`IndexedDB transaction on \`${storeName}\` failed`, error);
+			resolve(null);
 		}
 	});
 };
-/** 移除过期的缓存 */
-function deleteExpiredIllustrationDetails() {
+/** 在一个事务中执行多次写入，以事务完成作为成功标志 */
+const runTransaction = async (storeName, mutate) => {
+	const db = await getDatabase();
+	if (!db) return false;
 	return new Promise((resolve) => {
-		const now = (/* @__PURE__ */ new Date()).getTime();
-		const cachedIllustrationDetailsObjectStore = db.transaction(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY, "readwrite").objectStore(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY);
-		const getAllRequest = cachedIllustrationDetailsObjectStore.getAll();
-		getAllRequest.onsuccess = (event) => {
-			event.target.result.forEach((entry) => {
-				if (now - entry.cacheDate.getTime() > ILLUSTRATION_DETAILS_CACHE_TIME) cachedIllustrationDetailsObjectStore.delete(entry.id);
-			});
+		try {
+			const transaction = db.transaction(storeName, "readwrite");
+			transaction.oncomplete = () => resolve(true);
+			transaction.onerror = () => {
+				iLog.e(`IndexedDB transaction on \`${storeName}\` failed`, transaction.error);
+				resolve(false);
+			};
+			transaction.onabort = () => {
+				iLog.e(`IndexedDB transaction on \`${storeName}\` aborted`, transaction.error);
+				resolve(false);
+			};
+			mutate(transaction.objectStore(storeName));
+		} catch (error) {
+			iLog.e(`IndexedDB transaction on \`${storeName}\` failed`, error);
+			resolve(false);
+		}
+	});
+};
+/** 兼容旧版本以 `Date` 保存的时间字段 */
+const toTimestamp = (value, fallback) => {
+	if (value instanceof Date) return value.getTime();
+	if (typeof value === "number" && Number.isFinite(value)) return value;
+	return fallback;
+};
+/**
+* 清理单个缓存表：在同一次游标遍历中删除过期与超出上限（按时间升序）的记录。
+*/
+const pruneCacheTable = async (storeName, indexName, maxAge, maxEntries) => {
+	const db = await getDatabase();
+	if (!db) return;
+	const cutoff = Date.now() - maxAge;
+	await new Promise((resolve) => {
+		try {
+			const transaction = db.transaction(storeName, "readwrite");
+			const store = transaction.objectStore(storeName);
+			const index = store.index(indexName);
+			const countRequest = store.count();
+			countRequest.onsuccess = () => {
+				let overLimit = Math.max(0, countRequest.result - maxEntries);
+				const cursorRequest = index.openKeyCursor();
+				cursorRequest.onsuccess = () => {
+					const cursor = cursorRequest.result;
+					if (!cursor) return;
+					const expired = Number(cursor.key) <= cutoff;
+					if (!expired && overLimit <= 0) return;
+					if (!expired) overLimit -= 1;
+					store.delete(cursor.primaryKey);
+					cursor.continue();
+				};
+			};
+			transaction.oncomplete = () => resolve();
+			transaction.onerror = () => {
+				iLog.w(`Failed to prune \`${storeName}\`:`, transaction.error);
+				resolve();
+			};
+			transaction.onabort = () => {
+				iLog.w(`Pruning \`${storeName}\` was aborted:`, transaction.error);
+				resolve();
+			};
+		} catch (error) {
+			iLog.w(`Failed to prune \`${storeName}\`:`, error);
 			resolve();
+		}
+	});
+};
+/** 清空指定缓存表 */
+const clearCacheTables = async (storeNames) => {
+	return (await Promise.all(storeNames.map((storeName) => runTransaction(storeName, (store) => {
+		store.clear();
+	})))).every(Boolean);
+};
+/** 统计指定缓存表的条目数 */
+const countCacheTable = async (storeNames) => {
+	const counts = await Promise.all(storeNames.map((storeName) => runRequest(storeName, "readonly", (store) => store.count())));
+	return Object.fromEntries(storeNames.map((storeName, index) => [storeName, counts[index] ?? 0]));
+};
+
+// src/databases/illustration-cache.ts
+/** 缓存作品详情；发布不足 1 小时的作品跳过缓存 */
+const cacheIllustrationDetails = (illustrations, now = Date.now()) => {
+	const cacheable = illustrations.filter((illustration) => now - illustration.uploadTimestamp * 1e3 > NEW_ILLUSTRATION_NOT_CACHE_TIME);
+	if (!cacheable.length) return Promise.resolve(true);
+	return runTransaction(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY, (store) => {
+		cacheable.forEach((illustration) => {
+			const request = store.get(illustration.id);
+			request.onsuccess = () => {
+				const existing = request.result;
+				const entry = {
+					...illustration,
+					staticDate: toTimestamp(existing?.staticDate, now),
+					cacheDate: now
+				};
+				const putRequest = store.put(entry);
+				putRequest.onerror = () => {
+					iLog.e(`An error occurred while caching illustration details of ${illustration.id}`, putRequest.error);
+				};
+			};
+			request.onerror = () => {
+				iLog.e(`An error occurred while reading cached details of illustration ${illustration.id}`, request.error);
+			};
+		});
+	});
+};
+/** 读取作品详情缓存。静态字段超过有效期时删除缓存并返回 `null` */
+const getCachedIllustrationDetails = async (id, now = Date.now(), mutableMaxAge = ILLUSTRATION_DETAILS_CACHE_TIME) => {
+	const entry = await runRequest(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY, "readonly", (store) => store.get(id));
+	if (!entry) return null;
+	const cacheDate = toTimestamp(entry.cacheDate, 0);
+	if (now - toTimestamp(entry.staticDate, cacheDate) > 2592e6) {
+		deleteCachedIllustrationDetails([id]);
+		return null;
+	}
+	return {
+		details: stripCacheMetadata(entry),
+		mutableFresh: now - cacheDate <= mutableMaxAge
+	};
+};
+/** 移除只用于缓存管理的时间字段，避免泄露到业务数据中 */
+const stripCacheMetadata = (entry) => {
+	const details = { ...entry };
+	delete details.staticDate;
+	delete details.cacheDate;
+	return details;
+};
+const deleteCachedIllustrationDetails = (ids) => {
+	if (!ids.length) return Promise.resolve(true);
+	return runTransaction(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY, (store) => {
+		ids.forEach((id) => {
+			const request = store.delete(id);
+			request.onerror = () => {
+				iLog.w(`An error occurred while deleting cached details of illustration ${id}`, request.error);
+			};
+		});
+	});
+};
+/** 缓存作品分页信息（图片访问链接） */
+const cacheIllustPages = (id, urls, now = Date.now()) => runTransaction(ILLUST_PAGES_CACHE_TABLE_KEY, (store) => {
+	const entry = {
+		id,
+		regularUrls: urls.regularUrls,
+		originalUrls: urls.originalUrls,
+		cacheDate: now
+	};
+	const request = store.put(entry);
+	request.onerror = () => {
+		iLog.e(`An error occurred while caching pages of illust ${id}`, request.error);
+	};
+});
+/** 读取作品分页信息缓存，过期时删除 */
+const getCachedIllustPages = async (id, now = Date.now()) => {
+	const entry = await runRequest(ILLUST_PAGES_CACHE_TABLE_KEY, "readonly", (store) => store.get(id));
+	if (!entry) return null;
+	if (now - toTimestamp(entry.cacheDate, 0) > 6048e5) {
+		runTransaction(ILLUST_PAGES_CACHE_TABLE_KEY, (store) => {
+			store.delete(id);
+		});
+		return null;
+	}
+	return {
+		regularUrls: entry.regularUrls,
+		originalUrls: entry.originalUrls
+	};
+};
+/** 清理过期的作品详情与分页缓存 */
+const pruneIllustrationCaches = async () => {
+	await pruneCacheTable(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY, STATIC_DATE_INDEX, ILLUSTRATION_STATIC_CACHE_TIME, ILLUSTRATION_DETAILS_CACHE_MAX_ENTRIES);
+	await pruneCacheTable(ILLUST_PAGES_CACHE_TABLE_KEY, CACHE_DATE_INDEX, ILLUST_PAGES_CACHE_TIME, ILLUST_PAGES_CACHE_MAX_ENTRIES);
+};
+
+// src/databases/ugoira-cache.ts
+/** 剩余可用空间比例低于该值时不再写入缓存，避免挤占 Pixiv 自身的存储 */
+const MIN_FREE_STORAGE_RATIO = .2;
+const sumFrameSize = (frames) => frames.reduce((total, frame) => total + frame.blob.size, 0);
+/** 存储空间是否足够写入新的动图帧缓存 */
+const hasEnoughStorage = async (size) => {
+	try {
+		const estimate = await navigator.storage?.estimate?.();
+		if (!estimate?.quota || estimate.usage === void 0) return true;
+		return estimate.quota - estimate.usage - size > estimate.quota * MIN_FREE_STORAGE_RATIO;
+	} catch {
+		return true;
+	}
+};
+/** 读取缓存的动图帧，过期或超出有效期时返回 `null` */
+const getCachedUgoiraFrames = async (id, now = Date.now()) => {
+	const entry = await runRequest(UGOIRA_FRAMES_CACHE_TABLE_KEY, "readonly", (store) => store.get(id));
+	if (!entry?.frames?.length) return null;
+	if (now - toTimestamp(entry.cacheDate, 0) > 6048e5) {
+		runTransaction(UGOIRA_FRAMES_CACHE_TABLE_KEY, (store) => {
+			store.delete(id);
+		});
+		return null;
+	}
+	if (!entry.frames.every((frame) => frame && typeof frame.file === "string" && frame.blob instanceof Blob)) {
+		iLog.w(`Cached ugoira frames of ${id} are corrupted, dropping them.`);
+		runTransaction(UGOIRA_FRAMES_CACHE_TABLE_KEY, (store) => {
+			store.delete(id);
+		});
+		return null;
+	}
+	return { frames: entry.frames };
+};
+/** 缓存动图帧。空间不足或数据超出容量上限时跳过缓存 */
+const cacheUgoiraFrames = async (id, data) => {
+	const size = sumFrameSize(data);
+	if (!data.length || size > 67108864) return false;
+	if (!await hasEnoughStorage(size)) return false;
+	const cached = await runTransaction(UGOIRA_FRAMES_CACHE_TABLE_KEY, (store) => {
+		const entry = {
+			id,
+			frames: data,
+			size,
+			cacheDate: Date.now()
+		};
+		const request = store.put(entry);
+		request.onerror = () => {
+			iLog.w(`Failed to cache ugoira frames of ${id}:`, request.error);
 		};
 	});
-}
+	if (cached) pruneUgoiraFrameCache();
+	return cached;
+};
+/**
+* 清理动图帧缓存：删除过期条目，并按“最旧优先”删除直到满足条目与字节上限。
+* Blob 在 IndexedDB 中是惰性引用，读取时不会真正加载字节。
+*/
+const pruneUgoiraFrameCache = async () => {
+	const db = await getDatabase();
+	if (!db) return;
+	const now = Date.now();
+	await new Promise((resolve) => {
+		try {
+			const transaction = db.transaction(UGOIRA_FRAMES_CACHE_TABLE_KEY, "readwrite");
+			const store = transaction.objectStore(UGOIRA_FRAMES_CACHE_TABLE_KEY);
+			const request = store.index(CACHE_DATE_INDEX).openCursor();
+			let totalSize = 0;
+			let totalCount = 0;
+			const entries = [];
+			request.onsuccess = () => {
+				const cursor = request.result;
+				if (!cursor) {
+					entries.sort((a, b) => a.cacheDate - b.cacheDate);
+					for (const entry of entries) {
+						if (!(now - entry.cacheDate > 6048e5) && totalCount <= 20 && totalSize <= 67108864) break;
+						store.delete(entry.id);
+						totalCount -= 1;
+						totalSize -= entry.size;
+					}
+					return;
+				}
+				const value = cursor.value;
+				entries.push({
+					id: value.id,
+					size: value.size ?? 0,
+					cacheDate: toTimestamp(value.cacheDate, 0)
+				});
+				totalCount += 1;
+				totalSize += value.size ?? 0;
+				cursor.continue();
+			};
+			request.onerror = () => {
+				iLog.w("Failed to read ugoira frames cache:", request.error);
+			};
+			transaction.oncomplete = () => resolve();
+			transaction.onerror = () => {
+				iLog.w("Failed to prune ugoira frames cache:", transaction.error);
+				resolve();
+			};
+			transaction.onabort = () => {
+				iLog.w("Pruning ugoira frames cache was aborted:", transaction.error);
+				resolve();
+			};
+		} catch (error) {
+			iLog.w("Failed to prune ugoira frames cache:", error);
+			resolve();
+		}
+	});
+};
+/** 统计动图帧缓存的条目数与占用字节数 */
+const getUgoiraFrameCacheStats = async () => {
+	const db = await getDatabase();
+	if (!db) return {
+		count: 0,
+		bytes: 0
+	};
+	return new Promise((resolve) => {
+		try {
+			const request = db.transaction(UGOIRA_FRAMES_CACHE_TABLE_KEY, "readonly").objectStore(UGOIRA_FRAMES_CACHE_TABLE_KEY).getAll();
+			request.onsuccess = () => {
+				const entries = request.result;
+				resolve({
+					count: entries.length,
+					bytes: entries.reduce((total, entry) => total + (entry.size ?? 0), 0)
+				});
+			};
+			request.onerror = () => resolve({
+				count: 0,
+				bytes: 0
+			});
+		} catch {
+			resolve({
+				count: 0,
+				bytes: 0
+			});
+		}
+	});
+};
 
-//#endregion
-//#region src/icons/download.svg
+// src/icons/download.svg
 var download_default = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg t=\"1742281193586\"\n     class=\"icon\"\n     viewBox=\"0 0 1024 1024\"\n     version=\"1.1\"\n     xmlns=\"http://www.w3.org/2000/svg\"\n     p-id=\"24408\"\n     width=\"10\"\n     height=\"10\">\n    <path d=\"M1024 896v128H0v-320h128v192h768v-192h128v192zM576 554.688L810.688 320 896 405.312l-384 384-384-384L213.312 320 448 554.688V0h128v554.688z\"\n          fill=\"#ffffff\"\n          p-id=\"24409\" />\n</svg>";
 
-//#endregion
-//#region src/icons/retry.svg
+// src/icons/retry.svg
 var retry_default = "<svg\r\n  xmlns=\"http://www.w3.org/2000/svg\"\r\n  viewBox=\"0 0 24 24\"\r\n  fill=\"none\"\r\n  stroke=\"currentColor\"\r\n  stroke-width=\"2\"\r\n  stroke-linecap=\"round\"\r\n  stroke-linejoin=\"round\"\r\n  aria-hidden=\"true\"\r\n  focusable=\"false\"\r\n>\r\n  <path d=\"M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8\" />\r\n  <path d=\"M3 3v5h5\" />\r\n</svg>";
 
-//#endregion
-//#region src/icons/stop.svg
+// src/icons/stop.svg
 var stop_default = "<svg\r\n  xmlns=\"http://www.w3.org/2000/svg\"\r\n  viewBox=\"0 0 24 24\"\r\n  fill=\"none\"\r\n  stroke=\"currentColor\"\r\n  stroke-width=\"2\"\r\n  stroke-linecap=\"round\"\r\n  stroke-linejoin=\"round\"\r\n  aria-hidden=\"true\"\r\n  focusable=\"false\"\r\n>\r\n  <rect x=\"5\" y=\"5\" width=\"14\" height=\"14\" rx=\"2\" />\r\n</svg>";
 
-//#endregion
-//#region src/utils/utils.ts
+// src/utils/utils.ts
 const pause = (ms) => {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 };
@@ -263,9 +606,31 @@ const createLRUCache = (maxSize) => {
 		}
 	};
 };
+/**
+* 为 `GM_getValue` 一类全量反序列化的读取提供内存缓存。
+* 调用 `invalidate()` 后下次读取会重新从存储加载。
+*/
+const createReadThroughCache = (read) => {
+	let cached;
+	let valid = false;
+	const load = () => {
+		if (!valid) {
+			cached = read();
+			valid = true;
+		}
+		return cached;
+	};
+	return {
+		get: load,
+		/** 直接修改缓存值（调用方负责持久化） */
+		peek: load,
+		invalidate() {
+			valid = false;
+		}
+	};
+};
 
-//#endregion
-//#region src/services/request.ts
+// src/services/request.ts
 const xmlHttpRequest = window.GM.xmlHttpRequest;
 const request = (options) => {
 	const { headers, ...restOptions } = options;
@@ -294,8 +659,7 @@ const requestWithRetry = async (options) => {
 	throw new Error(`Request for ${restOptions.url} failed: ${response?.responseText}`);
 };
 
-//#endregion
-//#region src/services/download.ts
+// src/services/download.ts
 const STORAGE_KEY = "pp-downloads";
 /** 已完成的下载记录最多保留的条数 */
 const MAX_COMPLETED_RECORDS = 200;
@@ -353,6 +717,8 @@ const readStoredDownloads = () => {
 };
 /** 本标签页已删除的记录，避免合并存储快照时被旧数据带回 */
 const removedIds = /* @__PURE__ */ new Set();
+/** 其他标签页写入存储后置为 `true`，下次落盘前才需要重新读取 */
+let remoteChangePending = false;
 /**
 * 合并存储快照与本地记录：按更新时间取较新状态，本标签页进行中的下载始终以本地对象为准。
 * `allowDelete` 用于同步其他标签页的删除操作。
@@ -422,7 +788,10 @@ const publish = (persist = true) => {
 			record.owner = TAB_ID;
 			record.updatedAt = now;
 		}
-		if (downloads) applyStored(readStoredDownloads(), true);
+		if (remoteChangePending) {
+			remoteChangePending = false;
+			if (downloads) applyStored(readStoredDownloads(), true);
+		}
 		trimDownloads();
 		try {
 			GM_setValue(STORAGE_KEY, downloads);
@@ -464,6 +833,7 @@ const ensureHeartbeat = () => {
 };
 GM_addValueChangeListener(STORAGE_KEY, (_key, _oldValue, _newValue, remote) => {
 	if (!remote) return;
+	remoteChangePending = true;
 	syncFromStorage(true);
 	publish(false);
 });
@@ -714,8 +1084,70 @@ window.addEventListener("pageshow", (event) => {
 	publish();
 });
 
-//#endregion
-//#region src/features/downloads.ts
+// src/utils/dom.ts
+/** DOM 尚未就绪时排到 `DOMContentLoaded`，已就绪（脚本被延迟注入）则立即执行 */
+const onDomReady = (callback) => {
+	if (document.readyState !== "loading") {
+		callback();
+		return;
+	}
+	document.addEventListener("DOMContentLoaded", callback, { once: true });
+};
+/**
+* 注入全局样式。
+* `document-start` 阶段 `<head>` 可能尚未创建，此时推迟到 DOM 就绪再注入，
+* 避免在 `<head>` 之前往 `<html>` 上插入节点影响页面解析。
+* 传入 `id` 时重复调用只会注入一次。
+*/
+const injectStyle = (css, id) => {
+	const insert = () => {
+		const container = document.head;
+		if (!container) return false;
+		$("<style>").prop("type", "text/css").attr(id ? { id } : {}).text(css).appendTo(container);
+		return true;
+	};
+	if (id && document.getElementById(id)) return;
+	if (insert()) return;
+	onDomReady(() => {
+		if (id && document.getElementById(id)) return;
+		insert();
+	});
+};
+/**
+* 等待条件成立后取一次值并执行操作。
+* Pixiv 的部分节点由前端异步渲染，`DOMContentLoaded` 时未必存在，
+* 因此需要有限次重试；用尽后通过 `onGiveUp` 告知调用方。
+*/
+const waitFor = (probe, action, { interval = 300, maxAttempts = 10, onGiveUp } = {}) => {
+	let attempt = 1;
+	const step = () => {
+		const value = probe();
+		if (value) {
+			action(value);
+			return;
+		}
+		if (attempt >= maxAttempts) {
+			onGiveUp?.();
+			return;
+		}
+		attempt += 1;
+		setTimeout(deferredStep, interval);
+	};
+	/**
+	* 后续尝试在定时器中执行，异常无法传播回调用方，只能就地记录并停止。
+	* 首次尝试不经过这里，其异常会照常抛给调用方的 `try/catch`。
+	*/
+	const deferredStep = () => {
+		try {
+			step();
+		} catch (error) {
+			iLog.e("Failed to wait for a condition:", error);
+		}
+	};
+	step();
+};
+
+// src/features/downloads.ts
 const BUTTON_ID = "pp-downloads-button";
 const PANEL_ID = "pp-downloads-panel";
 const formatBytes = (bytes) => bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.ceil(bytes / 1024)} KB`;
@@ -729,9 +1161,8 @@ const createIconButton$1 = (label, icon, className, onClick) => $("<button>").at
 	title: label,
 	"aria-label": label
 }).addClass(`pp-download-icon ${className}`).html(icon).on("click", onClick);
-const loadDownloadPanel = (toolbar) => {
-	if (document.getElementById(BUTTON_ID)) return;
-	$("<style>").text(`
+const injectDownloadPanelStyles = () => {
+	injectStyle(`
       .pp-toolbar-button {
         position: relative; box-sizing: border-box; display: flex;
         align-items: center; justify-content: center; width: 48px; height: 48px;
@@ -800,7 +1231,11 @@ const loadDownloadPanel = (toolbar) => {
         #${PANEL_ID} { --pp-download-bg: #222; --pp-download-fg: #eee;
           --pp-download-muted: #bbb; --pp-download-border: #444; --pp-download-action: #72c5ff; }
       }
-      `).appendTo("head");
+      `, DOWNLOADS_STYLE_ID);
+};
+const loadDownloadPanel = (toolbar) => {
+	if (document.getElementById(BUTTON_ID)) return;
+	injectDownloadPanelStyles();
 	const button = $("<button>").attr({
 		id: BUTTON_ID,
 		type: "button",
@@ -946,8 +1381,7 @@ const loadDownloadPanel = (toolbar) => {
 	update();
 };
 
-//#endregion
-//#region src/features/hide-favorites.ts
+// src/features/hide-favorites.ts
 let isHidden = false;
 const hideFavorites = () => {
 	$("svg").filter(function() {
@@ -960,50 +1394,110 @@ const hideFavorites = () => {
 	isHidden = true;
 };
 
-//#endregion
-//#region src/icons/settings.svg
+// src/icons/settings.svg
 var settings_default = "<svg\n  xmlns=\"http://www.w3.org/2000/svg\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n  aria-hidden=\"true\"\n  focusable=\"false\"\n>\n  <path\n    d=\"m9.2 4.6.8-2.6h4l.8 2.6 2.1 1.2 2.6-.6 2 3.5-1.8 2v2.5l1.8 2-2 3.5-2.6-.6-2.1 1.2L14 22h-4l-.8-2.6-2.1-1.2-2.6.6-2-3.5 1.8-2v-2.5l-1.8-2 2-3.5 2.6.6Z\"\n  />\n  <circle cx=\"12\" cy=\"12\" r=\"3\" />\n</svg>";
 
-//#endregion
-//#region src/icons/trash.svg
+// src/icons/trash.svg
 var trash_default = "<svg\n  xmlns=\"http://www.w3.org/2000/svg\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n  aria-hidden=\"true\"\n  focusable=\"false\"\n>\n  <path d=\"M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7\" />\n</svg>";
 
-//#endregion
-//#region src/utils/tags.ts
+// src/utils/promise.ts
+const execLimitConcurrentPromises = async (promises, limit = 48) => {
+	const results = [];
+	let index = 0;
+	const executeNext = async () => {
+		if (index >= promises.length) return Promise.resolve();
+		const currentIndex = index++;
+		const result = await promises[currentIndex]();
+		results[currentIndex] = result;
+		return await executeNext();
+	};
+	const initialPromises = Array.from({ length: Math.min(limit, promises.length) }, () => executeNext());
+	await Promise.all(initialPromises);
+	return results;
+};
+/**
+* 合并同一 key 的并发请求：在 `task` 完成前重复调用会复用同一个 Promise。
+* 用于避免同一作品的详情被同时请求多次。
+*/
+const createPendingPromiseCache = () => {
+	const pending = /* @__PURE__ */ new Map();
+	return { run(key, task) {
+		const existing = pending.get(key);
+		if (existing) return existing;
+		const promise = task().finally(() => {
+			if (pending.get(key) === promise) pending.delete(key);
+		});
+		pending.set(key, promise);
+		return promise;
+	} };
+};
+
+// src/utils/tags.ts
 const LOCAL_TAGS_KEY = "PIXIV_PREVIEWER_L_LOCAL_TAGS";
-const LOCAL_TAG_METADATA_CACHE_TIME = 2592e6;
-const getLocalTagState = () => GM_getValue(LOCAL_TAGS_KEY, {
+const LOCAL_TAG_TRANSLATIONS_KEY = "PIXIV_PREVIEWER_L_TAG_TRANSLATIONS";
+/** 翻译缓存最多保留的条目数 */
+const LOCAL_TAG_TRANSLATIONS_MAX_ENTRIES = 2e3;
+const emptyLocalTagState = () => ({
 	tags: [],
 	autoSort: false
 });
+/**
+* 本地标签状态在内存中只保留一份，避免 `MutationObserver` 触发的
+* 高频读取反复反序列化全部标签。
+*/
+const localTagState = createReadThroughCache(() => GM_getValue(LOCAL_TAGS_KEY, emptyLocalTagState()));
+const tagTranslationState = createReadThroughCache(() => GM_getValue(LOCAL_TAG_TRANSLATIONS_KEY, { translations: {} }));
+let persistTimer = null;
+/** 延迟批量落盘，合并同一轮操作中的多次写入 */
+const schedulePersist = () => {
+	if (persistTimer !== null) return;
+	persistTimer = setTimeout(() => {
+		persistTimer = null;
+		GM_setValue(LOCAL_TAGS_KEY, structuredClone(localTagState.peek()));
+	}, 500);
+};
+/** 立即落盘 pending 的修改，用于标签页隐藏等场景 */
+const flushLocalTagState = () => {
+	if (persistTimer === null) return;
+	clearTimeout(persistTimer);
+	persistTimer = null;
+	GM_setValue(LOCAL_TAGS_KEY, structuredClone(localTagState.peek()));
+};
+/** 其他标签页修改了标签状态时，先落盘本地改动，再使内存缓存失效 */
+const invalidateLocalTagState = () => {
+	if (persistTimer !== null) {
+		clearTimeout(persistTimer);
+		persistTimer = null;
+		GM_setValue(LOCAL_TAGS_KEY, structuredClone(localTagState.peek()));
+	}
+	localTagState.invalidate();
+};
+const getLocalTagState = () => localTagState.get();
 const getLocalTag = (tag) => getLocalTagState().tags.find((item) => item.tag === tag);
 const hasLocalTag = (tag) => getLocalTagState().tags.some((item) => item.tag === tag);
 const recordLocalTagTotal = (tag, total) => {
 	if (!Number.isFinite(total) || total < 0) return;
-	const state = getLocalTagState();
-	const item = state.tags.find((item) => item.tag === tag);
+	const item = getLocalTag(tag);
 	if (!item || item.lastTotal === total) return;
 	item.lastTotal = total;
-	GM_setValue(LOCAL_TAGS_KEY, state);
+	schedulePersist();
 };
 const getCachedLocalTagDetails = (tag) => {
-	const state = getLocalTagState();
-	const item = state.tags.find((item) => item.tag === tag);
+	const item = getLocalTag(tag);
 	if (!item?.metadata) return;
 	const age = Date.now() - item.metadata.cachedAt;
-	if (age >= 0 && age < LOCAL_TAG_METADATA_CACHE_TIME) return item.metadata.details;
+	if (age >= 0 && age < 2592e6) return item.metadata.details;
 	delete item.metadata;
-	GM_setValue(LOCAL_TAGS_KEY, state);
+	schedulePersist();
 };
 const cacheLocalTagDetails = (tag, details) => {
-	const state = getLocalTagState();
-	const item = state.tags.find((item) => item.tag === tag);
+	const item = getLocalTag(tag);
 	if (!item) return;
 	item.metadata = {
 		details,
 		cachedAt: Date.now()
 	};
-	GM_setValue(LOCAL_TAGS_KEY, state);
+	schedulePersist();
 };
 const getSortedLocalTags = () => {
 	const { tags, autoSort } = getLocalTagState();
@@ -1017,19 +1511,18 @@ const addLocalTag = (tag, label) => {
 		label: label.trim(),
 		visits: 0
 	});
-	GM_setValue(LOCAL_TAGS_KEY, state);
+	schedulePersist();
 };
 const removeLocalTag = (tag) => {
 	const state = getLocalTagState();
 	state.tags = state.tags.filter((item) => item.tag !== tag);
-	GM_setValue(LOCAL_TAGS_KEY, state);
+	schedulePersist();
 };
 const renameLocalTag = (tag, label) => {
-	const state = getLocalTagState();
-	const item = state.tags.find((item) => item.tag === tag);
+	const item = getLocalTag(tag);
 	if (!item) return;
 	item.label = label.trim();
-	GM_setValue(LOCAL_TAGS_KEY, state);
+	schedulePersist();
 };
 const moveLocalTag = (tag, target) => {
 	const state = getLocalTagState();
@@ -1038,20 +1531,41 @@ const moveLocalTag = (tag, target) => {
 	if (index < 0 || !Number.isInteger(target) || target < 0 || target >= state.tags.length || index === target) return;
 	const [item] = state.tags.splice(index, 1);
 	state.tags.splice(target, 0, item);
-	GM_setValue(LOCAL_TAGS_KEY, state);
+	schedulePersist();
 };
 const setLocalTagAutoSort = (autoSort) => {
-	GM_setValue(LOCAL_TAGS_KEY, {
-		...getLocalTagState(),
-		autoSort
-	});
+	getLocalTagState().autoSort = autoSort;
+	schedulePersist();
 };
 const recordLocalTagVisit = (tag) => {
-	const state = getLocalTagState();
-	const item = state.tags.find((item) => item.tag === tag);
+	const item = getLocalTag(tag);
 	if (!item) return;
 	item.visits++;
-	GM_setValue(LOCAL_TAGS_KEY, state);
+	schedulePersist();
+};
+/** 读取标签中文翻译缓存 */
+const getCachedTagTranslation = (tag) => {
+	const entry = tagTranslationState.get().translations[tag];
+	if (!entry) return void 0;
+	if (Date.now() - entry.cachedAt > 6048e5) {
+		delete tagTranslationState.peek().translations[tag];
+		return;
+	}
+	return entry.translation;
+};
+/** 缓存标签中文翻译；条目数超限时淘汰最旧的一半，避免无界增长 */
+const cacheTagTranslation = (tag, translation) => {
+	const state = tagTranslationState.peek();
+	state.translations[tag] = {
+		translation,
+		cachedAt: Date.now()
+	};
+	const entries = Object.entries(state.translations);
+	if (entries.length > LOCAL_TAG_TRANSLATIONS_MAX_ENTRIES) {
+		const kept = entries.sort((a, b) => b[1].cachedAt - a[1].cachedAt).slice(0, LOCAL_TAG_TRANSLATIONS_MAX_ENTRIES / 2);
+		state.translations = Object.fromEntries(kept);
+	}
+	GM_setValue(LOCAL_TAG_TRANSLATIONS_KEY, state);
 };
 const getTagFromPath = (pathname) => {
 	const match = pathname.match(/^\/(?:en\/)?tags\/([^/]+)/);
@@ -1062,11 +1576,21 @@ const getTagFromPath = (pathname) => {
 		return null;
 	}
 };
+/** 供“清除缓存”使用：丢弃标签状态与翻译的内存缓存 */
+const clearLocalTagCaches = () => {
+	if (persistTimer !== null) {
+		clearTimeout(persistTimer);
+		persistTimer = null;
+	}
+	localTagState.invalidate();
+	tagTranslationState.invalidate();
+	GM_setValue(LOCAL_TAG_TRANSLATIONS_KEY, { translations: {} });
+};
 
-//#endregion
-//#region src/services/tags.ts
-const pendingDetails = /* @__PURE__ */ new Map();
-const pendingTotals = /* @__PURE__ */ new Map();
+// src/services/tags.ts
+const pendingDetails = createPendingPromiseCache();
+const pendingTotals = createPendingPromiseCache();
+const pendingTranslations = createPendingPromiseCache();
 /** 从标签搜索响应中提取插画漫画作品总数 */
 const getIllustMangaTotal = (body) => {
 	const searchBody = body;
@@ -1094,25 +1618,28 @@ const requestTagTopBody = async (tag) => {
 	recordTagTotal(tag, data.body);
 	return data.body;
 };
-/** 获取标签的中文翻译，未找到翻译或翻译与标签相同时返回空字符串 */
-const getTagTranslation = async (tag) => {
-	const translation = (await requestTagTopBody(tag)).tagTranslation?.[tag]?.zh?.trim() ?? "";
+/** 提取中文翻译，未找到翻译或翻译与标签相同时返回空字符串 */
+const getBodyTranslation = (tag, body) => {
+	const translation = body.tagTranslation?.[tag]?.zh?.trim() ?? "";
 	return translation === tag ? "" : translation;
 };
-/** 获取标签当前的插画漫画作品总数，同时记录为上次访问总数 */
-const getTagCurrentTotal = (tag) => {
-	const pending = pendingTotals.get(tag);
-	if (pending) return pending;
-	const loading = requestTagTopBody(tag).then(getIllustMangaTotal).finally(() => pendingTotals.delete(tag));
-	pendingTotals.set(tag, loading);
-	return loading;
+/** 获取标签的中文翻译，优先使用本地缓存 */
+const getTagTranslation = (tag) => {
+	const cached = getCachedTagTranslation(tag);
+	if (cached !== void 0) return Promise.resolve(cached);
+	return pendingTranslations.run(tag, async () => {
+		const body = await requestTagTopBody(tag);
+		const translation = getBodyTranslation(tag, body);
+		cacheTagTranslation(tag, translation);
+		return translation;
+	});
 };
+/** 获取标签当前的插画漫画作品总数，同时记录为上次访问总数 */
+const getTagCurrentTotal = (tag) => pendingTotals.run(tag, () => requestTagTopBody(tag).then((body) => getIllustMangaTotal(body)));
 const getTagDetails = (tag) => {
-	const pending = pendingDetails.get(tag);
-	if (pending) return pending;
 	const cached = getCachedLocalTagDetails(tag);
 	if (cached) return Promise.resolve(cached);
-	const requestDetails = request({
+	return pendingDetails.run(tag, () => request({
 		method: "GET",
 		url: `/ajax/tag/info?tag=${encodeURIComponent(tag)}&lang=zh`,
 		timeout: 1e4
@@ -1121,15 +1648,10 @@ const getTagDetails = (tag) => {
 		if (response.status !== 200 || data.error || !data.body) throw new Error(data.message || "标签详情加载失败");
 		cacheLocalTagDetails(tag, data.body);
 		return data.body;
-	}).finally(() => {
-		pendingDetails.delete(tag);
-	});
-	pendingDetails.set(tag, requestDetails);
-	return requestDetails;
+	}));
 };
 
-//#endregion
-//#region src/utils/debounce.ts
+// src/utils/debounce.ts
 function debounce(func, delay = 100) {
 	let timeout = null;
 	return function(...args) {
@@ -1140,8 +1662,7 @@ function debounce(func, delay = 100) {
 	};
 }
 
-//#endregion
-//#region src/utils/tag-colors.ts
+// src/utils/tag-colors.ts
 const backgrounds = Object.values({
 	red: [
 		"#e7000b",
@@ -1281,8 +1802,7 @@ const getLocalTagColor = (tag) => {
 	return backgrounds[(first * 31 + last) % backgrounds.length];
 };
 
-//#endregion
-//#region src/features/local-tags.ts
+// src/features/local-tags.ts
 const TAG_LINK_SELECTOR = "a[href*=\"/tags/\"]:not(nav > a, .gtm-new-work-tag-event-click, .gtm-new-work-translate-tag-event-click, .gtm-new-work-tag-thumbnail-event-click, [data-ga4-label=\"tab_link\"], [data-ga4-label=\"suggest_chip\"], [data-ga4-label=\"delete_button\"], [data-ga4-label=\"submit_button\"])";
 const POPOVER_ID = "pp-local-tag-popover";
 const MANAGER_ID = "pp-local-tags-manager";
@@ -1375,7 +1895,7 @@ const getTagLink = (target) => {
 };
 const loadLocalTags = () => {
 	if ($(`#${POPOVER_ID}`).length) return;
-	$("<style>").text(`
+	injectStyle(`
     #${POPOVER_ID}, #${MANAGER_ID}, .${STRIP_CLASS} {
       --pp-tag-bg: #fff; --pp-tag-fg: #333; --pp-tag-muted: #666;
       --pp-tag-border: #ddd; --pp-tag-chip: #f0f6fa;
@@ -1469,7 +1989,7 @@ const loadLocalTags = () => {
         --pp-tag-border: #555; --pp-tag-chip: #303c45;
       }
     }
-  `).appendTo("head");
+  `, LOCAL_TAGS_STYLE_ID);
 	const popover = $("<div>").attr({
 		id: POPOVER_ID,
 		role: "dialog",
@@ -1830,8 +2350,11 @@ const loadLocalTags = () => {
 		mountEntries();
 	});
 	GM_addValueChangeListener(LOCAL_TAGS_KEY, (_key, _oldValue, _newValue, remote) => {
-		if (remote) refresh();
+		if (!remote) return;
+		invalidateLocalTagState();
+		refresh();
 	});
+	window.addEventListener("pagehide", flushLocalTagState);
 	new MutationObserver(debounce(() => {
 		if (activeLink && !$.contains($("html").get(0), activeLink)) hidePopover();
 		mountEntries();
@@ -1843,35 +2366,57 @@ const loadLocalTags = () => {
 	mountEntries();
 };
 
-//#endregion
-//#region src/icons/loading.svg
+// src/icons/loading.svg
 var loading_default = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg t=\"1742282291278\"\n     class=\"icon\"\n     viewBox=\"0 0 1024 1024\"\n     version=\"1.1\"\n     xmlns=\"http://www.w3.org/2000/svg\"\n     p-id=\"38665\"\n     width=\"48\"\n     height=\"48\">\n    <path d=\"M988 548c-19.9 0-36-16.1-36-36 0-59.4-11.6-117-34.6-171.3a440.45 440.45 0 0 0-94.3-139.9 437.71 437.71 0 0 0-139.9-94.3C629 83.6 571.4 72 512 72c-19.9 0-36-16.1-36-36s16.1-36 36-36c69.1 0 136.2 13.5 199.3 40.3C772.3 66 827 103 874 150c47 47 83.9 101.8 109.7 162.7 26.7 63.1 40.2 130.2 40.2 199.3 0.1 19.9-16 36-35.9 36z\"\n          p-id=\"38666\"\n          fill=\"#1296db\" />\n</svg>";
 
-//#endregion
-//#region src/icons/page.svg
+// src/icons/page.svg
 var page_default = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg viewBox=\"0 0 10 10\"\n     width=\"10\"\n     height=\"10\">\n    <path d=\"M 8 3 C 8.55228 3 9 3.44772 9 4 L 9 9 C 9 9.55228 8.55228 10 8 10 L 3 10 C 2.44772 10 2 9.55228 2 9 L 6 9 C 7.10457 9 8 8.10457 8 7 L 8 3 Z M 1 1 L 6 1 C 6.55228 1 7 1.44772 7 2 L 7 7 C 7 7.55228 6.55228 8 6 8 L 1 8 C 0.447715 8 0 7.55228 0 7 L 0 2 C 0 1.44772 0.447715 1 1 1 Z\"\n          fill=\"#ffffff\" />\n</svg>";
 
-//#endregion
-//#region src/services/illustration.ts
-/** 从 IndexedDB 或接口获取指定作品的详细信息 */
-const getIllustrationDetailsWithCache = async (id, retry = false) => {
-	let illustDetails = await getCachedIllustrationDetails(id);
-	if (illustDetails) iLog.d(`Use cached details of illustration ${id}`, illustDetails);
-	else {
-		const requestUrl = `/touch/ajax/illust/details?illust_id=${id}`;
-		const getIllustDetailsRes = retry ? await requestWithRetry({
-			url: requestUrl,
-			onRetry: (response, retryTimes) => {
-				iLog.w(`Get illustration details via api \`${requestUrl}\` failed:`, response, `${retryTimes} times retrying...`);
-			}
-		}) : await request({ url: requestUrl });
-		if (getIllustDetailsRes.status === 200) {
-			illustDetails = convertObjectKeysFromSnakeToCamel(getIllustDetailsRes.response.body.illust_details);
-			cacheIllustrationDetails([illustDetails]);
-		} else illustDetails = null;
-	}
-	return illustDetails;
+// src/services/illustration.ts
+const USER_ILLUSTRATIONS_CACHE_PREFIX = "PIXIV_PREVIEWER_CACHED_ARTWORKS_OF_USER_";
+const USER_ILLUSTRATIONS_CACHE_VERSION = 1;
+const pendingIllustrationDetails = createPendingPromiseCache();
+/** 请求指定作品的详细信息 */
+const requestIllustrationDetails = async (id, retry) => {
+	const requestUrl = `/touch/ajax/illust/details?illust_id=${id}`;
+	const getIllustDetailsRes = retry ? await requestWithRetry({
+		url: requestUrl,
+		onRetry: (response, retryTimes) => {
+			iLog.w(`Get illustration details via api \`${requestUrl}\` failed:`, response, `${retryTimes} times retrying...`);
+		}
+	}) : await request({ url: requestUrl });
+	if (getIllustDetailsRes.status !== 200) return null;
+	return convertObjectKeysFromSnakeToCamel(getIllustDetailsRes.response.body.illust_details);
 };
+/**
+* 从 IndexedDB 或接口获取指定作品的详细信息。
+* 静态字段与可变字段分别控制有效期：可变字段过期时会重新请求，
+* 请求失败则退回缓存数据，避免排序因单个作品请求失败而中断。
+*
+* @param maxStale 可变字段的额外容忍时长（毫秒）。预览等不要求收藏数实时的场景
+* 可以传入更大的值，减少重复请求。
+*/
+const getIllustrationDetailsWithCache = (id, retry = false, { maxStale = 0 } = {}) => pendingIllustrationDetails.run(`${id}|${retry}|${maxStale}`, async () => {
+	const cached = await getCachedIllustrationDetails(id, Date.now(), ILLUSTRATION_DETAILS_CACHE_TIME + maxStale);
+	if (cached?.mutableFresh) {
+		iLog.d(`Use cached details of illustration ${id}`, cached.details);
+		return cached.details;
+	}
+	try {
+		const illustDetails = await requestIllustrationDetails(id, retry);
+		if (illustDetails) {
+			cacheIllustrationDetails([illustDetails]);
+			return illustDetails;
+		}
+	} catch (error) {
+		iLog.w(`Failed to fetch details of illustration ${id}:`, error);
+	}
+	if (cached) {
+		iLog.d(`Use stale cached details of illustration ${id}`, cached.details);
+		return cached.details;
+	}
+	return null;
+});
 /** 获取用户发布的所有作品，按照发布时间倒叙 */
 const getUserIllustrations = async (userId) => {
 	const responseData = (await request({ url: `/ajax/user/${userId}/profile/all?sensitiveFilterMode=userSetting&lang=zh` })).response.body;
@@ -1883,25 +2428,129 @@ const getUserIllustrations = async (userId) => {
 		artworks: [...illusts, ...manga].sort((a, b) => Number(b) - Number(a))
 	};
 };
+const getUserIllustrationsCacheKey = (userId) => `${USER_ILLUSTRATIONS_CACHE_PREFIX}${userId}`;
+/** 读取未过期的用户作品列表缓存 */
+const readUserIllustrationsCache = (userId) => {
+	try {
+		const cacheString = sessionStorage.getItem(getUserIllustrationsCacheKey(userId));
+		if (!cacheString) return null;
+		const entry = JSON.parse(cacheString);
+		if (entry.version !== USER_ILLUSTRATIONS_CACHE_VERSION || typeof entry.cachedAt !== "number" || !Array.isArray(entry.artworks) || !Array.isArray(entry.illusts) || !Array.isArray(entry.manga)) return null;
+		if (Date.now() - entry.cachedAt > 108e5) return null;
+		return entry;
+	} catch (error) {
+		iLog.i("Failed to read user illustrations cache:", error);
+		return null;
+	}
+};
+/** 列出 Session Storage 中本功能写入的 key（先在遍历中收集，避免边删边遍历） */
+const listUserIllustrationsCacheKeys = () => {
+	const keys = [];
+	for (let i = 0; i < sessionStorage.length; i += 1) {
+		const key = sessionStorage.key(i);
+		if (key?.startsWith(USER_ILLUSTRATIONS_CACHE_PREFIX)) keys.push(key);
+	}
+	return keys;
+};
+/** 写入用户作品列表缓存；超出配额时清理后重试一次 */
+const writeUserIllustrationsCache = (userId, illustrations) => {
+	const key = getUserIllustrationsCacheKey(userId);
+	const entry = {
+		...illustrations,
+		version: USER_ILLUSTRATIONS_CACHE_VERSION,
+		cachedAt: Date.now()
+	};
+	const value = JSON.stringify(entry);
+	try {
+		sessionStorage.setItem(key, value);
+		return;
+	} catch (error) {
+		iLog.w("Failed to write user illustrations cache, retrying:", error);
+	}
+	try {
+		listUserIllustrationsCacheKeys().forEach((item) => sessionStorage.removeItem(item));
+		sessionStorage.setItem(key, value);
+	} catch (error) {
+		iLog.w("Failed to write user illustrations cache:", error);
+	}
+};
 /** 从 Session Storage 或接口获取指定用户的作品列表 */
 const getUserIllustrationsWithCache = async (userId, { onRequesting } = {}) => {
-	let userIllustrations;
-	const userIllustrationsCacheKey = `PIXIV_PREVIEWER_CACHED_ARTWORKS_OF_USER_${userId}`;
-	try {
-		const userIllustrationsCacheString = sessionStorage.getItem(userIllustrationsCacheKey);
-		if (!userIllustrationsCacheString) throw new Error("Illustrations cache not existed.");
-		userIllustrations = JSON.parse(userIllustrationsCacheString);
-	} catch (error) {
-		iLog.i(`Get illustrations of current user from session storage failed, re-getting...`, error);
-		onRequesting?.();
-		userIllustrations = await getUserIllustrations(userId);
-		sessionStorage.setItem(userIllustrationsCacheKey, JSON.stringify(userIllustrations));
-	}
+	const cached = readUserIllustrationsCache(userId);
+	if (cached) return {
+		illusts: cached.illusts,
+		manga: cached.manga,
+		artworks: cached.artworks
+	};
+	onRequesting?.();
+	const userIllustrations = await getUserIllustrations(userId);
+	writeUserIllustrationsCache(userId, userIllustrations);
 	return userIllustrations;
 };
+/** 清理用户作品列表缓存，供“清除缓存”使用 */
+const clearUserIllustrationsCache = () => {
+	listUserIllustrationsCacheKeys().forEach((item) => sessionStorage.removeItem(item));
+};
 
-//#endregion
-//#region src/services/preview.ts
+// src/services/cache.ts
+let hasPruned = false;
+/** 页面解析期间不抢占主线程，空闲时再执行重型清理 */
+const whenIdle = (task) => {
+	if (typeof requestIdleCallback === "function") requestIdleCallback(task, { timeout: 3e3 });
+	else setTimeout(task, 1e3);
+};
+/**
+* 提前建立 IndexedDB 连接。
+* 连接需在首次读写缓存时才建立，提前打开可让悬浮预览直接命中缓存，
+* 不必等页面渲染完成后才开始握手。
+*/
+const warmUpCacheDatabase = () => {
+	getDatabase();
+};
+/**
+* 启动后清理一次过期缓存。
+* 清理过程中的失败都在数据库层降级为日志，不会抛出；
+* 本流程在页面生命周期内只执行一次。
+*/
+const pruneCachesOnStartup = async () => {
+	if (hasPruned) return;
+	hasPruned = true;
+	await new Promise((resolve) => whenIdle(resolve));
+	try {
+		await Promise.all([pruneIllustrationCaches(), pruneUgoiraFrameCache()]);
+	} catch (error) {
+		iLog.w("Failed to prune caches on startup:", error);
+	}
+};
+const countTagTranslations = () => {
+	const state = GM_getValue(LOCAL_TAG_TRANSLATIONS_KEY, { translations: {} });
+	return Object.keys(state?.translations ?? {}).length;
+};
+const getCacheUsage = async () => {
+	const [counts, ugoira] = await Promise.all([countCacheTable(CACHE_TABLE_KEYS), getUgoiraFrameCacheStats()]);
+	return {
+		illustrationDetails: counts["illustrationDetailsCache"] ?? 0,
+		illustPages: counts["illustPagesCache"] ?? 0,
+		ugoiraFrames: counts["ugoiraFramesCache"] ?? 0,
+		ugoiraBytes: ugoira.bytes,
+		tagTranslations: countTagTranslations()
+	};
+};
+/** 清空全部本地缓存（IndexedDB、会话存储、标签翻译） */
+const clearAllLocalCaches = async () => {
+	clearUserIllustrationsCache();
+	clearLocalTagCaches();
+	const cleared = await clearCacheTables(CACHE_TABLE_KEYS);
+	if (!cleared) iLog.w("Failed to clear some IndexedDB caches.");
+	return cleared;
+};
+const formatCacheBytes = (bytes) => {
+	if (bytes < 1024) return `${bytes} B`;
+	if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
+	return `${(bytes / 1048576).toFixed(1)} MB`;
+};
+
+// src/services/preview.ts
 /** 下载作品 */
 const downloadIllust = ({ url, filename, directory, options = {} }) => {
 	downloadFile(url, filename, {
@@ -1921,14 +2570,12 @@ const getUgoiraMetadataRequestUrl = (id) => {
 	return `/ajax/illust/${id}/ugoira_meta`;
 };
 
-//#endregion
-//#region src/utils/event.ts
+// src/utils/event.ts
 const stopEventPropagation = (event) => {
 	event.stopPropagation();
 };
 
-//#endregion
-//#region src/utils/illustration.ts
+// src/utils/illustration.ts
 const checkUsingTags = (tags, targetTags) => {
 	for (const tag of tags) if (targetTags.includes(tag.toLowerCase())) return true;
 	return false;
@@ -1960,8 +2607,7 @@ const checkIsAiAssisted = (tags) => {
 	return checkUsingTags(tags, AI_ASSISTED_TAGS);
 };
 
-//#endregion
-//#region src/utils/mouse-monitor.ts
+// src/utils/mouse-monitor.ts
 var MouseMonitor = class {
 	/** 鼠标相对网页的位置 */
 	mousePos = [0, 0];
@@ -1976,8 +2622,7 @@ var MouseMonitor = class {
 };
 const mouseMonitor = new MouseMonitor();
 
-//#endregion
-//#region src/utils/ugoira-player.ts
+// src/utils/ugoira-player.ts
 var ZipImagePlayer = class {
 	canvas;
 	op;
@@ -2101,6 +2746,11 @@ var ZipImagePlayer = class {
 		xhr.send();
 	}
 	_startLoad() {
+		if (this.op.cachedFrames?.length === this._frameCount) {
+			this._debugLog("Use cached frames.");
+			this._loadCachedFrame();
+			return;
+		}
 		if (!this.op.source) {
 			this._loadNextFrame();
 			return;
@@ -2212,6 +2862,10 @@ var ZipImagePlayer = class {
 		return this._pHead >= this._fileDataStart(info.off) + info.len;
 	}
 	_loadNextFrame() {
+		if (this.op.cachedFrames?.length === this._frameCount) {
+			this._loadCachedFrame();
+			return;
+		}
 		if (this._dead) return;
 		const frame = this._loadFrame;
 		if (frame >= this._frameCount) return;
@@ -2234,12 +2888,27 @@ var ZipImagePlayer = class {
 				new Uint8Array(slice).set(this._bytes.subarray(off, end));
 			} else slice = this._buf.slice(off, end);
 			const blob = new Blob([slice], { type: mime_type });
+			this.op.onFrameDecoded?.({
+				index: frame,
+				file: meta.file,
+				delay: meta.delay,
+				blob
+			});
 			url = this._URL.createObjectURL(blob);
 			this._loadImage(frame, url, true);
 		} else {
 			url = "data:" + mime_type + ";base64," + base64ArrayBuffer(this._buf, off, end - off);
 			this._loadImage(frame, url, false);
 		}
+	}
+	/** 从帧缓存中加载下一帧 */
+	_loadCachedFrame() {
+		if (this._dead) return;
+		const frame = this._loadFrame;
+		if (frame >= this._frameCount) return;
+		this._loadFrame += 1;
+		const blob = this.op.cachedFrames[frame];
+		this._loadImage(frame, this._URL.createObjectURL(blob), true);
 	}
 	_loadImage(frame, url, isBlob) {
 		const image = new Image();
@@ -2383,9 +3052,20 @@ function base64ArrayBuffer(arrayBuffer, off, byteLength) {
 	return base64;
 }
 
-//#endregion
-//#region src/features/preview.ts
+// src/features/preview.ts
 const ONE_HANDED_MODE_HOLD_MS = 500;
+/**
+* 已解码预览图片的 LRU 缓存。同一个作品反复悬停时复用最近解码的位图，
+* 无需等待浏览器重新解码。数量上限刻意保守：原图预览单张解码后可达数 MB，
+* 超出上限的记录交给浏览器自身的图片缓存。
+*/
+const decodedPreviewImages = createLRUCache(10);
+const getDecodedImageCacheKey = (illustId, page) => `${illustId}_p${page}`;
+/** 创建带旋转动画的 loading 图标，预览窗口的加载状态共用 */
+const createLoadingSpinner = () => $(loading_default).css({
+	padding: "12px",
+	animation: "pp-spin 1s linear infinite"
+});
 let isInitialized$1 = false;
 const loadIllustPreview = (options) => {
 	if (isInitialized$1) return;
@@ -2429,66 +3109,70 @@ const loadIllustPreview = (options) => {
 		const getUgoiraMetadataCache = createLRUCache(100);
 		/** 获取动图元数据并展示动图预览（命中缓存时直接展示） */
 		const previewAsUgoira = ({ target, illustId, illustDetailsPromise }) => {
-			const ugoiraMetadataCached = getUgoiraMetadataCache.get(illustId);
-			if (ugoiraMetadataCached) {
+			const showUgoira = (metadata, placeholderShown = false) => {
+				if (placeholderShown && !previewedIllust.isActiveIllust(illustId)) return;
+				previewedIllust.setUgoira({
+					illustId,
+					illustElement: target,
+					illustrationDetails: null,
+					...metadata
+				});
 				illustDetailsPromise.then((illustrationDetails) => {
 					if (currentHoveredIllustId !== illustId) return;
-					previewedIllust.setUgoira({
-						illustId,
-						illustElement: target,
-						illustrationDetails,
-						...ugoiraMetadataCached
-					});
+					previewedIllust.updateIllustrationDetails(illustrationDetails);
 				});
+			};
+			const ugoiraMetadataCached = getUgoiraMetadataCache.get(illustId);
+			if (ugoiraMetadataCached) {
+				showUgoira(ugoiraMetadataCached);
 				return;
 			}
+			previewedIllust.showLoading({
+				illustId,
+				illustElement: target
+			});
 			getIllustPagesRequest = $.ajax(getUgoiraMetadataRequestUrl(illustId), {
 				method: "GET",
-				success: async (data) => {
+				success: (data) => {
 					if (data.error) {
 						iLog.e(`An error occurred while requesting metadata of ugoira ${illustId}: ${data.message}`);
+						previewedIllust.dismissLoading(illustId);
 						return;
 					}
 					getUgoiraMetadataCache.set(illustId, data.body);
 					if (currentHoveredIllustId !== illustId) return;
-					const illustrationDetails = await illustDetailsPromise;
-					if (currentHoveredIllustId !== illustId) return;
-					const { src, originalSrc, mime_type, frames } = data.body;
-					previewedIllust.setUgoira({
-						illustId,
-						illustElement: target,
-						src,
-						originalSrc,
-						mime_type,
-						frames,
-						illustrationDetails
-					});
+					showUgoira(data.body, true);
 				},
 				error: (jqXHR, textStatus) => {
 					if (textStatus === "abort") return;
+					previewedIllust.dismissLoading(illustId);
 					iLog.e(`An error occurred while requesting metadata of ugoira ${illustId}: ${jqXHR.responseText}`);
 				}
 			});
 		};
 		/** 获取图片分页信息并展示插画预览；若作品详情标签显示实际为动图，则切换为动图预览 */
-		const previewAsIllust = async ({ target, illustId, previewPage, regularUrls, originalUrls, illustDetailsPromise }) => {
-			const illustrationDetails = await illustDetailsPromise;
-			if (currentHoveredIllustId !== illustId) return;
-			if (enableAnimePreview && illustrationDetails && checkIsUgoiraUsingTags(illustrationDetails.tags)) {
-				previewAsUgoira({
-					target,
-					illustId,
-					illustDetailsPromise: Promise.resolve(illustrationDetails)
-				});
-				return;
-			}
+		const previewAsIllust = ({ target, illustId, previewPage, regularUrls, originalUrls, illustDetailsPromise, placeholderShown = false }) => {
+			if (placeholderShown && !previewedIllust.isActiveIllust(illustId)) return;
 			previewedIllust.setImage({
 				illustId,
 				illustElement: target,
 				previewPage,
 				regularUrls,
 				originalUrls,
-				illustrationDetails
+				illustrationDetails: null
+			});
+			illustDetailsPromise.then((illustrationDetails) => {
+				if (currentHoveredIllustId !== illustId) return;
+				if (!previewedIllust.isActiveIllust(illustId)) return;
+				if (enableAnimePreview && illustrationDetails && checkIsUgoiraUsingTags(illustrationDetails.tags)) {
+					previewAsUgoira({
+						target,
+						illustId,
+						illustDetailsPromise: Promise.resolve(illustrationDetails)
+					});
+					return;
+				}
+				previewedIllust.updateIllustrationDetails(illustrationDetails);
 			});
 		};
 		return ({ target, illustId, previewPage, illustType }) => {
@@ -2498,7 +3182,7 @@ const loadIllustPreview = (options) => {
 				iLog.i("动图预览已禁用，跳过");
 				return;
 			}
-			const illustDetailsPromise = getIllustrationDetailsWithCache(illustId).catch((error) => {
+			const illustDetailsPromise = getIllustrationDetailsWithCache(illustId, false, { maxStale: PREVIEW_DETAILS_MAX_STALE_TIME }).catch((error) => {
 				iLog.e(`An error occurred while fetching illustration details of ${illustId}: ${error}`);
 				return null;
 			});
@@ -2514,34 +3198,60 @@ const loadIllustPreview = (options) => {
 					});
 					return;
 				}
-				getIllustPagesRequest = $.ajax(getIllustPagesRequestUrl(illustId), {
-					method: "GET",
-					success: (data) => {
-						if (data.error) {
-							iLog.e(`An error occurred while requesting preview urls of illust ${illustId}: ${data.message}`);
-							return;
-						}
-						const urls = data.body.map((item) => item.urls);
-						const regularUrls = urls.map((url) => url.regular);
-						const originalUrls = urls.map((url) => url.original);
-						getIllustPagesCache.set(illustId, {
-							regularUrls,
-							originalUrls
-						});
-						if (currentHoveredIllustId !== illustId) return;
+				previewedIllust.showLoading({
+					illustId,
+					illustElement: target
+				});
+				getCachedIllustPages(illustId).then((persistedPages) => {
+					if (currentHoveredIllustId !== illustId) return;
+					if (persistedPages) {
+						getIllustPagesCache.set(illustId, persistedPages);
 						previewAsIllust({
 							target,
 							illustId,
 							previewPage,
-							regularUrls,
-							originalUrls,
-							illustDetailsPromise
+							illustDetailsPromise,
+							placeholderShown: true,
+							...persistedPages
 						});
-					},
-					error: (jqXHR, textStatus) => {
-						if (textStatus === "abort") return;
-						iLog.e(`An error occurred while requesting preview urls of illust ${illustId}: ${jqXHR.responseText || textStatus}`);
+						return;
 					}
+					getIllustPagesRequest = $.ajax(getIllustPagesRequestUrl(illustId), {
+						method: "GET",
+						success: (data) => {
+							if (data.error) {
+								iLog.e(`An error occurred while requesting preview urls of illust ${illustId}: ${data.message}`);
+								previewedIllust.dismissLoading(illustId);
+								return;
+							}
+							const urls = data.body.map((item) => item.urls);
+							const regularUrls = urls.map((url) => url.regular);
+							const originalUrls = urls.map((url) => url.original);
+							getIllustPagesCache.set(illustId, {
+								regularUrls,
+								originalUrls
+							});
+							cacheIllustPages(illustId, {
+								regularUrls,
+								originalUrls
+							});
+							if (currentHoveredIllustId !== illustId) return;
+							previewAsIllust({
+								target,
+								illustId,
+								previewPage,
+								regularUrls,
+								originalUrls,
+								illustDetailsPromise,
+								placeholderShown: true
+							});
+						},
+						error: (jqXHR, textStatus) => {
+							if (textStatus === "abort") return;
+							previewedIllust.dismissLoading(illustId);
+							iLog.e(`An error occurred while requesting preview urls of illust ${illustId}: ${jqXHR.responseText || textStatus}`);
+						}
+					});
 				});
 			} else if (illustType === 2) previewAsUgoira({
 				target,
@@ -2601,24 +3311,20 @@ const loadIllustPreview = (options) => {
 	})();
 	$(document).on("mousemove", onMouseMoveDocument);
 	(function inactiveUnexpectedDoms() {
-		const styleRules = $("<style>").prop("type", "text/css");
-		styleRules.append(`
+		injectStyle(`
 @keyframes pp-spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
-    }
-    @keyframes pp-one-handed-progress {
-      to { stroke-dashoffset: 0; }
-}`);
-		styleRules.append(`
+}
+@keyframes pp-one-handed-progress {
+  to { stroke-dashoffset: 0; }
+}
 ._layout-thumbnail img + div {
   pointer-events: none;
-}`);
-		styleRules.append(`
+}
 pixiv-icon[name="24/Play"] {
   pointer-events: none;
-}`);
-		styleRules.appendTo("head");
+}`, PREVIEW_STYLE_ID);
 	})();
 	isInitialized$1 = true;
 };
@@ -2674,20 +3380,28 @@ var PreviewedIllust = class {
 	downloadOriginalElement = $();
 	/** 预览图片或动图加载状态 DOM */
 	previewLoadingElement = $();
+	/** 翻页加载新图片时覆盖在图片上方的毛玻璃遮罩 DOM */
+	pageLoadingOverlayElement = $();
 	/** 当前预览的图片或动图 DOM */
 	previewImageElement = $();
-	/** 预加载图片的列表 */
-	#images = [];
 	/** 当前页面中各多图作品上次预览的页码，重置预览组件时保留 */
 	#previewPages = /* @__PURE__ */ new Map();
 	/** 下载按钮重置定时器 */
 	#downloadResetTimeout = null;
+	/** 翻页加载遮罩的延迟显示定时器 */
+	#pageLoadingOverlayTimeout = null;
+	/** 当前页图片是否仍在加载（用于判断遮罩是否需要常驻） */
+	#isPageImageLoading = false;
 	/** 保存的鼠标位置 */
 	#prevMousePos = [0, 0];
 	/** 当前预览图片的实际尺寸 */
 	#currentIllustSize = [0, 0];
 	/** 当前预览的动图播放器 */
 	#currentUgoiraPlayer = null;
+	/** 预览窗口是否已由 `showLoading` 提前展示、尚未填入内容 */
+	#isPlaceholder = false;
+	/** 预览窗口的鼠标事件是否已绑定，避免重复绑定 */
+	#mouseEventsBound = false;
 	constructor() {
 		this.reset();
 	}
@@ -2700,11 +3414,44 @@ var PreviewedIllust = class {
 		this.illustDetails = null;
 		this.illustElement = $();
 		this.illustLoaded = false;
+		this.#isPlaceholder = false;
 		this.regularUrls = [];
 		this.originalUrls = [];
 		this.currentPage = 1;
 		this.pageCount = 1;
+		this.#destroyWrapperDom();
+		this.#prevMousePos = [0, 0];
+		this.#currentIllustSize = [0, 0];
+		this.#currentUgoiraPlayer?.stop();
+		this.#currentUgoiraPlayer = null;
+		if (this.#downloadResetTimeout !== null) {
+			clearTimeout(this.#downloadResetTimeout);
+			this.#downloadResetTimeout = null;
+		}
+		this.#clearPageLoadingOverlayTimeout();
+		this.#isPageImageLoading = false;
+		this.unbindPreviewImageEvents();
+		this.unbindUgoiraPreviewEvents();
+	}
+	/** 移除预览容器节点，重置时不立即重建 */
+	#destroyWrapperDom() {
 		this.previewWrapperElement?.remove();
+		this.previewWrapperElement = $();
+		this.previewWrapperHeader = $();
+		this.illustMeta = $();
+		this.pageCountElement = $();
+		this.pageCountText = $();
+		this.downloadOriginalElement = $();
+		this.previewLoadingElement = $();
+		this.pageLoadingOverlayElement = $();
+		this.previewImageElement = $();
+	}
+	/**
+	* 创建预览容器节点。
+	* 延迟到真正需要显示预览时才创建，使初始化不再依赖 `body` 是否已存在。
+	*/
+	#ensureWrapperDom() {
+		if (this.previewWrapperElement.length) return;
 		this.previewWrapperElement = $(document.createElement("div")).attr({ id: "pp-wrapper" }).css({
 			position: "fixed",
 			"z-index": "999999",
@@ -2723,7 +3470,8 @@ var PreviewedIllust = class {
 			padding: "5px",
 			display: "flex",
 			gap: "5px",
-			"align-items": "center"
+			"align-items": "center",
+			"z-index": "2"
 		}).hide().appendTo(this.previewWrapperElement);
 		this.illustMeta = $(document.createElement("div")).css({
 			display: "flex",
@@ -2734,29 +3482,69 @@ var PreviewedIllust = class {
 		this.pageCountText = $(document.createElement("span")).text("1/1");
 		this.pageCountElement = $(document.createElement("div")).css(INTERACTIVE_BADGE_CSS).append(page_default).append(this.pageCountText).hide().appendTo(this.previewWrapperHeader);
 		this.downloadOriginalElement = $(document.createElement("a")).css(INTERACTIVE_BADGE_CSS).append(`${download_default}<span>原图</span>`).appendTo(this.previewWrapperHeader);
-		this.previewLoadingElement = $(loading_default).css({
-			padding: "12px",
-			animation: "pp-spin 1s linear infinite"
-		}).appendTo(this.previewWrapperElement);
+		this.previewLoadingElement = createLoadingSpinner().appendTo(this.previewWrapperElement);
 		this.previewImageElement = $(new Image()).css({ "border-radius": `${8}px` }).hide().appendTo(this.previewWrapperElement);
-		this.#images.forEach((image) => {
-			if (image) image.src = "";
-		});
-		this.#images = [];
-		this.#prevMousePos = [0, 0];
-		this.#currentIllustSize = [0, 0];
-		this.#currentUgoiraPlayer?.stop();
-		if (this.#downloadResetTimeout !== null) {
-			clearTimeout(this.#downloadResetTimeout);
-			this.#downloadResetTimeout = null;
+		this.pageLoadingOverlayElement = $(document.createElement("div")).css({
+			position: "absolute",
+			top: "0px",
+			left: "0px",
+			right: "0px",
+			bottom: "0px",
+			"z-index": "1",
+			display: "flex",
+			"align-items": "center",
+			"justify-content": "center",
+			"border-radius": `${8}px`,
+			background: "rgba(31, 31, 31, 0.32)",
+			"backdrop-filter": "blur(4px)",
+			"pointer-events": "none"
+		}).hide().append(createLoadingSpinner()).appendTo(this.previewWrapperElement);
+	}
+	/**
+	* 立即显示预览窗口并停留在加载状态。
+	* 缓存未命中时先开窗再发请求，避免窗口要等到数据全部就绪才出现。
+	* 若当前窗口已在展示同一个作品，则不做任何处理，避免反复重置打断已显示的内容。
+	*/
+	showLoading({ illustId, illustElement }) {
+		if (this.isActiveIllust(illustId)) return;
+		this.reset();
+		this.initPreviewWrapper();
+		this.illustId = illustId;
+		this.illustElement = illustElement;
+		this.#isPlaceholder = true;
+		this.bindPreviewMouseEvents();
+	}
+	/**
+	* 指定作品的内容仍停留在加载状态时关闭窗口，避免请求或初始化失败后一直转圈。
+	* 已经显示出内容时不做处理，否则会把正常显示中的预览关掉。
+	*/
+	dismissLoading(illustId) {
+		if (this.illustId === illustId && !this.illustLoaded) this.reset();
+	}
+	/**
+	* 预览窗口当前是否仍在展示（或正在加载）指定作品。
+	* 异步回调返回时用它校验，避免鼠标已移开、窗口已关闭后又把窗口重新打开。
+	* 以 `illustId` 作为唯一事实：`reset()` 会把它清空。
+	*/
+	isActiveIllust(illustId) {
+		return this.illustId === illustId;
+	}
+	/**
+	* 准备预览窗口并接管占位状态。
+	* 占位窗口仍在展示同一个作品时直接复用其 DOM 节点 —— 重建会让
+	* 加载动画的 CSS animation 从头播放，视觉上像是又加载了一次。
+	*/
+	#prepareWrapper(illustId) {
+		if (this.#isPlaceholder && this.illustId === illustId) {
+			this.#isPlaceholder = false;
+			return;
 		}
-		this.unbindPreviewImageEvents();
-		this.unbindUgoiraPreviewEvents();
+		this.reset();
+		this.initPreviewWrapper();
 	}
 	/** 初始化预览容器，优先显示指定页码，其次恢复当前页面中记忆的预览页码 */
 	setImage({ illustId, illustElement, previewPage, regularUrls, originalUrls, illustrationDetails }) {
-		this.reset();
-		this.initPreviewWrapper();
+		this.#prepareWrapper(illustId);
 		this.illustId = illustId;
 		this.illustDetails = illustrationDetails;
 		this.illustElement = illustElement;
@@ -2772,6 +3560,7 @@ var PreviewedIllust = class {
 	}
 	bindPreviewImageEvents() {
 		this.previewImageElement.on("load", this.onImageLoad);
+		this.previewImageElement.on("error", this.onImageError);
 		this.previewImageElement.on("click", this.onPreviewImageMouseClick);
 		this.downloadOriginalElement.on("click", this.onDownloadImage);
 		$(document).on("wheel", this.onPreviewImageMouseWheel);
@@ -2788,11 +3577,38 @@ var PreviewedIllust = class {
 	/** 显示 pageIndex 指向的图片 */
 	updatePreviewImage(page = this.currentPage) {
 		const currentImageUrl = this.regularUrls[page - 1];
+		const isSameImage = this.previewImageElement.attr("src") === currentImageUrl;
+		if (this.illustLoaded && !isSameImage && !this.#isPageImageDecoded(page)) {
+			this.#isPageImageLoading = true;
+			this.#schedulePageLoadingOverlay();
+		} else this.#finishPageLoading();
 		this.previewImageElement.attr("src", currentImageUrl);
 		this.pageCountText.text(`${page}/${this.pageCount}`);
 		if (this.pageCount > 1) this.#previewPages.set(this.illustId, page);
 	}
+	/** 延迟显示翻页加载遮罩，图片在延迟内就绪时不显示，避免闪烁 */
+	#schedulePageLoadingOverlay() {
+		this.#clearPageLoadingOverlayTimeout();
+		this.#pageLoadingOverlayTimeout = setTimeout(() => {
+			this.#pageLoadingOverlayTimeout = null;
+			if (!this.#isPageImageLoading) return;
+			this.pageLoadingOverlayElement.show();
+		}, 120);
+	}
+	#clearPageLoadingOverlayTimeout() {
+		if (this.#pageLoadingOverlayTimeout !== null) {
+			clearTimeout(this.#pageLoadingOverlayTimeout);
+			this.#pageLoadingOverlayTimeout = null;
+		}
+	}
+	/** 当前页图片已就绪（或加载失败）时收起翻页加载遮罩 */
+	#finishPageLoading() {
+		this.#isPageImageLoading = false;
+		this.#clearPageLoadingOverlayTimeout();
+		this.pageLoadingOverlayElement.hide();
+	}
 	onImageLoad = () => {
+		this.#finishPageLoading();
 		this.illustLoaded = true;
 		this.previewLoadingElement.hide();
 		this.previewImageElement.show();
@@ -2804,6 +3620,9 @@ var PreviewedIllust = class {
 		});
 		this.#currentIllustSize = [this.previewImageElement.width() ?? 0, this.previewImageElement.height() ?? 0];
 		this.adjustPreviewWrapper({ baseOnMousePos: false });
+	};
+	onImageError = () => {
+		this.#finishPageLoading();
 	};
 	nextPage() {
 		if (this.currentPage < this.pageCount) this.currentPage += 1;
@@ -2831,12 +3650,18 @@ var PreviewedIllust = class {
 			backgroundRepeat: ""
 		});
 	}
+	/** 指定页的图片是否已经预加载解码完成，可直接显示而无需等待 */
+	#isPageImageDecoded(page) {
+		const cachedImage = decodedPreviewImages.get(getDecodedImageCacheKey(this.illustId, page));
+		return !!cachedImage?.complete && cachedImage.naturalWidth > 0;
+	}
 	preloadImages(from = this.currentPage - 1, to = this.currentPage - 1 + 5) {
-		if (!this.#images.length) this.#images = new Array(this.regularUrls.length);
 		for (let i = from; i < to && i < this.regularUrls.length; i += 1) {
+			const cacheKey = getDecodedImageCacheKey(this.illustId, i + 1);
+			if (decodedPreviewImages.get(cacheKey)) continue;
 			const preloadImage = new Image();
 			preloadImage.src = this.regularUrls[i];
-			this.#images[i] = preloadImage;
+			decodedPreviewImages.set(cacheKey, preloadImage);
 		}
 	}
 	onPreviewImageMouseClick = () => {
@@ -2923,21 +3748,55 @@ var PreviewedIllust = class {
 		});
 	};
 	setUgoira({ illustId, illustElement, src, mime_type, frames, illustrationDetails }) {
-		this.reset();
-		this.initPreviewWrapper();
+		this.#prepareWrapper(illustId);
 		this.illustId = illustId;
 		this.illustDetails = illustrationDetails;
 		this.illustElement = illustElement;
 		illustElement.siblings("svg").css({ "pointer-events": "none" });
-		this.#currentUgoiraPlayer = this.createUgoiraPlayer({
-			source: src,
-			metadata: {
-				mime_type,
-				frames
-			}
+		this.bindPreviewMouseEvents();
+		this.loadUgoiraPlayer({
+			illustId,
+			src,
+			mime_type,
+			frames
 		});
-		this.bindUgoiraPreviewEvents();
 		this.renderIllustrationDetails(illustrationDetails);
+	}
+	/**
+	* 先查询帧缓存，再决定使用缓存帧还是解包 zip。
+	* 解包到全部帧时把帧写入缓存，供下次悬停时直接播放。
+	*/
+	async loadUgoiraPlayer({ illustId, src, mime_type, frames }) {
+		const cached = await getCachedUgoiraFrames(illustId).catch(() => null);
+		if (this.illustId !== illustId || this.#currentUgoiraPlayer) return;
+		const decodedFrames = [];
+		let decodedFrameCount = 0;
+		const hasCachedFrames = cached?.frames.length === frames.length;
+		try {
+			this.#currentUgoiraPlayer = this.createUgoiraPlayer({
+				source: src,
+				metadata: {
+					mime_type,
+					frames
+				},
+				cachedFrames: hasCachedFrames ? cached.frames.map((frame) => frame.blob) : null,
+				onFrameDecoded: ({ index, file, delay, blob }) => {
+					decodedFrames[index] = {
+						file,
+						delay,
+						blob
+					};
+					decodedFrameCount += 1;
+					if (decodedFrameCount < frames.length) return;
+					cacheUgoiraFrames(illustId, decodedFrames);
+				}
+			});
+		} catch (error) {
+			iLog.e(`Failed to create ugoira player of illust ${illustId}:`, error);
+			this.dismissLoading(illustId);
+			return;
+		}
+		this.bindUgoiraPreviewEvents();
 	}
 	createUgoiraPlayer(options) {
 		const canvas = document.createElement("canvas");
@@ -2977,6 +3836,16 @@ var PreviewedIllust = class {
 		});
 		this.adjustPreviewWrapper({ baseOnMousePos: false });
 	};
+	/**
+	* 补渲染作品详情。
+	* 预览窗口会在作品详情返回前就打开，因此详情是异步补上的；
+	* 期间用户可能已切换到其他作品，需要校验 ID 避免渲染到错误的窗口。
+	*/
+	updateIllustrationDetails(illustrationDetails) {
+		if (!illustrationDetails || illustrationDetails.id !== this.illustId) return;
+		this.illustDetails = illustrationDetails;
+		this.renderIllustrationDetails(illustrationDetails);
+	}
 	/** 展示作品详情信息（标签、收藏数等） */
 	renderIllustrationDetails(illustrationDetails) {
 		if (illustrationDetails && illustrationDetails.id === this.illustId) {
@@ -3016,11 +3885,14 @@ var PreviewedIllust = class {
 	}
 	/** 初始化显示预览容器 */
 	initPreviewWrapper() {
+		this.#ensureWrapperDom();
 		this.previewWrapperElement.show();
 		this.previewLoadingElement.show();
 		this.adjustPreviewWrapper({ baseOnMousePos: true });
 	}
 	bindPreviewMouseEvents() {
+		if (this.#mouseEventsBound) return;
+		this.#mouseEventsBound = true;
 		$(document).on("mousemove", this.onMouseMove);
 		document.addEventListener("mousedown", this.onMouseDown, true);
 		document.addEventListener("mouseup", this.cancelLongPress, true);
@@ -3031,6 +3903,7 @@ var PreviewedIllust = class {
 		window.addEventListener("wheel", this.preventPageZoom, { passive: false });
 	}
 	unbindPreviewMouseEvents() {
+		this.#mouseEventsBound = false;
 		this.cancelLongPress();
 		$(document).off("mousemove", this.onMouseMove);
 		document.removeEventListener("mousedown", this.onMouseDown, true);
@@ -3195,37 +4068,16 @@ var PreviewedIllust = class {
 	}
 };
 
-//#endregion
-//#region src/icons/heart.svg
+// src/icons/heart.svg
 var heart_default = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg viewBox=\"0 0 32 32\"\n     width=\"32\"\n     height=\"32\">\n    <path d=\"&#xA;M21,5.5 C24.8659932,5.5 28,8.63400675 28,12.5 C28,18.2694439 24.2975093,23.1517313 17.2206059,27.1100183&#xA;C16.4622493,27.5342993 15.5379984,27.5343235 14.779626,27.110148 C7.70250208,23.1517462 4,18.2694529 4,12.5&#xA;C4,8.63400691 7.13400681,5.5 11,5.5 C12.829814,5.5 14.6210123,6.4144028 16,7.8282366&#xA;C17.3789877,6.4144028 19.170186,5.5 21,5.5 Z\" />\n    <path d=\"M16,11.3317089 C15.0857201,9.28334665 13.0491506,7.5 11,7.5&#xA;C8.23857625,7.5 6,9.73857647 6,12.5 C6,17.4386065 9.2519779,21.7268174 15.7559337,25.3646328&#xA;C15.9076021,25.4494645 16.092439,25.4494644 16.2441073,25.3646326 C22.7480325,21.7268037 26,17.4385986 26,12.5&#xA;C26,9.73857625 23.7614237,7.5 21,7.5 C18.9508494,7.5 16.9142799,9.28334665 16,11.3317089 Z\"\n          style=\"fill: #fafafa;\" />\n</svg>";
 
-//#endregion
-//#region src/icons/heart-filled.svg
+// src/icons/heart-filled.svg
 var heart_filled_default = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg viewBox=\"0 0 32 32\"\n     width=\"32\"\n     height=\"32\">\n    <path d=\"&#xA;M21,5.5 C24.8659932,5.5 28,8.63400675 28,12.5 C28,18.2694439 24.2975093,23.1517313 17.2206059,27.1100183&#xA;C16.4622493,27.5342993 15.5379984,27.5343235 14.779626,27.110148 C7.70250208,23.1517462 4,18.2694529 4,12.5&#xA;C4,8.63400691 7.13400681,5.5 11,5.5 C12.829814,5.5 14.6210123,6.4144028 16,7.8282366&#xA;C17.3789877,6.4144028 19.170186,5.5 21,5.5 Z\" />\n    <path d=\"M16,11.3317089 C15.0857201,9.28334665 13.0491506,7.5 11,7.5&#xA;C8.23857625,7.5 6,9.73857647 6,12.5 C6,17.4386065 9.2519779,21.7268174 15.7559337,25.3646328&#xA;C15.9076021,25.4494645 16.092439,25.4494644 16.2441073,25.3646326 C22.7480325,21.7268037 26,17.4385986 26,12.5&#xA;C26,9.73857625 23.7614237,7.5 21,7.5 C18.9508494,7.5 16.9142799,9.28334665 16,11.3317089 Z\"\n          style=\"fill: #dc2626;\" />\n</svg>";
 
-//#endregion
-//#region src/icons/play.svg
+// src/icons/play.svg
 var play_default = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg viewBox=\"0 0 24 24\"\n     style=\"width: 48px; height: 48px; stroke: none; line-height: 0; font-size: 0px; vertical-align: middle;\">\n    <circle cx=\"12\"\n            cy=\"12\"\n            r=\"10\"\n            style=\"fill: rgba(0, 0, 0, 0.32);\" />\n    <path d=\"M9,8.74841664 L9,15.2515834 C9,15.8038681 9.44771525,16.2515834 10,16.2515834&#xA;C10.1782928,16.2515834 10.3533435,16.2039156 10.5070201,16.1135176 L16.0347118,12.8619342&#xA;C16.510745,12.5819147 16.6696454,11.969013 16.3896259,11.4929799&#xA;C16.3034179,11.3464262 16.1812655,11.2242738 16.0347118,11.1380658 L10.5070201,7.88648243&#xA;C10.030987,7.60646294 9.41808527,7.76536339 9.13806578,8.24139652&#xA;C9.04766776,8.39507316 9,8.57012386 9,8.74841664 Z\"\n          style=\"fill: rgb(245, 245, 245);\" />\n</svg>";
 
-//#endregion
-//#region src/utils/promise.ts
-const execLimitConcurrentPromises = async (promises, limit = 48) => {
-	const results = [];
-	let index = 0;
-	const executeNext = async () => {
-		if (index >= promises.length) return Promise.resolve();
-		const currentIndex = index++;
-		const result = await promises[currentIndex]();
-		results[currentIndex] = result;
-		return await executeNext();
-	};
-	const initialPromises = Array.from({ length: Math.min(limit, promises.length) }, () => executeNext());
-	await Promise.all(initialPromises);
-	return results;
-};
-
-//#endregion
-//#region src/features/sort.ts
+// src/features/sort.ts
 const BOOKMARK_USER_PAGE_ILLUSTRATION_LIST_SELECTOR = "ul.sc-e967f3f1-1.cEOodl";
 const USER_TYPE_ARTWORKS_PER_PAGE = 48;
 let isInitialized = false;
@@ -3245,7 +4097,10 @@ const loadIllustSort = (options) => {
 		listElement = $();
 		progressElement = $();
 		progressText = $();
-		sortButtonElement = $(`#${SORT_BUTTON_ID}`);
+		/** 按钮由本脚本创建，构造时可能尚未挂载，因此每次使用前再查询 */
+		get sortButtonElement() {
+			return $(`#${SORT_BUTTON_ID}`);
+		}
 		reset({ type }) {
 			try {
 				this.type = type;
@@ -3615,8 +4470,7 @@ function getIllustrationsFromResponse(type, response) {
 	return [];
 }
 
-//#endregion
-//#region src/i18n/index.ts
+// src/i18n/index.ts
 const Texts = {
 	install_title: "欢迎使用 Pixiv Previewer (LolipopJ Edition) v",
 	upgrade_body: `<div>
@@ -3654,8 +4508,11 @@ const Texts = {
 	setting_hideByTag: "排序时隐藏指定标签的作品",
 	setting_hideByTagPlaceholder: "输入标签名，多个标签用','分隔",
 	setting_clearFollowingCache: "清除缓存",
-	setting_clearFollowingCacheHelp: "关注画师信息会在本地保存一天，如果希望立即更新，请点击清除缓存",
+	setting_clearFollowingCacheHelp: "本地缓存了作品详情、作品分页、动图帧与标签信息。清除后再次访问会重新请求接口。",
 	setting_followingCacheCleared: "已清除缓存，请刷新页面。",
+	setting_clearCacheFailed: "部分缓存清除失败，请稍后重试。",
+	cache_usage: "缓存占用",
+	cache_usageHelp: "作品详情 %1 个 · 作品分页 %2 个 · 动图帧 %3 个（%4）· 标签翻译 %5 个",
 	setting_blank: "使用新标签页打开作品详情页",
 	setting_turnPage: "使用键盘←→进行翻页（排序后的搜索页）",
 	setting_save: "保存设置",
@@ -3679,20 +4536,16 @@ const Texts = {
 	label_hideFav: "过滤收藏"
 };
 
-//#endregion
-//#region src/icons/hide-favorites.svg
+// src/icons/hide-favorites.svg
 var hide_favorites_default = "<svg\n  xmlns=\"http://www.w3.org/2000/svg\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path\n    d=\"M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z\"\n  />\n  <path d=\"M3 3 21 21\" />\n</svg>";
 
-//#endregion
-//#region src/icons/next-page.svg
+// src/icons/next-page.svg
 var next_page_default = "<svg\n  xmlns=\"http://www.w3.org/2000/svg\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"m6.5 5 7 7-7 7M17.5 5v14\" />\n</svg>";
 
-//#endregion
-//#region src/icons/sort.svg
+// src/icons/sort.svg
 var sort_default = "<svg\n  xmlns=\"http://www.w3.org/2000/svg\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M4 6h16M4 12h10M4 18h4m9-4 3 3 3-3m-3-5v8\" />\n</svg>";
 
-//#endregion
-//#region src/utils/setting.ts
+// src/utils/setting.ts
 const SETTINGS_KEY = "PIXIV_PREVIEWER_L_SETTINGS";
 const toggleSettingBooleanValue = (key) => {
 	const settings = getSettings();
@@ -3736,9 +4589,7 @@ const resetSettings = () => {
 	GM_setValue(SETTINGS_KEY, g_defaultSettings);
 };
 
-//#endregion
-//#region src/index.ts
-let g_csrfToken = "";
+// src/index.ts
 let g_pageType;
 let g_settings;
 const Pages = {
@@ -3747,96 +4598,97 @@ const Pages = {
 		CheckUrl: function(url) {
 			return /^https?:\/\/www.pixiv.net(\/en)?\/tags\/.+\/(artworks|illustrations|manga)/.test(url) || /^https?:\/\/www.pixiv.net(\/en)?\/search/.test(url);
 		},
-		GetToolBar: getToolbar
+		CreateToolBar: createToolbar
 	},
 	[1]: {
 		PageTypeString: "BookMarkNewPage",
 		CheckUrl: function(url) {
 			return /^https:\/\/www.pixiv.net(\/en)?\/bookmark_new_illust(_r18)?.php.*/.test(url);
 		},
-		GetToolBar: getToolbar
+		CreateToolBar: createToolbar
 	},
 	[2]: {
 		PageTypeString: "DiscoveryPage",
 		CheckUrl: function(url) {
 			return /^https?:\/\/www.pixiv.net(\/en)?\/discovery.*/.test(url);
 		},
-		GetToolBar: getToolbar
+		CreateToolBar: createToolbar
 	},
 	[3]: {
 		PageTypeString: "MemberPage/MemberIllustPage/MemberBookMark",
 		CheckUrl: function(url) {
 			return /^https?:\/\/www.pixiv.net(\/en)?\/users\/\d+/.test(url);
 		},
-		GetToolBar: getToolbar
+		CreateToolBar: createToolbar
 	},
 	[4]: {
 		PageTypeString: "HomePage",
 		CheckUrl: function(url) {
 			return /https?:\/\/www.pixiv.net(\/en)?\/?$/.test(url) || /https?:\/\/www.pixiv.net(\/en)?\/illustration\/?$/.test(url) || /https?:\/\/www.pixiv.net(\/en)?\/manga\/?$/.test(url) || /https?:\/\/www.pixiv.net(\/en)?\/cate_r18\.php$/.test(url);
 		},
-		GetToolBar: getToolbar
+		CreateToolBar: createToolbar
 	},
 	[5]: {
 		PageTypeString: "RankingPage",
 		CheckUrl: function(url) {
 			return /^https?:\/\/www.pixiv.net(\/en)?\/ranking.php.*/.test(url);
 		},
-		GetToolBar: getToolbar
+		CreateToolBar: createToolbar
 	},
 	[6]: {
 		PageTypeString: "NewIllustPage",
 		CheckUrl: function(url) {
 			return /^https?:\/\/www.pixiv.net(\/en)?\/new_illust.php.*/.test(url);
 		},
-		GetToolBar: getToolbar
+		CreateToolBar: createToolbar
 	},
 	[7]: {
 		PageTypeString: "R18Page",
 		CheckUrl: function(url) {
 			return /^https?:\/\/www.pixiv.net(\/en)?\/cate_r18.php.*/.test(url);
 		},
-		GetToolBar: getToolbar
+		CreateToolBar: createToolbar
 	},
 	[8]: {
 		PageTypeString: "StaccPage",
 		CheckUrl: function(url) {
 			return /^https:\/\/www.pixiv.net(\/en)?\/stacc.*/.test(url);
 		},
-		GetToolBar: function() {
-			return getToolbarOld();
-		}
+		FindToolBar: findToolbarOld
 	},
 	[9]: {
 		PageTypeString: "ArtworkPage",
 		CheckUrl: function(url) {
 			return /^https:\/\/www.pixiv.net(\/en)?\/artworks\/.*/.test(url);
 		},
-		GetToolBar: getToolbar
+		CreateToolBar: createToolbar
 	},
 	[10]: {
 		PageTypeString: "NovelSearchPage",
 		CheckUrl: function(url) {
 			return /^https:\/\/www.pixiv.net(\/en)?\/tags\/.*\/novels/.test(url);
 		},
-		GetToolBar: getToolbar
+		CreateToolBar: createToolbar
 	},
 	[11]: {
 		PageTypeString: "SearchTopPage",
 		CheckUrl: function(url) {
 			return /^https?:\/\/www.pixiv.net(\/en)?\/tags\/[^/*]/.test(url);
 		},
-		GetToolBar: getToolbar
+		CreateToolBar: createToolbar
 	}
 };
-function getToolbar() {
-	const toolbar = $(`#${TOOLBAR_ID}`);
-	if (toolbar.length > 0) return toolbar.get(0);
-	$("body").append(`<div id="${TOOLBAR_ID}" style="position: fixed; right: 28px; bottom: 96px;"></div>`);
-	return $(`#${TOOLBAR_ID}`).get(0);
+function findToolbar() {
+	return $(`#${"pp-toolbar"}`).get(0) ?? null;
 }
-function getToolbarOld() {
-	return $("._toolmenu").get(0);
+function createToolbar() {
+	const toolbar = findToolbar();
+	if (toolbar) return toolbar;
+	$("body").append(`<div id="${TOOLBAR_ID}" style="position: fixed; right: 28px; bottom: 96px;"></div>`);
+	return findToolbar();
+}
+function findToolbarOld() {
+	return $("._toolmenu").get(0) ?? null;
 }
 function showSearchLinksForDeletedArtworks() {
 	const searchEngines = [
@@ -3925,6 +4777,20 @@ const registerSettingsMenu = () => {
 			resetSettings();
 			location.reload();
 		}
+	}), GM_registerMenuCommand(`🧹 ${Texts.setting_clearFollowingCache}`, () => {
+		if (!confirm(`${Texts.setting_clearFollowingCacheHelp}\n\n确定要清除吗？`)) return;
+		clearAllLocalCaches().then((cleared) => {
+			if (!cleared) {
+				alert(Texts.setting_clearCacheFailed);
+				return;
+			}
+			alert(Texts.setting_followingCacheCleared);
+			location.reload();
+		});
+	}), GM_registerMenuCommand(`📊 ${Texts.cache_usage}`, () => {
+		getCacheUsage().then((usage) => {
+			alert(Texts.cache_usageHelp.replace("%1", String(usage.illustrationDetails)).replace("%2", String(usage.illustPages)).replace("%3", String(usage.ugoiraFrames)).replace("%4", formatCacheBytes(usage.ugoiraBytes)).replace("%5", String(usage.tagTranslations)));
+		});
 	}));
 	return settings;
 };
@@ -3943,110 +4809,99 @@ const ShowUpgradeMessage = () => {
 		$("#pp-bg").remove();
 	});
 };
-const initializePixivPreviewer = () => {
+/** 向工具栏追加按钮。按钮可能已由上一次初始化创建，因此先确认其不存在 */
+const appendToolbarButton = (toolBar, { id, title, icon, onClick }) => {
+	if ($(`#${id}`).length) return;
+	const newListItem = document.createElement("div");
+	newListItem.title = title;
+	const newButton = document.createElement("button");
+	newButton.id = id;
+	newButton.className = "pp-toolbar-button";
+	newButton.type = "button";
+	newButton.title = title;
+	newButton.setAttribute("aria-label", title);
+	newButton.innerHTML = icon;
+	newButton.querySelector("svg")?.setAttribute("aria-hidden", "true");
+	newListItem.appendChild(newButton);
+	$(newButton).on("click", onClick);
+	toolBar.appendChild(newListItem);
+};
+const mountToolbar = (toolBar) => {
+	DoLog(4, toolBar);
+	appendToolbarButton(toolBar, {
+		id: SORT_BUTTON_ID,
+		title: "排序作品",
+		icon: sort_default,
+		onClick: () => window.dispatchEvent(new Event(SORT_EVENT_NAME))
+	});
+	appendToolbarButton(toolBar, {
+		id: SORT_NEXT_PAGE_BUTTON_ID,
+		title: "前往下一页",
+		icon: next_page_default,
+		onClick: () => window.dispatchEvent(new Event(SORT_NEXT_PAGE_EVENT_NAME))
+	});
+	appendToolbarButton(toolBar, {
+		id: HIDE_FAVORITES_BUTTON_ID,
+		title: "隐藏已收藏作品",
+		icon: hide_favorites_default,
+		onClick: hideFavorites
+	});
+	loadDownloadPanel(toolBar);
+};
+/** 匹配当前页面类型。仅依赖 URL，可在 `document-start` 执行 */
+const matchPageType = () => {
+	for (const key of Object.keys(Pages)) {
+		const pageType = Number(key);
+		if (Pages[pageType].CheckUrl(location.href)) return pageType;
+	}
+};
+/**
+* 初始化不依赖 DOM 的功能。
+* 在 `document-start` 执行，避免页面渲染期间功能尚不可用。
+*/
+const initializeEarly = () => {
 	try {
 		g_settings = registerSettingsMenu();
-		if (g_settings.enableLocalTags) loadLocalTags();
 		iLog.i("Start to initialize Pixiv Previewer with global settings:", g_settings);
-		if (g_settings.version !== "1.7.2") ShowUpgradeMessage();
+		warmUpCacheDatabase();
+		pruneCachesOnStartup();
+		g_pageType = matchPageType();
+		if (g_pageType === void 0) DoLog(3, "Unsupported page.");
+		else {
+			DoLog(3, "Current page is " + Pages[g_pageType].PageTypeString);
+			if (g_pageType === 9) {
+				const artworkId = location.pathname.match(/\/artworks\/(\d+)/)?.[1];
+				if (artworkId) deleteCachedIllustrationDetails([artworkId]);
+			}
+		}
 		if (g_settings.enablePreview) loadIllustPreview(g_settings);
-		$.get(location.href, function(data) {
-			const matched = data.match(/token\\":\\"([a-z0-9]{32})/);
-			if (matched.length > 0) {
-				g_csrfToken = matched[1];
-				DoLog(3, "Got g_csrfToken: " + g_csrfToken);
-				loadIllustSort({
-					...g_settings,
-					csrfToken: g_csrfToken
-				});
-			} else DoLog(1, "Can not get g_csrfToken, sort function is disabled.");
+		loadIllustSort(g_settings);
+	} catch (e) {
+		DoLog(1, "An error occurred while initializing:", e);
+	}
+};
+/**
+* 初始化需要 DOM 的功能。
+* `body` 就绪后即可执行，无需等待页面内容渲染完成。
+*/
+const initializeDom = () => {
+	try {
+		if (!g_settings) return;
+		if (g_settings.enableLocalTags) loadLocalTags();
+		if (g_settings.version !== "1.8.0") ShowUpgradeMessage();
+		if (g_pageType === void 0) return;
+		if (g_pageType === 3) waitFor(() => matchPageType() === 3 && document.querySelector("span[to]"), () => showSearchLinksForDeletedArtworks());
+		const page = Pages[g_pageType];
+		if ("CreateToolBar" in page) mountToolbar(page.CreateToolBar());
+		else waitFor(page.FindToolBar, mountToolbar, {
+			interval: 200,
+			maxAttempts: 25,
+			onGiveUp: () => DoLog(2, "Get toolbar failed.")
 		});
-		for (let i = 0; i < Object.keys(Pages).length; i++) if (Pages[i].CheckUrl(location.href)) {
-			g_pageType = i;
-			break;
-		}
-		if (g_pageType !== void 0) DoLog(3, "Current page is " + Pages[g_pageType].PageTypeString);
-		else {
-			DoLog(3, "Unsupported page.");
-			return;
-		}
-		if (g_pageType === 3) showSearchLinksForDeletedArtworks();
-		else if (g_pageType === 9) {
-			const artworkId = window.location.pathname.match(/\/artworks\/(\d+)/)?.[1];
-			if (artworkId) setTimeout(() => {
-				deleteCachedIllustrationDetails([artworkId]);
-			});
-		}
-		const toolBar = Pages[g_pageType].GetToolBar();
-		if (toolBar) DoLog(4, toolBar);
-		else {
-			DoLog(2, "Get toolbar failed.");
-			return;
-		}
-		if (!$(`#${"pp-sort"}`).length) {
-			const newListItem = document.createElement("div");
-			newListItem.title = "排序作品";
-			newListItem.innerHTML = "";
-			const newButton = document.createElement("button");
-			newButton.id = SORT_BUTTON_ID;
-			newButton.className = "pp-toolbar-button";
-			newButton.type = "button";
-			newButton.title = "排序作品";
-			newButton.setAttribute("aria-label", "排序作品");
-			newButton.innerHTML = sort_default;
-			newButton.querySelector("svg")?.setAttribute("aria-hidden", "true");
-			newListItem.appendChild(newButton);
-			toolBar.appendChild(newListItem);
-			$(newButton).on("click", () => {
-				const sortEvent = new Event(SORT_EVENT_NAME);
-				window.dispatchEvent(sortEvent);
-			});
-		}
-		if (!$(`#${"pp-sort-next-page"}`).length) {
-			const newListItem = document.createElement("div");
-			newListItem.title = "前往下一页";
-			newListItem.innerHTML = "";
-			const newButton = document.createElement("button");
-			newButton.id = SORT_NEXT_PAGE_BUTTON_ID;
-			newButton.className = "pp-toolbar-button";
-			newButton.type = "button";
-			newButton.title = "前往下一页";
-			newButton.setAttribute("aria-label", "前往下一页");
-			newButton.innerHTML = next_page_default;
-			newButton.querySelector("svg")?.setAttribute("aria-hidden", "true");
-			newListItem.appendChild(newButton);
-			toolBar.appendChild(newListItem);
-			$(newButton).on("click", () => {
-				const sortEvent = new Event(SORT_NEXT_PAGE_EVENT_NAME);
-				window.dispatchEvent(sortEvent);
-			});
-		}
-		if (!$(`#${"pp-hide-favorites"}`).length) {
-			const newListItem = document.createElement("div");
-			newListItem.title = "隐藏已收藏作品";
-			newListItem.innerHTML = "";
-			const newButton = document.createElement("button");
-			newButton.id = HIDE_FAVORITES_BUTTON_ID;
-			newButton.className = "pp-toolbar-button";
-			newButton.type = "button";
-			newButton.title = "隐藏已收藏作品";
-			newButton.setAttribute("aria-label", "隐藏已收藏作品");
-			newButton.innerHTML = hide_favorites_default;
-			newButton.querySelector("svg")?.setAttribute("aria-hidden", "true");
-			newListItem.appendChild(newButton);
-			toolBar.appendChild(newListItem);
-			$(newButton).on("click", () => {
-				hideFavorites();
-			});
-		}
-		loadDownloadPanel(toolBar);
 	} catch (e) {
 		DoLog(1, "An error occurred while initializing:", e);
 	}
 };
 if (getSettings().enableLocalTags) interceptTagSearchRequests();
-window.addEventListener("DOMContentLoaded", () => {
-	setTimeout(initializePixivPreviewer, 1e3);
-});
-
-//#endregion
+initializeEarly();
+onDomReady(initializeDom);
