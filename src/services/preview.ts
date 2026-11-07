@@ -22,7 +22,6 @@ export const downloadIllust = ({
       ...options,
       onerror: function (this, resp) {
         options.onerror?.call(this, resp);
-        window.open(url, "__blank");
       },
     },
     directory
@@ -54,7 +53,6 @@ export const downloadIllustWithProxy = ({
     ...options,
     onerror: function (this, resp) {
       options.onerror?.call(this, resp);
-      window.open(proxyUrl, "__blank");
     },
   });
 };

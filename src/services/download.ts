@@ -491,6 +491,20 @@ export const retryDownload = (id: string) => {
   }
 };
 
+/** 移除指定的失败或中断下载记录 */
+export const removeDownload = (id: string) => {
+  getDownloads();
+  syncFromStorage(true);
+  const record = downloads!.find((item) => item.id === id);
+  if (record?.status !== "failed" && record?.status !== "interrupted") {
+    publish(false);
+    return;
+  }
+  removedIds.add(id);
+  downloads = downloads!.filter((item) => item.id !== id);
+  publish();
+};
+
 export const clearCompletedDownloads = () => {
   getDownloads();
   syncFromStorage(true);

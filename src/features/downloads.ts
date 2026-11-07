@@ -2,6 +2,7 @@ import { DOWNLOADS_STYLE_ID } from "../constants";
 import downloadIcon from "../icons/download.svg";
 import retryIcon from "../icons/retry.svg";
 import stopIcon from "../icons/stop.svg";
+import trashIcon from "../icons/trash.svg";
 import {
   abortDownload,
   clearCompletedDownloads,
@@ -9,6 +10,7 @@ import {
   getDownloads,
   ignoreRetryableDownloads,
   isDownloadingInThisTab,
+  removeDownload,
   retryDownload,
   subscribeDownloads,
 } from "../services/download";
@@ -71,6 +73,7 @@ const injectDownloadPanelStyles = () => {
       #${PANEL_ID} {
         --pp-download-bg: #fff; --pp-download-fg: #222; --pp-download-muted: #666;
         --pp-download-border: #ddd; --pp-download-action: #006eb8;
+        --pp-download-danger: #d32f2f; --pp-download-danger-hover: rgba(211, 47, 47, .12);
         position: fixed; z-index: 100000; display: flex; flex-direction: column;
         width: min(380px, calc(100vw - 24px)); max-height: min(480px, calc(100vh - 24px));
         box-sizing: border-box; border: 1px solid var(--pp-download-border);
@@ -82,10 +85,26 @@ const injectDownloadPanelStyles = () => {
       #${PANEL_ID} h2 { margin: 0; font-size: 16px; color: inherit; }
       #${PANEL_ID} button { border: 0; background: transparent; color: var(--pp-download-action); cursor: pointer; padding: 8px; font: inherit; }
       #${PANEL_ID} button:disabled { color: var(--pp-download-muted); opacity: .6; cursor: default; }
-      #${PANEL_ID} button:focus-visible, #${PANEL_ID} a:focus-visible { outline: 2px solid var(--pp-download-action); outline-offset: 2px; }
+      #${PANEL_ID} button:focus-visible, #${PANEL_ID} a:focus-visible, #${PANEL_ID} summary:focus-visible { outline: 2px solid var(--pp-download-action); outline-offset: 2px; }
       #${PANEL_ID} .pp-download-summary { margin: 0; padding: 0 16px 4px; color: var(--pp-download-muted); }
-      #${PANEL_ID} .pp-download-actions { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 8px 8px; }
+      #${PANEL_ID} .pp-download-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; padding: 0 8px 8px; }
       #${PANEL_ID} .pp-download-actions button { font-size: 12px; }
+      #${PANEL_ID} .pp-download-menu { position: relative; margin-left: auto; }
+      #${PANEL_ID} .pp-download-menu summary {
+        display: flex; align-items: center; justify-content: center; list-style: none;
+        width: 32px; height: 32px; border-radius: 50%; color: var(--pp-download-action);
+        cursor: pointer; font-size: 24px; line-height: 1;
+      }
+      #${PANEL_ID} .pp-download-menu summary::-webkit-details-marker { display: none; }
+      #${PANEL_ID} .pp-download-menu summary:hover,
+      #${PANEL_ID} .pp-download-menu[open] summary,
+      #${PANEL_ID} .pp-download-menu-content button:not(:disabled):hover { background: rgba(0, 150, 250, .12); }
+      #${PANEL_ID} .pp-download-menu-content {
+        position: absolute; z-index: 1; top: calc(100% + 4px); right: 0;
+        min-width: max-content; padding: 4px; border: 1px solid var(--pp-download-border);
+        border-radius: 8px; background: var(--pp-download-bg); box-shadow: 0 4px 16px #0003;
+      }
+      #${PANEL_ID} .pp-download-menu-content button { display: block; width: 100%; border-radius: 4px; text-align: left; }
       #${PANEL_ID} ul { list-style: none; margin: 0; padding: 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
       #${PANEL_ID} li { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--pp-download-border); }
       #${PANEL_ID} .pp-download-info { flex: 1; min-width: 0; }
@@ -97,11 +116,12 @@ const injectDownloadPanelStyles = () => {
         display: inline-flex; align-items: center; justify-content: center;
         flex-shrink: 0; width: 32px; height: 32px; padding: 6px; border-radius: 50%;
       }
+      #${PANEL_ID} .pp-download-icon:not([hidden]) + .pp-download-icon:not([hidden]) { margin-left: -8px; }
       #${PANEL_ID} .pp-download-icon:hover { background: rgba(0, 150, 250, .12); }
       #${PANEL_ID} .pp-download-icon svg { display: block; width: 18px; height: 18px; }
       #${PANEL_ID} .pp-download-icon[hidden] { display: none; }
-      #${PANEL_ID} .pp-download-abort { color: #d32f2f; }
-      #${PANEL_ID} .pp-download-abort:hover { background: rgba(211, 47, 47, .12); }
+      #${PANEL_ID} .pp-download-abort, #${PANEL_ID} .pp-download-remove { color: var(--pp-download-danger); }
+      #${PANEL_ID} .pp-download-abort:hover, #${PANEL_ID} .pp-download-remove:hover { background: var(--pp-download-danger-hover); }
       @keyframes pp-download-bounce { 0%, 100% { transform: translateY(-3px); } 50% { transform: translateY(3px); } }
       @keyframes pp-toolbar-pulse { 50% { opacity: .35; } }
       @media (prefers-reduced-motion: reduce) {
@@ -109,7 +129,8 @@ const injectDownloadPanelStyles = () => {
       }
       @media (prefers-color-scheme: dark) {
         #${PANEL_ID} { --pp-download-bg: #222; --pp-download-fg: #eee;
-          --pp-download-muted: #bbb; --pp-download-border: #444; --pp-download-action: #72c5ff; }
+          --pp-download-muted: #bbb; --pp-download-border: #444; --pp-download-action: #72c5ff;
+          --pp-download-danger: #ff6b6b; --pp-download-danger-hover: rgba(255, 107, 107, .16); }
       }
       `,
     DOWNLOADS_STYLE_ID
@@ -170,11 +191,33 @@ export const loadDownloadPanel = (toolbar: HTMLElement) => {
     .text("清空已完成记录")
     .on("click", clearCompletedDownloads)
     .appendTo(actions);
+  const retryFailedButton = $("<button>")
+    .attr({ type: "button", title: "重新下载所有失败的记录" })
+    .text("重试所有失败记录")
+    .on("click", () => {
+      for (const record of getDownloads()) {
+        if (record.status === "failed") retryDownload(record.id);
+      }
+    })
+    .appendTo(actions);
+  const moreActions = $("<details>")
+    .addClass("pp-download-menu")
+    .appendTo(actions);
+  const moreActionsSummary = $("<summary>")
+    .attr({ title: "更多操作", "aria-label": "更多操作" })
+    .text("⋯")
+    .appendTo(moreActions);
+  const moreActionsContent = $("<div>")
+    .addClass("pp-download-menu-content")
+    .appendTo(moreActions);
   const ignoreRetryableButton = $("<button>")
     .attr({ type: "button", title: "移除所有失败和中断的下载记录" })
     .text("忽略所有待重试记录")
-    .on("click", ignoreRetryableDownloads)
-    .appendTo(actions);
+    .on("click", () => {
+      ignoreRetryableDownloads();
+      moreActions.prop("open", false);
+    })
+    .appendTo(moreActionsContent);
   const list = $("<ul>").attr("aria-label", "图片下载列表").appendTo(panel);
   const rows = new Map<
     string,
@@ -184,6 +227,7 @@ export const loadDownloadPanel = (toolbar: HTMLElement) => {
       progress: JQuery<HTMLProgressElement>;
       abort: JQuery;
       retry: JQuery;
+      remove: JQuery;
     }
   >();
 
@@ -216,10 +260,18 @@ export const loadDownloadPanel = (toolbar: HTMLElement) => {
       (record) => record.status === "completed"
     ).length;
     clearCompletedButton.prop("disabled", completed === 0);
+    retryFailedButton.prop(
+      "disabled",
+      !records.some((record) => record.status === "failed")
+    );
     ignoreRetryableButton.prop("disabled", attention === 0);
     const recordIds = new Set(records.map((record) => record.id));
+    let focusedRemovedIndex = -1;
     for (const [id, row] of rows) {
       if (!recordIds.has(id)) {
+        if (row.item.get(0)!.contains(document.activeElement)) {
+          focusedRemovedIndex = row.item.index();
+        }
         row.item.remove();
         rows.delete(id);
       }
@@ -274,12 +326,20 @@ export const loadDownloadPanel = (toolbar: HTMLElement) => {
           "pp-download-retry",
           () => retryDownload(record.id)
         ).appendTo(item);
+        const remove = createIconButton(
+          `删除记录 ${record.filename}`,
+          trashIcon,
+          "pp-download-remove",
+          () => removeDownload(record.id)
+        ).appendTo(item);
         list.prepend(item);
-        row = { item, status, progress, abort, retry };
+        row = { item, status, progress, abort, retry, remove };
         rows.set(record.id, row);
       }
       const running = record.status === "downloading";
       const local = running && isDownloadingInThisTab(record.id);
+      const retryable =
+        record.status === "failed" || record.status === "interrupted";
       const percent =
         record.total > 0
           ? Math.min(100, Math.floor((record.loaded / record.total) * 100))
@@ -295,15 +355,28 @@ export const loadDownloadPanel = (toolbar: HTMLElement) => {
       };
       row.status.text(labels[record.status]);
       row.abort.prop("hidden", !local);
-      row.retry.prop("hidden", running || record.status === "completed");
+      row.retry.prop("hidden", !retryable);
+      row.remove.prop("hidden", !retryable);
       row.progress.prop("hidden", !running);
       if (percent === undefined) row.progress.removeAttr("value");
       else row.progress.val(percent);
+    }
+    if (focusedRemovedIndex >= 0 && !panel.prop("hidden")) {
+      const items = list.children("li");
+      const targetItem = items.length
+        ? items.eq(Math.min(focusedRemovedIndex, items.length - 1))
+        : undefined;
+      const target =
+        targetItem?.find(".pp-download-remove:not([hidden])").get(0) ??
+        targetItem?.find("a").get(0) ??
+        closeButton.get(0);
+      target?.focus({ preventScroll: true });
     }
     positionPanel();
   };
 
   const close = (restoreFocus = false) => {
+    moreActions.prop("open", false);
     panel.prop("hidden", true);
     button.attr("aria-expanded", "false");
     if (restoreFocus) button.trigger("focus");
@@ -319,16 +392,18 @@ export const loadDownloadPanel = (toolbar: HTMLElement) => {
   closeButton.on("click", () => close(true));
   document.addEventListener("click", (event) => {
     if (!event.isTrusted || panel.prop("hidden")) return;
-    if (
-      !panel.get(0)!.contains(event.target as Node) &&
-      !button.get(0)!.contains(event.target as Node)
-    )
+    const path = event.composedPath();
+    if (!path.includes(moreActions.get(0)!)) moreActions.prop("open", false);
+    if (!path.includes(panel.get(0)!) && !path.includes(button.get(0)!))
       close();
   });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !panel.prop("hidden")) {
       event.preventDefault();
-      close(true);
+      if (moreActions.prop("open")) {
+        moreActions.prop("open", false);
+        moreActionsSummary.trigger("focus");
+      } else close(true);
     }
   });
   window.addEventListener("resize", positionPanel);

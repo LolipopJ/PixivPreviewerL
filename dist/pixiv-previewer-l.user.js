@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             1.8.0-20261028
+// @version             1.8.0-20261107
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0-only
@@ -570,6 +570,9 @@ var retry_default = "<svg\r\n  xmlns=\"http://www.w3.org/2000/svg\"\r\n  viewBox
 // src/icons/stop.svg
 var stop_default = "<svg\r\n  xmlns=\"http://www.w3.org/2000/svg\"\r\n  viewBox=\"0 0 24 24\"\r\n  fill=\"none\"\r\n  stroke=\"currentColor\"\r\n  stroke-width=\"2\"\r\n  stroke-linecap=\"round\"\r\n  stroke-linejoin=\"round\"\r\n  aria-hidden=\"true\"\r\n  focusable=\"false\"\r\n>\r\n  <rect x=\"5\" y=\"5\" width=\"14\" height=\"14\" rx=\"2\" />\r\n</svg>";
 
+// src/icons/trash.svg
+var trash_default = "<svg\n  xmlns=\"http://www.w3.org/2000/svg\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n  aria-hidden=\"true\"\n  focusable=\"false\"\n>\n  <path d=\"M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7\" />\n</svg>";
+
 // src/utils/utils.ts
 const pause = (ms) => {
 	return new Promise((resolve) => setTimeout(resolve, ms));
@@ -1040,6 +1043,19 @@ const retryDownload = (id) => {
 	const record = downloads.find((item) => item.id === id);
 	if (record?.status === "failed" || record?.status === "interrupted") startDownload(record);
 };
+/** 移除指定的失败或中断下载记录 */
+const removeDownload = (id) => {
+	getDownloads();
+	syncFromStorage(true);
+	const record = downloads.find((item) => item.id === id);
+	if (record?.status !== "failed" && record?.status !== "interrupted") {
+		publish(false);
+		return;
+	}
+	removedIds.add(id);
+	downloads = downloads.filter((item) => item.id !== id);
+	publish();
+};
 const clearCompletedDownloads = () => {
 	getDownloads();
 	syncFromStorage(true);
@@ -1191,6 +1207,7 @@ const injectDownloadPanelStyles = () => {
       #${PANEL_ID} {
         --pp-download-bg: #fff; --pp-download-fg: #222; --pp-download-muted: #666;
         --pp-download-border: #ddd; --pp-download-action: #006eb8;
+        --pp-download-danger: #d32f2f; --pp-download-danger-hover: rgba(211, 47, 47, .12);
         position: fixed; z-index: 100000; display: flex; flex-direction: column;
         width: min(380px, calc(100vw - 24px)); max-height: min(480px, calc(100vh - 24px));
         box-sizing: border-box; border: 1px solid var(--pp-download-border);
@@ -1202,10 +1219,26 @@ const injectDownloadPanelStyles = () => {
       #${PANEL_ID} h2 { margin: 0; font-size: 16px; color: inherit; }
       #${PANEL_ID} button { border: 0; background: transparent; color: var(--pp-download-action); cursor: pointer; padding: 8px; font: inherit; }
       #${PANEL_ID} button:disabled { color: var(--pp-download-muted); opacity: .6; cursor: default; }
-      #${PANEL_ID} button:focus-visible, #${PANEL_ID} a:focus-visible { outline: 2px solid var(--pp-download-action); outline-offset: 2px; }
+      #${PANEL_ID} button:focus-visible, #${PANEL_ID} a:focus-visible, #${PANEL_ID} summary:focus-visible { outline: 2px solid var(--pp-download-action); outline-offset: 2px; }
       #${PANEL_ID} .pp-download-summary { margin: 0; padding: 0 16px 4px; color: var(--pp-download-muted); }
-      #${PANEL_ID} .pp-download-actions { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 8px 8px; }
+      #${PANEL_ID} .pp-download-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; padding: 0 8px 8px; }
       #${PANEL_ID} .pp-download-actions button { font-size: 12px; }
+      #${PANEL_ID} .pp-download-menu { position: relative; margin-left: auto; }
+      #${PANEL_ID} .pp-download-menu summary {
+        display: flex; align-items: center; justify-content: center; list-style: none;
+        width: 32px; height: 32px; border-radius: 50%; color: var(--pp-download-action);
+        cursor: pointer; font-size: 24px; line-height: 1;
+      }
+      #${PANEL_ID} .pp-download-menu summary::-webkit-details-marker { display: none; }
+      #${PANEL_ID} .pp-download-menu summary:hover,
+      #${PANEL_ID} .pp-download-menu[open] summary,
+      #${PANEL_ID} .pp-download-menu-content button:not(:disabled):hover { background: rgba(0, 150, 250, .12); }
+      #${PANEL_ID} .pp-download-menu-content {
+        position: absolute; z-index: 1; top: calc(100% + 4px); right: 0;
+        min-width: max-content; padding: 4px; border: 1px solid var(--pp-download-border);
+        border-radius: 8px; background: var(--pp-download-bg); box-shadow: 0 4px 16px #0003;
+      }
+      #${PANEL_ID} .pp-download-menu-content button { display: block; width: 100%; border-radius: 4px; text-align: left; }
       #${PANEL_ID} ul { list-style: none; margin: 0; padding: 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
       #${PANEL_ID} li { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--pp-download-border); }
       #${PANEL_ID} .pp-download-info { flex: 1; min-width: 0; }
@@ -1217,11 +1250,12 @@ const injectDownloadPanelStyles = () => {
         display: inline-flex; align-items: center; justify-content: center;
         flex-shrink: 0; width: 32px; height: 32px; padding: 6px; border-radius: 50%;
       }
+      #${PANEL_ID} .pp-download-icon:not([hidden]) + .pp-download-icon:not([hidden]) { margin-left: -8px; }
       #${PANEL_ID} .pp-download-icon:hover { background: rgba(0, 150, 250, .12); }
       #${PANEL_ID} .pp-download-icon svg { display: block; width: 18px; height: 18px; }
       #${PANEL_ID} .pp-download-icon[hidden] { display: none; }
-      #${PANEL_ID} .pp-download-abort { color: #d32f2f; }
-      #${PANEL_ID} .pp-download-abort:hover { background: rgba(211, 47, 47, .12); }
+      #${PANEL_ID} .pp-download-abort, #${PANEL_ID} .pp-download-remove { color: var(--pp-download-danger); }
+      #${PANEL_ID} .pp-download-abort:hover, #${PANEL_ID} .pp-download-remove:hover { background: var(--pp-download-danger-hover); }
       @keyframes pp-download-bounce { 0%, 100% { transform: translateY(-3px); } 50% { transform: translateY(3px); } }
       @keyframes pp-toolbar-pulse { 50% { opacity: .35; } }
       @media (prefers-reduced-motion: reduce) {
@@ -1229,7 +1263,8 @@ const injectDownloadPanelStyles = () => {
       }
       @media (prefers-color-scheme: dark) {
         #${PANEL_ID} { --pp-download-bg: #222; --pp-download-fg: #eee;
-          --pp-download-muted: #bbb; --pp-download-border: #444; --pp-download-action: #72c5ff; }
+          --pp-download-muted: #bbb; --pp-download-border: #444; --pp-download-action: #72c5ff;
+          --pp-download-danger: #ff6b6b; --pp-download-danger-hover: rgba(255, 107, 107, .16); }
       }
       `, DOWNLOADS_STYLE_ID);
 };
@@ -1266,10 +1301,25 @@ const loadDownloadPanel = (toolbar) => {
 		type: "button",
 		title: "清空已完成的下载记录"
 	}).text("清空已完成记录").on("click", clearCompletedDownloads).appendTo(actions);
+	const retryFailedButton = $("<button>").attr({
+		type: "button",
+		title: "重新下载所有失败的记录"
+	}).text("重试所有失败记录").on("click", () => {
+		for (const record of getDownloads()) if (record.status === "failed") retryDownload(record.id);
+	}).appendTo(actions);
+	const moreActions = $("<details>").addClass("pp-download-menu").appendTo(actions);
+	const moreActionsSummary = $("<summary>").attr({
+		title: "更多操作",
+		"aria-label": "更多操作"
+	}).text("⋯").appendTo(moreActions);
+	const moreActionsContent = $("<div>").addClass("pp-download-menu-content").appendTo(moreActions);
 	const ignoreRetryableButton = $("<button>").attr({
 		type: "button",
 		title: "移除所有失败和中断的下载记录"
-	}).text("忽略所有待重试记录").on("click", ignoreRetryableDownloads).appendTo(actions);
+	}).text("忽略所有待重试记录").on("click", () => {
+		ignoreRetryableDownloads();
+		moreActions.prop("open", false);
+	}).appendTo(moreActionsContent);
 	const list = $("<ul>").attr("aria-label", "图片下载列表").appendTo(panel);
 	const rows = /* @__PURE__ */ new Map();
 	const positionPanel = () => {
@@ -1288,9 +1338,12 @@ const loadDownloadPanel = (toolbar) => {
 		const attention = records.filter((record) => ["failed", "interrupted"].includes(record.status)).length;
 		const completed = records.filter((record) => record.status === "completed").length;
 		clearCompletedButton.prop("disabled", completed === 0);
+		retryFailedButton.prop("disabled", !records.some((record) => record.status === "failed"));
 		ignoreRetryableButton.prop("disabled", attention === 0);
 		const recordIds = new Set(records.map((record) => record.id));
+		let focusedRemovedIndex = -1;
 		for (const [id, row] of rows) if (!recordIds.has(id)) {
+			if (row.item.get(0).contains(document.activeElement)) focusedRemovedIndex = row.item.index();
 			row.item.remove();
 			rows.delete(id);
 		}
@@ -1323,18 +1376,21 @@ const loadDownloadPanel = (toolbar) => {
 				}).appendTo(info);
 				const abort = createIconButton$1(`中止下载 ${record.filename}`, stop_default, "pp-download-abort", () => abortDownload(record.id)).appendTo(item);
 				const retry = createIconButton$1(`重试下载 ${record.filename}`, retry_default, "pp-download-retry", () => retryDownload(record.id)).appendTo(item);
+				const remove = createIconButton$1(`删除记录 ${record.filename}`, trash_default, "pp-download-remove", () => removeDownload(record.id)).appendTo(item);
 				list.prepend(item);
 				row = {
 					item,
 					status,
 					progress,
 					abort,
-					retry
+					retry,
+					remove
 				};
 				rows.set(record.id, row);
 			}
 			const running = record.status === "downloading";
 			const local = running && isDownloadingInThisTab(record.id);
+			const retryable = record.status === "failed" || record.status === "interrupted";
 			const percent = record.total > 0 ? Math.min(100, Math.floor(record.loaded / record.total * 100)) : void 0;
 			const progressText = `${percent === void 0 ? formatBytes(record.loaded) : `${percent}% · ${formatBytes(record.loaded)} / ${formatBytes(record.total)}`}`;
 			const labels = {
@@ -1345,14 +1401,21 @@ const loadDownloadPanel = (toolbar) => {
 			};
 			row.status.text(labels[record.status]);
 			row.abort.prop("hidden", !local);
-			row.retry.prop("hidden", running || record.status === "completed");
+			row.retry.prop("hidden", !retryable);
+			row.remove.prop("hidden", !retryable);
 			row.progress.prop("hidden", !running);
 			if (percent === void 0) row.progress.removeAttr("value");
 			else row.progress.val(percent);
 		}
+		if (focusedRemovedIndex >= 0 && !panel.prop("hidden")) {
+			const items = list.children("li");
+			const targetItem = items.length ? items.eq(Math.min(focusedRemovedIndex, items.length - 1)) : void 0;
+			(targetItem?.find(".pp-download-remove:not([hidden])").get(0) ?? targetItem?.find("a").get(0) ?? closeButton.get(0))?.focus({ preventScroll: true });
+		}
 		positionPanel();
 	};
 	const close = (restoreFocus = false) => {
+		moreActions.prop("open", false);
 		panel.prop("hidden", true);
 		button.attr("aria-expanded", "false");
 		if (restoreFocus) button.trigger("focus");
@@ -1368,12 +1431,17 @@ const loadDownloadPanel = (toolbar) => {
 	closeButton.on("click", () => close(true));
 	document.addEventListener("click", (event) => {
 		if (!event.isTrusted || panel.prop("hidden")) return;
-		if (!panel.get(0).contains(event.target) && !button.get(0).contains(event.target)) close();
+		const path = event.composedPath();
+		if (!path.includes(moreActions.get(0))) moreActions.prop("open", false);
+		if (!path.includes(panel.get(0)) && !path.includes(button.get(0))) close();
 	});
 	document.addEventListener("keydown", (event) => {
 		if (event.key === "Escape" && !panel.prop("hidden")) {
 			event.preventDefault();
-			close(true);
+			if (moreActions.prop("open")) {
+				moreActions.prop("open", false);
+				moreActionsSummary.trigger("focus");
+			} else close(true);
 		}
 	});
 	window.addEventListener("resize", positionPanel);
@@ -1396,9 +1464,6 @@ const hideFavorites = () => {
 
 // src/icons/settings.svg
 var settings_default = "<svg\n  xmlns=\"http://www.w3.org/2000/svg\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n  aria-hidden=\"true\"\n  focusable=\"false\"\n>\n  <path\n    d=\"m9.2 4.6.8-2.6h4l.8 2.6 2.1 1.2 2.6-.6 2 3.5-1.8 2v2.5l1.8 2-2 3.5-2.6-.6-2.1 1.2L14 22h-4l-.8-2.6-2.1-1.2-2.6.6-2-3.5 1.8-2v-2.5l-1.8-2 2-3.5 2.6.6Z\"\n  />\n  <circle cx=\"12\" cy=\"12\" r=\"3\" />\n</svg>";
-
-// src/icons/trash.svg
-var trash_default = "<svg\n  xmlns=\"http://www.w3.org/2000/svg\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n  aria-hidden=\"true\"\n  focusable=\"false\"\n>\n  <path d=\"M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7\" />\n</svg>";
 
 // src/utils/promise.ts
 const execLimitConcurrentPromises = async (promises, limit = 48) => {
@@ -2557,7 +2622,6 @@ const downloadIllust = ({ url, filename, directory, options = {} }) => {
 		...options,
 		onerror: function(resp) {
 			options.onerror?.call(this, resp);
-			window.open(url, "__blank");
 		}
 	}, directory);
 };
