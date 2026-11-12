@@ -43,6 +43,8 @@ export const PREVIEW_PRELOAD_NUM = 5;
  * 预加载命中缓存时图片几乎瞬时就绪，直接显示遮罩会闪一下。
  */
 export const PAGE_LOADING_OVERLAY_DELAY_MS = 120;
+/** 长按进入固定显示预览窗口的时间，毫秒 */
+export const PREVIEW_ONE_HANDED_MODE_HOLD_MS = 300;
 /** 预览缓存最大条目数 */
 export const PREVIEW_CACHE_MAX_SIZE = 100;
 /** 预览图片解码缓存最大条目数，至少覆盖一次预加载窗口 */

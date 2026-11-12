@@ -3,6 +3,7 @@ import {
   PREVIEW_CACHE_MAX_SIZE,
   PREVIEW_DETAILS_MAX_STALE_TIME,
   PREVIEW_IMAGE_CACHE_MAX_SIZE,
+  PREVIEW_ONE_HANDED_MODE_HOLD_MS,
   PREVIEW_PRELOAD_NUM,
   PREVIEW_STYLE_ID,
   PREVIEW_WRAPPER_BORDER_RADIUS,
@@ -48,8 +49,6 @@ import ZipImagePlayer, {
   type ZipImagePlayerOptions,
 } from "../utils/ugoira-player";
 import { createLRUCache, sanitizeIllustFilename } from "../utils/utils";
-
-const ONE_HANDED_MODE_HOLD_MS = 500;
 
 /**
  * 已解码预览图片的 LRU 缓存。同一个作品反复悬停时复用最近解码的位图，
@@ -1439,6 +1438,7 @@ class PreviewedIllust {
     this.#mouseEventsBound = true;
 
     $(document).on("mousemove", this.onMouseMove);
+    document.addEventListener("keydown", this.onPreviewKeyDown);
     document.addEventListener("mousedown", this.onMouseDown, true);
     document.addEventListener("mouseup", this.cancelLongPress, true);
     document.addEventListener("click", this.onDocumentClick, true);
@@ -1452,6 +1452,7 @@ class PreviewedIllust {
     this.#mouseEventsBound = false;
     this.cancelLongPress();
     $(document).off("mousemove", this.onMouseMove);
+    document.removeEventListener("keydown", this.onPreviewKeyDown);
     document.removeEventListener("mousedown", this.onMouseDown, true);
     document.removeEventListener("mouseup", this.cancelLongPress, true);
     document.removeEventListener("click", this.onDocumentClick, true);
@@ -1460,6 +1461,10 @@ class PreviewedIllust {
     window.removeEventListener("blur", this.cancelLongPress);
     window.removeEventListener("wheel", this.preventPageZoom);
   }
+
+  onPreviewKeyDown = (event: KeyboardEvent) => {
+    if (event.key === "Escape" && this.oneHandedMode) this.reset();
+  };
 
   onMouseDown = (event: MouseEvent) => {
     if (event.button !== 0) return;
@@ -1484,7 +1489,7 @@ class PreviewedIllust {
           stroke="rgb(0, 150, 250)" stroke-width="4" stroke-linecap="round"
           pathLength="1" stroke-dasharray="1" stroke-dashoffset="1"
           transform="rotate(-90 16 16)"
-          style="animation: pp-one-handed-progress ${ONE_HANDED_MODE_HOLD_MS}ms linear forwards" />
+          style="animation: pp-one-handed-progress ${PREVIEW_ONE_HANDED_MODE_HOLD_MS}ms linear forwards" />
       </svg>`
     )
       .css({
@@ -1503,7 +1508,7 @@ class PreviewedIllust {
       this.#suppressLongPressClick = true;
       this.previewWrapperElement.css({ "pointer-events": "auto" });
       this.cancelLongPress();
-    }, ONE_HANDED_MODE_HOLD_MS);
+    }, PREVIEW_ONE_HANDED_MODE_HOLD_MS);
   };
 
   cancelLongPress = () => {
