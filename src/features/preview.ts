@@ -642,6 +642,7 @@ class PreviewedIllust {
     // 取消所有绑定的监听事件
     this.unbindPreviewImageEvents();
     this.unbindUgoiraPreviewEvents();
+    this.unbindPreviewMouseEvents();
   }
 
   /** 移除预览容器节点，重置时不立即重建 */
@@ -881,7 +882,6 @@ class PreviewedIllust {
 
     $(document).off("wheel", this.onPreviewImageMouseWheel);
     $(document).off("keydown", this.onPreviewImageKeyDown);
-    this.unbindPreviewMouseEvents();
   }
 
   /** 显示 pageIndex 指向的图片 */
@@ -1291,7 +1291,6 @@ class PreviewedIllust {
 
   unbindUgoiraPreviewEvents() {
     this.#currentUgoiraPlayer?.off("frameLoaded");
-    this.unbindPreviewMouseEvents();
   }
 
   onUgoiraFrameLoaded = (frame: number) => {
