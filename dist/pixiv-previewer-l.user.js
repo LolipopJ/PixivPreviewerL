@@ -1677,7 +1677,7 @@ const request = (options) => {
 };
 const requestWithRetry = async (options) => {
 	const { retryDelay, maxRetryTimes, onRetry, ...restOptions } = options;
-	const maxAttempts = maxRetryTimes === void 0 ? getSettings().requestMaxAttempts ?? Infinity : maxRetryTimes ?? Infinity;
+	const maxAttempts = maxRetryTimes === void 0 ? getSettings().requestMaxAttempts ?? 1e400 : maxRetryTimes ?? 1e400;
 	let response;
 	let attempts = 0;
 	while (attempts < maxAttempts) {
