@@ -100,6 +100,7 @@ const PREVIEW_STYLE_ID = "pp-preview-styles";
 const LOCAL_TAGS_STYLE_ID = "pp-local-tags-styles";
 const DOWNLOADS_STYLE_ID = "pp-downloads-styles";
 const SETTINGS_STYLE_ID = "pp-settings-styles";
+const UPGRADE_STYLE_ID = "pp-upgrade-styles";
 /** R18G 作品原图下载目录 */
 const R18G_DOWNLOAD_DIRECTORY = "r18-g";
 /** R18 标签列表，全小写 */
@@ -167,23 +168,18 @@ function DoLog(level = 3, ...msgOrElement) {
 
 // src/i18n/index.ts
 const Texts = {
-	install_title: "欢迎使用 Pixiv Previewer (LolipopJ Edition) v",
-	upgrade_body: `<div>
-  <p style="line-height: 1.6;">
-    本脚本基于
-    <a style="color: skyblue;" href="https://greasyfork.org/scripts/30766-pixiv-previewer" target="_blank">Pixiv
-      Previewer</a>
-    二次开发，旨在满足开发者自己需要的能力。如果您有不错的想法或建议，请前往原脚本的
-    <a style="color: skyblue;" href="https://greasyfork.org/scripts/30766-pixiv-previewer/feedback"
-      target="_blank">Greasy Fork 反馈页面</a>或开启一个新的
-    <a style="color: skyblue;" href="https://github.com/Ocrosoft/PixivPreviewer/issues" target="_blank">Github 议题</a>！
-  </p>
-  <p style="line-height: 1.6;">
-    如需查看功能更新记录，可前往此脚本的
-    <a style="color: skyblue;" href="https://greasyfork.org/scripts/533844-pixiv-previewer-l/versions" target="_blank"
-      rel="noopener noreferrer">版本历史页面</a>。
-  </p>
-</div>`,
+	install_title: "欢迎使用 Pixiv Previewer L v",
+	upgrade_body: `<p>
+  本脚本基于
+  <a href="https://greasyfork.org/scripts/30766-pixiv-previewer" target="_blank" rel="noopener noreferrer">Pixiv Previewer</a>
+  二次开发，旨在满足开发者自己需要的能力。如果您有不错的想法或建议，请前往原脚本的
+  <a href="https://greasyfork.org/scripts/30766-pixiv-previewer/feedback" target="_blank" rel="noopener noreferrer">Greasy Fork 反馈页面</a>或开启一个新的
+  <a href="https://github.com/Ocrosoft/PixivPreviewer/issues" target="_blank" rel="noopener noreferrer">Github 议题</a>！
+</p>
+<p>
+  如需查看功能更新记录，可前往此脚本的
+  <a href="https://greasyfork.org/scripts/533844-pixiv-previewer-l/versions" target="_blank" rel="noopener noreferrer">版本历史页面</a>。
+</p>`,
 	setting_language: "语言",
 	setting_preview: "预览",
 	setting_animePreview: "动图预览",
@@ -444,8 +440,7 @@ const SETTING_FIELD_MAP = {
 		label: Texts.settings_field_previewDelay_label,
 		description: Texts.settings_field_previewDelay_desc,
 		unit: Texts.settings_unit_ms,
-		min: 0,
-		step: "any"
+		min: 0
 	},
 	linkBlank: {
 		key: "linkBlank",
@@ -462,8 +457,7 @@ const SETTING_FIELD_MAP = {
 		control: "number",
 		label: Texts.settings_field_previewHoldMs_label,
 		description: Texts.settings_field_previewHoldMs_desc,
-		unit: Texts.settings_unit_ms,
-		step: "any"
+		unit: Texts.settings_unit_ms
 	},
 	previewLoadingOverlayDelayMs: {
 		key: "previewLoadingOverlayDelayMs",
@@ -473,8 +467,7 @@ const SETTING_FIELD_MAP = {
 		label: Texts.settings_field_previewLoadingOverlayDelayMs_label,
 		description: Texts.settings_field_previewLoadingOverlayDelayMs_desc,
 		unit: Texts.settings_unit_ms,
-		min: 0,
-		step: "any"
+		min: 0
 	},
 	previewDownloadNoticeMs: {
 		key: "previewDownloadNoticeMs",
@@ -485,8 +478,7 @@ const SETTING_FIELD_MAP = {
 		description: Texts.settings_field_previewDownloadNoticeMs_desc,
 		unit: Texts.settings_unit_s,
 		scale: 1e3,
-		min: 0,
-		step: "any"
+		min: 0
 	},
 	pageCount: {
 		key: "pageCount",
@@ -497,8 +489,7 @@ const SETTING_FIELD_MAP = {
 		description: Texts.settings_field_pageCount_desc,
 		unit: Texts.settings_unit_pages,
 		min: 1,
-		integer: true,
-		step: "1"
+		integer: true
 	},
 	favFilter: {
 		key: "favFilter",
@@ -509,8 +500,7 @@ const SETTING_FIELD_MAP = {
 		description: Texts.settings_field_favFilter_desc,
 		unit: Texts.settings_unit_bookmarks,
 		min: 0,
-		integer: true,
-		step: "1"
+		integer: true
 	},
 	orderType: {
 		key: "orderType",
@@ -584,8 +574,7 @@ const SETTING_FIELD_MAP = {
 		label: Texts.settings_field_localTagPopoverShowDelayMs_label,
 		description: Texts.settings_field_localTagPopoverShowDelayMs_desc,
 		unit: Texts.settings_unit_ms,
-		min: 0,
-		step: "any"
+		min: 0
 	},
 	localTagPopoverHideDelayMs: {
 		key: "localTagPopoverHideDelayMs",
@@ -595,8 +584,7 @@ const SETTING_FIELD_MAP = {
 		label: Texts.settings_field_localTagPopoverHideDelayMs_label,
 		description: Texts.settings_field_localTagPopoverHideDelayMs_desc,
 		unit: Texts.settings_unit_ms,
-		min: 0,
-		step: "any"
+		min: 0
 	},
 	previewPreloadCount: {
 		key: "previewPreloadCount",
@@ -607,8 +595,7 @@ const SETTING_FIELD_MAP = {
 		description: Texts.settings_field_previewPreloadCount_desc,
 		unit: Texts.settings_unit_images,
 		min: 1,
-		integer: true,
-		step: "1"
+		integer: true
 	},
 	previewCacheMaxEntries: {
 		key: "previewCacheMaxEntries",
@@ -619,8 +606,7 @@ const SETTING_FIELD_MAP = {
 		description: Texts.settings_field_previewCacheMaxEntries_desc,
 		unit: Texts.settings_unit_entries,
 		min: 1,
-		integer: true,
-		step: "1"
+		integer: true
 	},
 	previewDetailsMaxStaleMs: {
 		key: "previewDetailsMaxStaleMs",
@@ -630,8 +616,7 @@ const SETTING_FIELD_MAP = {
 		label: Texts.settings_field_previewDetailsMaxStaleMs_label,
 		description: Texts.settings_field_previewDetailsMaxStaleMs_desc,
 		unit: Texts.settings_unit_hour,
-		scale: 36e5,
-		step: "any"
+		scale: 36e5
 	},
 	illustrationMutableCacheTtlMs: {
 		key: "illustrationMutableCacheTtlMs",
@@ -641,8 +626,7 @@ const SETTING_FIELD_MAP = {
 		label: Texts.settings_field_illustrationMutableCacheTtlMs_label,
 		description: Texts.settings_field_illustrationMutableCacheTtlMs_desc,
 		unit: Texts.settings_unit_hour,
-		scale: 36e5,
-		step: "any"
+		scale: 36e5
 	},
 	illustrationStaticCacheTtlMs: {
 		key: "illustrationStaticCacheTtlMs",
@@ -652,8 +636,7 @@ const SETTING_FIELD_MAP = {
 		label: Texts.settings_field_illustrationStaticCacheTtlMs_label,
 		description: Texts.settings_field_illustrationStaticCacheTtlMs_desc,
 		unit: Texts.settings_unit_day,
-		scale: 864e5,
-		step: "any"
+		scale: 864e5
 	},
 	illustrationCacheMaxEntries: {
 		key: "illustrationCacheMaxEntries",
@@ -664,8 +647,7 @@ const SETTING_FIELD_MAP = {
 		description: Texts.settings_field_illustrationCacheMaxEntries_desc,
 		unit: Texts.settings_unit_entries,
 		min: 1,
-		integer: true,
-		step: "1"
+		integer: true
 	},
 	newIllustrationNoCacheMs: {
 		key: "newIllustrationNoCacheMs",
@@ -675,8 +657,7 @@ const SETTING_FIELD_MAP = {
 		label: Texts.settings_field_newIllustrationNoCacheMs_label,
 		description: Texts.settings_field_newIllustrationNoCacheMs_desc,
 		unit: Texts.settings_unit_hour,
-		scale: 36e5,
-		step: "any"
+		scale: 36e5
 	},
 	illustPagesCacheTtlMs: {
 		key: "illustPagesCacheTtlMs",
@@ -686,8 +667,7 @@ const SETTING_FIELD_MAP = {
 		label: Texts.settings_field_illustPagesCacheTtlMs_label,
 		description: Texts.settings_field_illustPagesCacheTtlMs_desc,
 		unit: Texts.settings_unit_day,
-		scale: 864e5,
-		step: "any"
+		scale: 864e5
 	},
 	illustPagesCacheMaxEntries: {
 		key: "illustPagesCacheMaxEntries",
@@ -698,8 +678,7 @@ const SETTING_FIELD_MAP = {
 		description: Texts.settings_field_illustPagesCacheMaxEntries_desc,
 		unit: Texts.settings_unit_entries,
 		min: 1,
-		integer: true,
-		step: "1"
+		integer: true
 	},
 	userIllustrationsCacheTtlMs: {
 		key: "userIllustrationsCacheTtlMs",
@@ -709,8 +688,7 @@ const SETTING_FIELD_MAP = {
 		label: Texts.settings_field_userIllustrationsCacheTtlMs_label,
 		description: Texts.settings_field_userIllustrationsCacheTtlMs_desc,
 		unit: Texts.settings_unit_hour,
-		scale: 36e5,
-		step: "any"
+		scale: 36e5
 	},
 	ugoiraCacheTtlMs: {
 		key: "ugoiraCacheTtlMs",
@@ -720,8 +698,7 @@ const SETTING_FIELD_MAP = {
 		label: Texts.settings_field_ugoiraCacheTtlMs_label,
 		description: Texts.settings_field_ugoiraCacheTtlMs_desc,
 		unit: Texts.settings_unit_day,
-		scale: 864e5,
-		step: "any"
+		scale: 864e5
 	},
 	ugoiraCacheMaxEntries: {
 		key: "ugoiraCacheMaxEntries",
@@ -732,8 +709,7 @@ const SETTING_FIELD_MAP = {
 		description: Texts.settings_field_ugoiraCacheMaxEntries_desc,
 		unit: Texts.settings_unit_works,
 		min: 1,
-		integer: true,
-		step: "1"
+		integer: true
 	},
 	ugoiraCacheMaxBytes: {
 		key: "ugoiraCacheMaxBytes",
@@ -744,9 +720,7 @@ const SETTING_FIELD_MAP = {
 		description: Texts.settings_field_ugoiraCacheMaxBytes_desc,
 		unit: Texts.settings_unit_mib,
 		scale: 1048576,
-		min: 1,
-		integer: true,
-		step: "any"
+		integer: true
 	},
 	localTagMetadataCacheTtlMs: {
 		key: "localTagMetadataCacheTtlMs",
@@ -756,8 +730,7 @@ const SETTING_FIELD_MAP = {
 		label: Texts.settings_field_localTagMetadataCacheTtlMs_label,
 		description: Texts.settings_field_localTagMetadataCacheTtlMs_desc,
 		unit: Texts.settings_unit_day,
-		scale: 864e5,
-		step: "any"
+		scale: 864e5
 	},
 	tagTranslationCacheTtlMs: {
 		key: "tagTranslationCacheTtlMs",
@@ -767,8 +740,7 @@ const SETTING_FIELD_MAP = {
 		label: Texts.settings_field_tagTranslationCacheTtlMs_label,
 		description: Texts.settings_field_tagTranslationCacheTtlMs_desc,
 		unit: Texts.settings_unit_day,
-		scale: 864e5,
-		step: "any"
+		scale: 864e5
 	},
 	tagTranslationCacheMaxEntries: {
 		key: "tagTranslationCacheMaxEntries",
@@ -779,8 +751,7 @@ const SETTING_FIELD_MAP = {
 		description: Texts.settings_field_tagTranslationCacheMaxEntries_desc,
 		unit: Texts.settings_unit_entries,
 		min: 2,
-		integer: true,
-		step: "1"
+		integer: true
 	},
 	completedDownloadsMaxEntries: {
 		key: "completedDownloadsMaxEntries",
@@ -791,8 +762,7 @@ const SETTING_FIELD_MAP = {
 		description: Texts.settings_field_completedDownloadsMaxEntries_desc,
 		unit: Texts.settings_unit_entries,
 		min: 1,
-		integer: true,
-		step: "1"
+		integer: true
 	},
 	retryableDownloadsMaxEntries: {
 		key: "retryableDownloadsMaxEntries",
@@ -803,8 +773,7 @@ const SETTING_FIELD_MAP = {
 		description: Texts.settings_field_retryableDownloadsMaxEntries_desc,
 		unit: Texts.settings_unit_entries,
 		min: 1,
-		integer: true,
-		step: "1"
+		integer: true
 	},
 	downloadProgressPersistMs: {
 		key: "downloadProgressPersistMs",
@@ -814,8 +783,7 @@ const SETTING_FIELD_MAP = {
 		label: Texts.settings_field_downloadProgressPersistMs_label,
 		description: Texts.settings_field_downloadProgressPersistMs_desc,
 		unit: Texts.settings_unit_s,
-		scale: 1e3,
-		step: "any"
+		scale: 1e3
 	},
 	downloadHeartbeatMs: {
 		key: "downloadHeartbeatMs",
@@ -825,8 +793,7 @@ const SETTING_FIELD_MAP = {
 		label: Texts.settings_field_downloadHeartbeatMs_label,
 		description: Texts.settings_field_downloadHeartbeatMs_desc,
 		unit: Texts.settings_unit_s,
-		scale: 1e3,
-		step: "any"
+		scale: 1e3
 	},
 	downloadOwnerTimeoutMs: {
 		key: "downloadOwnerTimeoutMs",
@@ -836,8 +803,7 @@ const SETTING_FIELD_MAP = {
 		label: Texts.settings_field_downloadOwnerTimeoutMs_label,
 		description: Texts.settings_field_downloadOwnerTimeoutMs_desc,
 		unit: Texts.settings_unit_s,
-		scale: 1e3,
-		step: "any"
+		scale: 1e3
 	},
 	requestRetryIntervalMs: {
 		key: "requestRetryIntervalMs",
@@ -848,8 +814,7 @@ const SETTING_FIELD_MAP = {
 		description: Texts.settings_field_requestRetryIntervalMs_desc,
 		unit: Texts.settings_unit_s,
 		scale: 1e3,
-		min: 1e3,
-		step: "any"
+		min: 1e3
 	},
 	requestMaxAttempts: {
 		key: "requestMaxAttempts",
@@ -862,8 +827,7 @@ const SETTING_FIELD_MAP = {
 		min: 1,
 		integer: true,
 		allowNullUnlimited: true,
-		placeholder: Texts.settings_field_requestMaxAttempts_placeholder,
-		step: "1"
+		placeholder: Texts.settings_field_requestMaxAttempts_placeholder
 	},
 	tagRequestTimeoutMs: {
 		key: "tagRequestTimeoutMs",
@@ -873,8 +837,7 @@ const SETTING_FIELD_MAP = {
 		label: Texts.settings_field_tagRequestTimeoutMs_label,
 		description: Texts.settings_field_tagRequestTimeoutMs_desc,
 		unit: Texts.settings_unit_s,
-		scale: 1e3,
-		step: "any"
+		scale: 1e3
 	},
 	ugoiraChunkBytes: {
 		key: "ugoiraChunkBytes",
@@ -885,8 +848,7 @@ const SETTING_FIELD_MAP = {
 		description: Texts.settings_field_ugoiraChunkBytes_desc,
 		unit: Texts.settings_unit_bytes,
 		min: 65536,
-		integer: true,
-		step: "1"
+		integer: true
 	},
 	ugoiraTrailerBytes: {
 		key: "ugoiraTrailerBytes",
@@ -897,8 +859,7 @@ const SETTING_FIELD_MAP = {
 		description: Texts.settings_field_ugoiraTrailerBytes_desc,
 		unit: Texts.settings_unit_bytes,
 		min: 22,
-		integer: true,
-		step: "1"
+		integer: true
 	},
 	databaseOpenTimeoutMs: {
 		key: "databaseOpenTimeoutMs",
@@ -908,8 +869,7 @@ const SETTING_FIELD_MAP = {
 		label: Texts.settings_field_databaseOpenTimeoutMs_label,
 		description: Texts.settings_field_databaseOpenTimeoutMs_desc,
 		unit: Texts.settings_unit_s,
-		scale: 1e3,
-		step: "any"
+		scale: 1e3
 	},
 	domProbeIntervalMs: {
 		key: "domProbeIntervalMs",
@@ -918,8 +878,7 @@ const SETTING_FIELD_MAP = {
 		control: "number",
 		label: Texts.settings_field_domProbeIntervalMs_label,
 		description: Texts.settings_field_domProbeIntervalMs_desc,
-		unit: Texts.settings_unit_ms,
-		step: "any"
+		unit: Texts.settings_unit_ms
 	},
 	domProbeMaxAttempts: {
 		key: "domProbeMaxAttempts",
@@ -930,8 +889,7 @@ const SETTING_FIELD_MAP = {
 		description: Texts.settings_field_domProbeMaxAttempts_desc,
 		unit: Texts.settings_unit_times,
 		min: 1,
-		integer: true,
-		step: "1"
+		integer: true
 	},
 	toolbarProbeIntervalMs: {
 		key: "toolbarProbeIntervalMs",
@@ -940,8 +898,7 @@ const SETTING_FIELD_MAP = {
 		control: "number",
 		label: Texts.settings_field_toolbarProbeIntervalMs_label,
 		description: Texts.settings_field_toolbarProbeIntervalMs_desc,
-		unit: Texts.settings_unit_ms,
-		step: "any"
+		unit: Texts.settings_unit_ms
 	},
 	toolbarProbeMaxAttempts: {
 		key: "toolbarProbeMaxAttempts",
@@ -952,8 +909,7 @@ const SETTING_FIELD_MAP = {
 		description: Texts.settings_field_toolbarProbeMaxAttempts_desc,
 		unit: Texts.settings_unit_times,
 		min: 1,
-		integer: true,
-		step: "1"
+		integer: true
 	},
 	localTagRenderDebounceMs: {
 		key: "localTagRenderDebounceMs",
@@ -963,8 +919,7 @@ const SETTING_FIELD_MAP = {
 		label: Texts.settings_field_localTagRenderDebounceMs_label,
 		description: Texts.settings_field_localTagRenderDebounceMs_desc,
 		unit: Texts.settings_unit_ms,
-		min: 0,
-		step: "any"
+		min: 0
 	},
 	localTagPersistDelayMs: {
 		key: "localTagPersistDelayMs",
@@ -974,8 +929,7 @@ const SETTING_FIELD_MAP = {
 		label: Texts.settings_field_localTagPersistDelayMs_label,
 		description: Texts.settings_field_localTagPersistDelayMs_desc,
 		unit: Texts.settings_unit_ms,
-		min: 0,
-		step: "any"
+		min: 0
 	},
 	cacheCleanupIdleTimeoutMs: {
 		key: "cacheCleanupIdleTimeoutMs",
@@ -985,8 +939,7 @@ const SETTING_FIELD_MAP = {
 		label: Texts.settings_field_cacheCleanupIdleTimeoutMs_label,
 		description: Texts.settings_field_cacheCleanupIdleTimeoutMs_desc,
 		unit: Texts.settings_unit_s,
-		scale: 1e3,
-		step: "any"
+		scale: 1e3
 	}
 };
 const SETTING_FIELDS = Object.values(SETTING_FIELD_MAP);
@@ -1101,9 +1054,9 @@ const notifyListeners = (next, prev, source) => {
 const ensureSyncListener = () => {
 	if (syncListenerRegistered) return;
 	syncListenerRegistered = true;
-	GM_addValueChangeListener(SETTINGS_KEY, (_key, _oldValue, newValue, remote) => {
+	GM_addValueChangeListener(SETTINGS_KEY, (_key, oldValue, newValue, remote) => {
 		if (!remote) return;
-		const prev = activeSettings ?? normalizeStoredSettings(GM_getValue(SETTINGS_KEY));
+		const prev = activeSettings ?? normalizeStoredSettings(oldValue);
 		const next = normalizeStoredSettings(newValue);
 		activeSettings = next;
 		notifyListeners(next, prev, "remote");
@@ -3816,25 +3769,27 @@ let rerunPruneRequested = false;
 const whenIdle = (task) => {
 	requestIdleCallback(task, { timeout: getSettings().cacheCleanupIdleTimeoutMs });
 };
-const runCachePrune = async () => {
+const runCachePrune = () => {
 	if (activePrunePromise) {
 		rerunPruneRequested = true;
 		return activePrunePromise;
 	}
 	activePrunePromise = (async () => {
-		do {
-			rerunPruneRequested = false;
-			await new Promise((resolve) => whenIdle(resolve));
-			try {
-				pruneTagTranslationCache();
-				await Promise.all([pruneIllustrationCaches(), pruneUgoiraFrameCache()]);
-			} catch (error) {
-				iLog.w("Failed to prune caches:", error);
-			}
-		} while (rerunPruneRequested);
-	})().finally(() => {
-		activePrunePromise = null;
-	});
+		try {
+			do {
+				rerunPruneRequested = false;
+				await new Promise((resolve) => whenIdle(resolve));
+				try {
+					pruneTagTranslationCache();
+					await Promise.all([pruneIllustrationCaches(), pruneUgoiraFrameCache()]);
+				} catch (error) {
+					iLog.w("Failed to prune caches:", error);
+				}
+			} while (rerunPruneRequested);
+		} finally {
+			activePrunePromise = null;
+		}
+	})();
 	return activePrunePromise;
 };
 /**
@@ -4427,6 +4382,10 @@ const loadIllustPreview = () => {
 		/** 获取动图元数据并展示动图预览（命中缓存时直接展示） */
 		const previewAsUgoira = ({ target, illustId, illustDetailsPromise }) => {
 			const showUgoira = (metadata) => {
+				if (!getSettings().enableAnimePreview) {
+					previewedIllust.dismissLoading(illustId);
+					return;
+				}
 				if (!previewedIllust.isActiveIllust(illustId)) return;
 				previewedIllust.setUgoira({
 					illustId,
@@ -4446,7 +4405,8 @@ const loadIllustPreview = () => {
 			}
 			if (!previewedIllust.isActiveIllust(illustId)) previewedIllust.showLoading({
 				illustId,
-				illustElement: target
+				illustElement: target,
+				isUgoira: true
 			});
 			getUgoiraMetaRequest = $.ajax(getUgoiraMetadataRequestUrl(illustId), {
 				method: "GET",
@@ -4778,6 +4738,8 @@ var PreviewedIllust = class {
 	#currentIllustSize = [0, 0];
 	/** 当前预览的动图播放器 */
 	#currentUgoiraPlayer = null;
+	/** 当前预览是否属于动图（含等待元数据与帧缓存期间） */
+	#isUgoira = false;
 	/** 预览窗口是否已由 `showLoading` 提前展示、尚未填入内容 */
 	#isPlaceholder = false;
 	/** 预览窗口的鼠标事件是否已绑定，避免重复绑定 */
@@ -4794,6 +4756,7 @@ var PreviewedIllust = class {
 		this.illustDetails = null;
 		this.illustElement = $();
 		this.illustLoaded = false;
+		this.#isUgoira = false;
 		this.#isPlaceholder = false;
 		this.regularUrls = [];
 		this.originalUrls = [];
@@ -4886,12 +4849,13 @@ var PreviewedIllust = class {
 	* 缓存未命中时先开窗再发请求，避免窗口要等到数据全部就绪才出现。
 	* 若当前窗口已在展示同一个作品，则不做任何处理，避免反复重置打断已显示的内容。
 	*/
-	showLoading({ illustId, illustElement }) {
+	showLoading({ illustId, illustElement, isUgoira = false }) {
 		if (this.isActiveIllust(illustId)) return;
 		this.reset();
 		this.initPreviewWrapper();
 		this.illustId = illustId;
 		this.illustElement = illustElement;
+		this.#isUgoira = isUgoira;
 		this.#isPlaceholder = true;
 		this.bindPreviewMouseEvents();
 	}
@@ -4913,7 +4877,7 @@ var PreviewedIllust = class {
 	/** 当前是否正在加载或展示动图预览 */
 	isUgoiraActive() {
 		if (!this.illustId) return false;
-		if (this.#currentUgoiraPlayer || this.previewImageElement.is("canvas")) return true;
+		if (this.#isUgoira || this.#currentUgoiraPlayer || this.previewImageElement.is("canvas")) return true;
 		return Boolean(this.illustDetails && (checkIsUgoira(this.illustDetails.type) || checkIsUgoiraUsingTags(this.illustDetails.tags)));
 	}
 	/**
@@ -5147,6 +5111,7 @@ var PreviewedIllust = class {
 		const isSwitchingFromImage = this.illustId === illustId && !this.#isPlaceholder && this.previewImageElement.length > 0;
 		this.#prepareWrapper(illustId);
 		this.illustId = illustId;
+		this.#isUgoira = true;
 		if (illustrationDetails) this.illustDetails = illustrationDetails;
 		this.illustElement = illustElement;
 		illustElement.siblings("svg").css({ "pointer-events": "none" });
@@ -5175,6 +5140,10 @@ var PreviewedIllust = class {
 	*/
 	async loadUgoiraPlayer({ illustId, src, mime_type, frames }) {
 		const cached = await getCachedUgoiraFrames(illustId).catch(() => null);
+		if (!getSettings().enableAnimePreview) {
+			this.dismissLoading(illustId);
+			return;
+		}
 		if (this.illustId !== illustId || this.#currentUgoiraPlayer) return;
 		const decodedFrames = [];
 		let decodedFrameCount = 0;
@@ -5954,6 +5923,11 @@ const syncControlValue = (descriptor, input, value) => {
 	else input.val(String(value));
 };
 let fieldControls = /* @__PURE__ */ new Map();
+const DOWNLOAD_TIMING_KEYS = [
+	"downloadProgressPersistMs",
+	"downloadHeartbeatMs",
+	"downloadOwnerTimeoutMs"
+];
 const clearFieldError = (key) => {
 	const control = fieldControls.get(key);
 	if (!control) return;
@@ -6036,6 +6010,7 @@ const openSettingsPanel = () => {
 		for (const descriptor of fields) {
 			const created = createFieldRow(descriptor, session, (key) => {
 				clearFieldError(key);
+				if (DOWNLOAD_TIMING_KEYS.includes(key)) for (const siblingKey of DOWNLOAD_TIMING_KEYS) clearFieldError(siblingKey);
 				clearStatus();
 				syncFieldVisualState(key);
 				syncAdvancedModifiedState();
@@ -6716,19 +6691,115 @@ const registerSettingsMenu = () => {
 	return settings;
 };
 const ShowUpgradeMessage = () => {
-	$("#pp-bg").remove();
-	const bg = $("<div id=\"pp-bg\"></div>").css({
-		position: "fixed",
-		"z-index": 9999,
-		"background-color": "rgba(0, 0, 0, 0.8)",
-		inset: "0px"
-	});
-	$("body").append(bg);
-	bg.get(0).innerHTML = "<img id=\"pps-close\" src=\"https://pp-1252089172.cos.ap-chengdu.myqcloud.com/Close.png\"style=\"position: absolute; right: 35px; top: 20px; width: 32px; height: 32px; cursor: pointer;\"><div style=\"position: absolute; width: 40%; left: 30%; top: 25%; font-size: 25px; font-weight: bold; text-align: center; color: white;\">" + Texts.install_title + g_version + "</div><br><div style=\"position: absolute; left: 50%; top: 35%; font-size: 20px; color: white; transform: translate(-50%,0); height: 50%; overflow: auto;\">" + Texts.upgrade_body + "</div>";
-	$("#pps-close").on("click", () => {
+	const panelId = "pp-upgrade-panel";
+	const headingId = "pp-upgrade-heading";
+	$(`#${panelId}`).remove();
+	injectStyle(`
+      #${panelId} {
+        --pp-upgrade-bg: #fff;
+        --pp-upgrade-fg: #222;
+        --pp-upgrade-border: #ddd;
+        --pp-upgrade-action: #006eb8;
+        position: fixed;
+        right: 20px;
+        bottom: 20px;
+        z-index: 100001;
+        display: flex;
+        flex-direction: column;
+        width: min(420px, calc(100vw - 24px));
+        max-height: min(480px, calc(100vh - 24px));
+        box-sizing: border-box;
+        border: 1px solid var(--pp-upgrade-border);
+        border-radius: 12px;
+        background: var(--pp-upgrade-bg);
+        color: var(--pp-upgrade-fg);
+        box-shadow: 0 12px 36px rgba(0, 0, 0, .24);
+        font: 14px/1.6 sans-serif;
+      }
+      #${panelId} *, #${panelId} *::before, #${panelId} *::after {
+        box-sizing: border-box;
+      }
+      #${panelId} header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--pp-upgrade-border);
+        flex-shrink: 0;
+      }
+      #${panelId} h2 {
+        margin: 0;
+        font-size: 16px;
+        line-height: 1.4;
+        color: inherit;
+      }
+      #${panelId} .pp-upgrade-body {
+        padding: 12px 16px;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      #${panelId} p {
+        margin: 0;
+      }
+      #${panelId} a {
+        color: var(--pp-upgrade-action);
+        text-decoration: none;
+      }
+      #${panelId} a:hover {
+        text-decoration: underline;
+      }
+      #${panelId} button {
+        border: 1px solid var(--pp-upgrade-border);
+        border-radius: 6px;
+        padding: 4px 8px;
+        background: var(--pp-upgrade-bg);
+        color: var(--pp-upgrade-fg);
+        cursor: pointer;
+        font: 13px/1.45 sans-serif;
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+      #${panelId} button:hover {
+        border-color: var(--pp-upgrade-action);
+      }
+      #${panelId} button:focus-visible,
+      #${panelId} a:focus-visible {
+        outline: 2px solid var(--pp-upgrade-action);
+        outline-offset: 2px;
+      }
+      @media (prefers-color-scheme: dark) {
+        #${panelId} {
+          --pp-upgrade-bg: #222;
+          --pp-upgrade-fg: #eee;
+          --pp-upgrade-border: #444;
+          --pp-upgrade-action: #4ea8de;
+        }
+      }
+    `, UPGRADE_STYLE_ID);
+	const close = () => {
 		updateInternalVersion(g_version);
-		$("#pp-bg").remove();
-	});
+		panel.remove();
+	};
+	const closeButton = $("<button>").attr({
+		type: "button",
+		"aria-label": Texts.settings_close
+	}).text(Texts.settings_close).on("click", close);
+	const panel = $("<div>").attr({
+		id: panelId,
+		role: "dialog",
+		"aria-modal": "false",
+		"aria-labelledby": headingId
+	}).append($("<header>").append($("<h2>").attr("id", headingId).text(`${Texts.install_title}${g_version}`), closeButton), $("<div>").addClass("pp-upgrade-body").html(Texts.upgrade_body)).on("keydown", (event) => {
+		if (event.key === "Escape") {
+			event.preventDefault();
+			event.stopPropagation();
+			close();
+		}
+	}).appendTo("body");
 };
 /** 向工具栏追加按钮。按钮可能已由上一次初始化创建，因此先确认其不存在 */
 const appendToolbarButton = (toolBar, { id, title, icon, onClick }) => {

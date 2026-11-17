@@ -6,6 +6,7 @@ import {
   SORT_NEXT_PAGE_BUTTON_ID,
   SORT_NEXT_PAGE_EVENT_NAME,
   TOOLBAR_ID,
+  UPGRADE_STYLE_ID,
 } from "./constants";
 import { deleteCachedIllustrationDetails } from "./databases";
 import { LogLevel, PageType } from "./enums";
@@ -32,7 +33,7 @@ import {
   warmUpCacheDatabase,
 } from "./services/cache";
 import type { GlobalSettings } from "./types";
-import { onDomReady, waitFor } from "./utils/dom";
+import { injectStyle, onDomReady, waitFor } from "./utils/dom";
 import { DoLog, iLog } from "./utils/logger";
 import {
   getSettings,
@@ -264,27 +265,137 @@ const registerSettingsMenu = () => {
 };
 
 const ShowUpgradeMessage = () => {
-  $("#pp-bg").remove();
+  const panelId = "pp-upgrade-panel";
+  const headingId = "pp-upgrade-heading";
+  $(`#${panelId}`).remove();
 
-  const bg = $('<div id="pp-bg"></div>').css({
-    position: "fixed",
-    "z-index": 9999,
-    "background-color": "rgba(0, 0, 0, 0.8)",
-    inset: "0px",
-  });
-  $("body").append(bg);
-  bg.get(0)!.innerHTML =
-    '<img id="pps-close" src="https://pp-1252089172.cos.ap-chengdu.myqcloud.com/Close.png"style="position: absolute; right: 35px; top: 20px; width: 32px; height: 32px; cursor: pointer;"><div style="position: absolute; width: 40%; left: 30%; top: 25%; font-size: 25px; font-weight: bold; text-align: center; color: white;">' +
-    Texts.install_title +
-    g_version +
-    '</div><br><div style="position: absolute; left: 50%; top: 35%; font-size: 20px; color: white; transform: translate(-50%,0); height: 50%; overflow: auto;">' +
-    Texts.upgrade_body +
-    "</div>";
+  injectStyle(
+    `
+      #${panelId} {
+        --pp-upgrade-bg: #fff;
+        --pp-upgrade-fg: #222;
+        --pp-upgrade-border: #ddd;
+        --pp-upgrade-action: #006eb8;
+        position: fixed;
+        right: 20px;
+        bottom: 20px;
+        z-index: 100001;
+        display: flex;
+        flex-direction: column;
+        width: min(420px, calc(100vw - 24px));
+        max-height: min(480px, calc(100vh - 24px));
+        box-sizing: border-box;
+        border: 1px solid var(--pp-upgrade-border);
+        border-radius: 12px;
+        background: var(--pp-upgrade-bg);
+        color: var(--pp-upgrade-fg);
+        box-shadow: 0 12px 36px rgba(0, 0, 0, .24);
+        font: 14px/1.6 sans-serif;
+      }
+      #${panelId} *, #${panelId} *::before, #${panelId} *::after {
+        box-sizing: border-box;
+      }
+      #${panelId} header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--pp-upgrade-border);
+        flex-shrink: 0;
+      }
+      #${panelId} h2 {
+        margin: 0;
+        font-size: 16px;
+        line-height: 1.4;
+        color: inherit;
+      }
+      #${panelId} .pp-upgrade-body {
+        padding: 12px 16px;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      #${panelId} p {
+        margin: 0;
+      }
+      #${panelId} a {
+        color: var(--pp-upgrade-action);
+        text-decoration: none;
+      }
+      #${panelId} a:hover {
+        text-decoration: underline;
+      }
+      #${panelId} button {
+        border: 1px solid var(--pp-upgrade-border);
+        border-radius: 6px;
+        padding: 4px 8px;
+        background: var(--pp-upgrade-bg);
+        color: var(--pp-upgrade-fg);
+        cursor: pointer;
+        font: 13px/1.45 sans-serif;
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+      #${panelId} button:hover {
+        border-color: var(--pp-upgrade-action);
+      }
+      #${panelId} button:focus-visible,
+      #${panelId} a:focus-visible {
+        outline: 2px solid var(--pp-upgrade-action);
+        outline-offset: 2px;
+      }
+      @media (prefers-color-scheme: dark) {
+        #${panelId} {
+          --pp-upgrade-bg: #222;
+          --pp-upgrade-fg: #eee;
+          --pp-upgrade-border: #444;
+          --pp-upgrade-action: #4ea8de;
+        }
+      }
+    `,
+    UPGRADE_STYLE_ID
+  );
 
-  $("#pps-close").on("click", () => {
+  const close = () => {
     updateInternalVersion(g_version);
-    $("#pp-bg").remove();
-  });
+    panel.remove();
+  };
+
+  const closeButton = $("<button>")
+    .attr({
+      type: "button",
+      "aria-label": Texts.settings_close,
+    })
+    .text(Texts.settings_close)
+    .on("click", close);
+
+  const panel = $("<div>")
+    .attr({
+      id: panelId,
+      role: "dialog",
+      "aria-modal": "false",
+      "aria-labelledby": headingId,
+    })
+    .append(
+      $("<header>").append(
+        $("<h2>")
+          .attr("id", headingId)
+          .text(`${Texts.install_title}${g_version}`),
+        closeButton
+      ),
+      $("<div>").addClass("pp-upgrade-body").html(Texts.upgrade_body)
+    )
+    .on("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        close();
+      }
+    })
+    .appendTo("body");
 };
 //#endregion
 

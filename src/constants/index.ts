@@ -97,6 +97,7 @@ export const PREVIEW_STYLE_ID = "pp-preview-styles";
 export const LOCAL_TAGS_STYLE_ID = "pp-local-tags-styles";
 export const DOWNLOADS_STYLE_ID = "pp-downloads-styles";
 export const SETTINGS_STYLE_ID = "pp-settings-styles";
+export const UPGRADE_STYLE_ID = "pp-upgrade-styles";
 
 /** R18 作品原图下载目录 */
 export const R18_DOWNLOAD_DIRECTORY = "r18";
