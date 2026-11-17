@@ -1,14 +1,11 @@
 import {
-  ILLUSTRATION_DETAILS_CACHE_TIME,
-  USER_ILLUSTRATIONS_CACHE_TIME,
-} from "../constants";
-import {
   cacheIllustrationDetails,
   getCachedIllustrationDetails,
 } from "../databases";
 import type { IllustrationDetails } from "../types";
 import { iLog } from "../utils/logger";
 import { createPendingPromiseCache } from "../utils/promise";
+import { getSettings } from "../utils/setting";
 import { convertObjectKeysFromSnakeToCamel } from "../utils/utils";
 import request, {
   type PixivStandardResponse,
@@ -65,10 +62,11 @@ export const getIllustrationDetailsWithCache = (
   // 去重键必须包含参数：预览（maxStale=24h）与排序（maxStale=0）对缓存新鲜度的
   // 要求不同，共用同一个 Promise 会让排序拿到过时的收藏数并据此过滤作品
   pendingIllustrationDetails.run(`${id}|${retry}|${maxStale}`, async () => {
+    const { illustrationMutableCacheTtlMs } = getSettings();
     const cached = await getCachedIllustrationDetails(
       id,
       Date.now(),
-      ILLUSTRATION_DETAILS_CACHE_TIME + maxStale
+      illustrationMutableCacheTtlMs + maxStale
     );
     if (cached?.mutableFresh) {
       iLog.d(`Use cached details of illustration ${id}`, cached.details);
@@ -144,7 +142,7 @@ const readUserIllustrationsCache = (userId: string) => {
     ) {
       return null;
     }
-    if (Date.now() - entry.cachedAt > USER_ILLUSTRATIONS_CACHE_TIME)
+    if (Date.now() - entry.cachedAt > getSettings().userIllustrationsCacheTtlMs)
       return null;
 
     return entry as UserIllustrationsCacheEntry;

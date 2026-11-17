@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             1.8.1-20261116
+// @version             1.8.1-20261117
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0-only
@@ -12,7 +12,6 @@
 // @grant               GM_addValueChangeListener
 // @grant               window.onurlchange
 // @grant               GM_registerMenuCommand
-// @grant               GM_unregisterMenuCommand
 // @grant               GM.xmlHttpRequest
 // @grant               GM_download
 // @grant               unsafeWindow
@@ -31,7 +30,47 @@ const g_defaultSettings = {
 	enablePreview: true,
 	enableAnimePreview: true,
 	previewDelay: 300,
+	linkBlank: true,
+	previewHoldMs: 300,
+	previewLoadingOverlayDelayMs: 120,
+	previewDownloadNoticeMs: 3e3,
 	enableLocalTags: true,
+	localTagPopoverShowDelayMs: 200,
+	localTagPopoverHideDelayMs: 180,
+	previewPreloadCount: 5,
+	previewCacheMaxEntries: 100,
+	previewDetailsMaxStaleMs: 864e5,
+	illustrationMutableCacheTtlMs: 216e5,
+	illustrationStaticCacheTtlMs: 2592e6,
+	illustrationCacheMaxEntries: 5e3,
+	newIllustrationNoCacheMs: 36e5,
+	illustPagesCacheTtlMs: 6048e5,
+	illustPagesCacheMaxEntries: 1500,
+	userIllustrationsCacheTtlMs: 108e5,
+	ugoiraCacheTtlMs: 6048e5,
+	ugoiraCacheMaxEntries: 20,
+	ugoiraCacheMaxBytes: 67108864,
+	localTagMetadataCacheTtlMs: 2592e6,
+	tagTranslationCacheTtlMs: 6048e5,
+	tagTranslationCacheMaxEntries: 2e3,
+	completedDownloadsMaxEntries: 200,
+	retryableDownloadsMaxEntries: 200,
+	downloadProgressPersistMs: 1e3,
+	downloadHeartbeatMs: 15e3,
+	downloadOwnerTimeoutMs: 18e4,
+	requestRetryIntervalMs: 1e4,
+	requestMaxAttempts: null,
+	tagRequestTimeoutMs: 1e4,
+	ugoiraChunkBytes: 3e5,
+	ugoiraTrailerBytes: 3e4,
+	databaseOpenTimeoutMs: 1e4,
+	domProbeIntervalMs: 300,
+	domProbeMaxAttempts: 10,
+	toolbarProbeIntervalMs: 200,
+	toolbarProbeMaxAttempts: 25,
+	localTagRenderDebounceMs: 100,
+	localTagPersistDelayMs: 500,
+	cacheCleanupIdleTimeoutMs: 3e3,
 	pageCount: 2,
 	favFilter: 500,
 	orderType: 0,
@@ -40,35 +79,10 @@ const g_defaultSettings = {
 	hideFavorite: true,
 	hideByTag: false,
 	hideByTagList: "",
-	linkBlank: true,
 	version: g_version
 };
 /** 加载中占位图片 */
 const g_loadingImage = "https://pp-1252089172.cos.ap-chengdu.myqcloud.com/loading.gif";
-/** 预览时允许使用的详情缓存可变字段（收藏数等）最大缓存时长 */
-const PREVIEW_DETAILS_MAX_STALE_TIME = 864e5;
-/** 作品详情缓存中可变字段（收藏数、收藏状态等）的有效期 */
-const ILLUSTRATION_DETAILS_CACHE_TIME = 216e5;
-/** 作品详情缓存中静态字段（标题、标签、页数等）的有效期 */
-const ILLUSTRATION_STATIC_CACHE_TIME = 2592e6;
-/** 作品详情缓存最多保留的条目数 */
-const ILLUSTRATION_DETAILS_CACHE_MAX_ENTRIES = 5e3;
-/** 作品分页信息缓存最多保留的条目数 */
-const ILLUST_PAGES_CACHE_MAX_ENTRIES = 1500;
-/** 发布未超过该时长的作品不缓存详情，避免发布初期的信息被固化 */
-const NEW_ILLUSTRATION_NOT_CACHE_TIME = 36e5;
-/** 作品分页信息缓存有效期 */
-const ILLUST_PAGES_CACHE_TIME = 6048e5;
-/** 标签翻译缓存有效期 */
-const TAG_TRANSLATION_CACHE_TIME = 6048e5;
-/** 用户作品列表（Session Storage）缓存有效期 */
-const USER_ILLUSTRATIONS_CACHE_TIME = 108e5;
-/** 动图帧缓存允许占用的最大字节数 */
-const UGOIRA_FRAME_CACHE_MAX_BYTES = 67108864;
-/** 动图帧缓存有效期 */
-const UGOIRA_FRAME_CACHE_TIME = 6048e5;
-/** 本地标签详情缓存有效期 */
-const LOCAL_TAG_METADATA_CACHE_TIME = 2592e6;
 /** 工具栏 ID */
 const TOOLBAR_ID = "pp-toolbar";
 /** 排序按钮 ID */
@@ -85,6 +99,7 @@ const HIDE_FAVORITES_BUTTON_ID = "pp-hide-favorites";
 const PREVIEW_STYLE_ID = "pp-preview-styles";
 const LOCAL_TAGS_STYLE_ID = "pp-local-tags-styles";
 const DOWNLOADS_STYLE_ID = "pp-downloads-styles";
+const SETTINGS_STYLE_ID = "pp-settings-styles";
 /** R18G 作品原图下载目录 */
 const R18G_DOWNLOAD_DIRECTORY = "r18-g";
 /** R18 标签列表，全小写 */
@@ -150,6 +165,1045 @@ function DoLog(level = 3, ...msgOrElement) {
 	}
 }
 
+// src/i18n/index.ts
+const Texts = {
+	install_title: "欢迎使用 Pixiv Previewer (LolipopJ Edition) v",
+	upgrade_body: `<div>
+  <p style="line-height: 1.6;">
+    本脚本基于
+    <a style="color: skyblue;" href="https://greasyfork.org/scripts/30766-pixiv-previewer" target="_blank">Pixiv
+      Previewer</a>
+    二次开发，旨在满足开发者自己需要的能力。如果您有不错的想法或建议，请前往原脚本的
+    <a style="color: skyblue;" href="https://greasyfork.org/scripts/30766-pixiv-previewer/feedback"
+      target="_blank">Greasy Fork 反馈页面</a>或开启一个新的
+    <a style="color: skyblue;" href="https://github.com/Ocrosoft/PixivPreviewer/issues" target="_blank">Github 议题</a>！
+  </p>
+  <p style="line-height: 1.6;">
+    如需查看功能更新记录，可前往此脚本的
+    <a style="color: skyblue;" href="https://greasyfork.org/scripts/533844-pixiv-previewer-l/versions" target="_blank"
+      rel="noopener noreferrer">版本历史页面</a>。
+  </p>
+</div>`,
+	setting_language: "语言",
+	setting_preview: "预览",
+	setting_animePreview: "动图预览",
+	setting_sort: "搜索页自动排序",
+	setting_anime: "动图下载（动图预览及详情页生效）",
+	setting_origin: "预览时优先显示原图（慢）",
+	setting_previewDelay: "延迟显示预览图（毫秒）",
+	setting_previewByKey: "使用按键控制预览图展示（Ctrl）",
+	setting_previewByKeyHelp: "开启后鼠标移动到图片上不再展示预览图，按下Ctrl键才展示，同时“延迟显示预览”设置项不生效。",
+	setting_maxPage: "每次排序时统计的最大页数",
+	setting_hideWork: "隐藏收藏数少于设定值的作品",
+	setting_sortOrderByBookmark: "按照收藏数排序作品",
+	setting_hideAiWork: "排序时隐藏 AI 生成作品",
+	setting_hideAiAssistedWork: "排序时隐藏 AI 辅助作品",
+	setting_hideFav: "排序时隐藏已收藏的作品",
+	setting_hideFollowed: "排序时隐藏已关注画师作品",
+	setting_hideByTag: "排序时隐藏指定标签的作品",
+	setting_hideByTagPlaceholder: "输入标签名，多个标签用','分隔",
+	setting_clearFollowingCache: "清除缓存",
+	setting_clearFollowingCacheHelp: "本地缓存了作品详情、作品分页、动图帧与标签信息。清除后再次访问会重新请求接口。",
+	setting_followingCacheCleared: "已清除缓存，请刷新页面。",
+	setting_clearCacheFailed: "部分缓存清除失败，请稍后重试。",
+	cache_usage: "缓存占用",
+	cache_usageHelp: "作品详情 %1 个 · 作品分页 %2 个 · 动图帧 %3 个（%4）· 标签翻译 %5 个",
+	setting_blank: "使用新标签页打开作品详情页",
+	setting_turnPage: "使用键盘←→进行翻页（排序后的搜索页）",
+	setting_save: "保存设置",
+	setting_reset: "重置脚本",
+	setting_resetHint: "这会删除所有设置，相当于重新安装脚本，确定要重置吗？",
+	setting_novelSort: "小说排序",
+	setting_novelMaxPage: "小说排序时统计的最大页数",
+	setting_novelHideWork: "隐藏收藏数少于设定值的作品",
+	setting_novelHideFav: "排序时隐藏已收藏的作品",
+	sort_noWork: "没有可以显示的作品（隐藏了 %1 个作品）",
+	sort_getWorks: "正在获取第 %1/%2 页作品",
+	sort_getBookmarkCount: "获取收藏数：%1/%2",
+	sort_getPublicFollowing: "获取公开关注画师",
+	sort_getPrivateFollowing: "获取私有关注画师",
+	sort_filtering: "过滤%1收藏量低于%2的作品",
+	sort_filteringHideFavorite: "已收藏和",
+	sort_fullSizeThumb: "全尺寸缩略图（搜索页、用户页）",
+	label_sort: "排序",
+	label_sorting: "排序中",
+	label_nextPage: "下一页",
+	label_hideFav: "过滤收藏",
+	settings_menu: "设置",
+	settings_panelTitle: "设置",
+	settings_close: "关闭",
+	settings_save: "保存",
+	settings_restoreDefault: "恢复默认",
+	settings_revertToPrevious: "恢复到修改前",
+	settings_restoreAll: "全部恢复默认",
+	settings_confirmDiscard: "存在未保存的修改，关闭将放弃这些修改，确定要关闭吗？",
+	settings_saveSuccess: "设置已保存并生效。",
+	settings_saveFailed: "保存失败：%1",
+	settings_saveStorageError: "写入本地存储失败，配置未更改。",
+	settings_validationFailed: "存在无效配置，请修正：%1",
+	settings_group_preview: "作品预览",
+	settings_group_sort: "作品排序",
+	settings_group_localTags: "本地标签",
+	settings_advancedToggle: "高级设置",
+	settings_group_cache: "缓存",
+	settings_group_download: "下载管理",
+	settings_group_network: "网络",
+	settings_group_scheduling: "内部调度",
+	settings_unit_ms: "毫秒",
+	settings_unit_s: "秒",
+	settings_unit_hour: "小时",
+	settings_unit_day: "天",
+	settings_unit_pages: "页",
+	settings_unit_bookmarks: "收藏",
+	settings_unit_images: "张",
+	settings_unit_entries: "条",
+	settings_unit_works: "个作品",
+	settings_unit_mib: "MiB",
+	settings_unit_bytes: "字节",
+	settings_unit_times: "次",
+	settings_field_enablePreview_label: "启用作品预览",
+	settings_field_enablePreview_desc: "关闭后停止弹出作品与动图预览",
+	settings_field_enableAnimePreview_label: "预览动图",
+	settings_field_enableAnimePreview_desc: "受作品预览总开关约束",
+	settings_field_previewDelay_label: "悬停延迟",
+	settings_field_previewDelay_desc: "鼠标悬停在图片上到显示预览窗口的等待时长",
+	settings_field_linkBlank_label: "在新标签页打开作品",
+	settings_field_linkBlank_desc: "仅作用于作品链接，不影响作者与标签链接",
+	settings_field_previewHoldMs_label: "长按固定预览时间",
+	settings_field_previewHoldMs_desc: "在预览时鼠标长按进入单手固定模式的时长",
+	settings_field_previewLoadingOverlayDelayMs_label: "翻页加载遮罩延迟",
+	settings_field_previewLoadingOverlayDelayMs_desc: "翻页图片未就绪时显示毛玻璃遮罩的等待时长",
+	settings_field_previewDownloadNoticeMs_label: "下载成功提示保留时间",
+	settings_field_previewDownloadNoticeMs_desc: "预览内点击原图下载成功后恢复按钮文字的等待时长",
+	settings_field_pageCount_label: "每次排序页数",
+	settings_field_pageCount_desc: "仅作用于脚本排序",
+	settings_field_favFilter_label: "最低收藏数",
+	settings_field_favFilter_desc: "仅作用于脚本排序",
+	settings_field_orderType_label: "排序依据",
+	settings_field_orderType_desc: "仅作用于脚本排序",
+	settings_option_orderByBookmark: "按收藏数",
+	settings_option_orderByDate: "按发布时间",
+	settings_field_aiFilter_label: "排序过滤 AI 生成",
+	settings_field_aiFilter_desc: "独立过滤开关，仅作用于脚本排序",
+	settings_field_aiAssistedFilter_label: "排序过滤 AI 辅助",
+	settings_field_aiAssistedFilter_desc: "独立过滤标签中的 AI 辅助作品，仅作用于脚本排序",
+	settings_field_hideFavorite_label: "排序过滤已收藏",
+	settings_field_hideFavorite_desc: "仅作用于脚本排序，不改变工具栏“过滤收藏”按钮语义",
+	settings_field_hideByTag_label: "启用排序标签过滤",
+	settings_field_hideByTag_desc: "关闭时保留排除标签列表，但下次排序不启用该过滤",
+	settings_field_hideByTagList_label: "排序排除标签列表",
+	settings_field_hideByTagList_placeholder: "多个标签用英文逗号 , 分隔",
+	settings_field_hideByTagList_desc: "仅在启用标签过滤时作用于脚本排序，忽略首尾空白且不区分大小写",
+	settings_field_enableLocalTags_label: "启用本地标签管理",
+	settings_field_enableLocalTags_desc: "停用会移除界面并停止统计，保留已有本地标签数据",
+	settings_field_localTagPopoverShowDelayMs_label: "浮层显示延迟",
+	settings_field_localTagPopoverShowDelayMs_desc: "悬浮或聚焦标签后弹出详情浮层的延迟，保存后取消旧计时",
+	settings_field_localTagPopoverHideDelayMs_label: "浮层关闭延迟",
+	settings_field_localTagPopoverHideDelayMs_desc: "离开标签或浮层后延迟关闭的时间，保存后取消旧计时",
+	settings_field_previewPreloadCount_label: "预览预加载窗口",
+	settings_field_previewPreloadCount_desc: "包含当前页在内的预加载张数；解码缓存上限按其两倍自动计算，缩小后立即淘汰内存缓存",
+	settings_field_previewCacheMaxEntries_label: "预览内部缓存容量",
+	settings_field_previewCacheMaxEntries_desc: "预览分页地址与动图元数据内存 LRU 缓存各自的容量上限，缩小后立即淘汰",
+	settings_field_previewDetailsMaxStaleMs_label: "预览详情额外陈旧容忍",
+	settings_field_previewDetailsMaxStaleMs_desc: "叠加在“作品详情可变信息有效期”之上使用，预览读取时生效",
+	settings_field_illustrationMutableCacheTtlMs_label: "作品详情可变信息有效期",
+	settings_field_illustrationMutableCacheTtlMs_desc: "控制收藏数、收藏状态等可变信息的新鲜度",
+	settings_field_illustrationStaticCacheTtlMs_label: "作品详情静态信息有效期",
+	settings_field_illustrationStaticCacheTtlMs_desc: "控制标题、标签、页数等静态信息的持久化有效期",
+	settings_field_illustrationCacheMaxEntries_label: "作品详情缓存容量",
+	settings_field_illustrationCacheMaxEntries_desc: "IndexedDB 作品详情表最大条数，缩小后安排异步清理",
+	settings_field_newIllustrationNoCacheMs_label: "新作品免缓存窗口",
+	settings_field_newIllustrationNoCacheMs_desc: "发布未满该时长的作品不写入详情缓存",
+	settings_field_illustPagesCacheTtlMs_label: "作品分页缓存有效期",
+	settings_field_illustPagesCacheTtlMs_desc: "IndexedDB 作品分页链接缓存有效期",
+	settings_field_illustPagesCacheMaxEntries_label: "作品分页缓存容量",
+	settings_field_illustPagesCacheMaxEntries_desc: "IndexedDB 作品分页表最大条数，缩小后安排异步清理",
+	settings_field_userIllustrationsCacheTtlMs_label: "用户作品列表有效期",
+	settings_field_userIllustrationsCacheTtlMs_desc: "Session Storage 用户作品列表缓存有效期",
+	settings_field_ugoiraCacheTtlMs_label: "动图帧缓存有效期",
+	settings_field_ugoiraCacheTtlMs_desc: "IndexedDB 动图帧缓存有效期",
+	settings_field_ugoiraCacheMaxEntries_label: "动图帧缓存作品数上限",
+	settings_field_ugoiraCacheMaxEntries_desc: "IndexedDB 动图帧表最多保留的作品数，缩小后安排异步清理",
+	settings_field_ugoiraCacheMaxBytes_label: "动图帧缓存空间上限",
+	settings_field_ugoiraCacheMaxBytes_desc: "IndexedDB 动图帧总占用上限（换算为字节需为正整数），缩小后安排异步清理",
+	settings_field_localTagMetadataCacheTtlMs_label: "本地标签详情有效期",
+	settings_field_localTagMetadataCacheTtlMs_desc: "本地标签摘要与缩略图缓存有效期",
+	settings_field_tagTranslationCacheTtlMs_label: "标签翻译缓存有效期",
+	settings_field_tagTranslationCacheTtlMs_desc: "标签中文翻译缓存有效期",
+	settings_field_tagTranslationCacheMaxEntries_label: "标签翻译缓存容量",
+	settings_field_tagTranslationCacheMaxEntries_desc: "至少 2 条；超限时按容量一半向下取整淘汰最旧条目",
+	settings_field_completedDownloadsMaxEntries_label: "已完成下载记录上限",
+	settings_field_completedDownloadsMaxEntries_desc: "后续记录写入或更新时淘汰超出上限的旧已完成记录，不影响活动下载",
+	settings_field_retryableDownloadsMaxEntries_label: "可重试下载记录上限",
+	settings_field_retryableDownloadsMaxEntries_desc: "后续记录写入或更新时淘汰超出上限的旧失败/中断记录，不影响活动下载",
+	settings_field_downloadProgressPersistMs_label: "进度持久化间隔",
+	settings_field_downloadProgressPersistMs_desc: "下载进度写入共享存储的最小间隔（不能大于心跳间隔）",
+	settings_field_downloadHeartbeatMs_label: "下载心跳间隔",
+	settings_field_downloadHeartbeatMs_desc: "刷新活动下载存活时间与检查失联的间隔（必须小于失联判定时间）",
+	settings_field_downloadOwnerTimeoutMs_label: "下载失联判定时间",
+	settings_field_downloadOwnerTimeoutMs_desc: "超过该时长未更新状态的活动下载视为已中断（必须大于心跳间隔）",
+	settings_field_requestRetryIntervalMs_label: "请求重试间隔",
+	settings_field_requestRetryIntervalMs_desc: "每次重试等待时间（最短 1 秒）",
+	settings_field_requestMaxAttempts_label: "最大尝试次数",
+	settings_field_requestMaxAttempts_desc: "包含首次请求；留空或填“不限”表示持续重试",
+	settings_field_requestMaxAttempts_placeholder: "留空表示不限",
+	settings_field_tagRequestTimeoutMs_label: "标签请求超时",
+	settings_field_tagRequestTimeoutMs_desc: "标签详情与翻译接口单次请求的超时时间",
+	settings_field_ugoiraChunkBytes_label: "动图下载分块大小",
+	settings_field_ugoiraChunkBytes_desc: "未命中帧缓存时分段下载动图压缩包的分块大小（至少 65536 字节）",
+	settings_field_ugoiraTrailerBytes_label: "动图尾部探测大小",
+	settings_field_ugoiraTrailerBytes_desc: "读取动图 ZIP 中央目录的尾部探测长度（至少 22 字节）",
+	settings_field_databaseOpenTimeoutMs_label: "数据库打开超时",
+	settings_field_databaseOpenTimeoutMs_desc: "等待 IndexedDB 连接打开的最大时长",
+	settings_field_domProbeIntervalMs_label: "通用 DOM 探测间隔",
+	settings_field_domProbeIntervalMs_desc: "等待页面异步节点渲染的探测间隔",
+	settings_field_domProbeMaxAttempts_label: "通用 DOM 探测次数",
+	settings_field_domProbeMaxAttempts_desc: "包含首次探测在内的最大尝试次数",
+	settings_field_toolbarProbeIntervalMs_label: "工具栏探测间隔",
+	settings_field_toolbarProbeIntervalMs_desc: "等待页面自带工具栏渲染的探测间隔",
+	settings_field_toolbarProbeMaxAttempts_label: "工具栏探测次数",
+	settings_field_toolbarProbeMaxAttempts_desc: "等待页面自带工具栏的最大尝试次数",
+	settings_field_localTagRenderDebounceMs_label: "标签界面更新防抖",
+	settings_field_localTagRenderDebounceMs_desc: "DOM 变动后刷新本地标签入口的防抖延迟",
+	settings_field_localTagPersistDelayMs_label: "本地标签延迟保存",
+	settings_field_localTagPersistDelayMs_desc: "合并标签编辑写入存储的延迟，调整时不丢失待保存数据",
+	settings_field_cacheCleanupIdleTimeoutMs_label: "空闲缓存清理最长等待",
+	settings_field_cacheCleanupIdleTimeoutMs_desc: "浏览器空闲回调清理持久化缓存的最大等待时长",
+	settings_err_required: "请输入数值，不能为空",
+	settings_err_number: "请输入有效的有限数值",
+	settings_err_integer: "必须为整数",
+	settings_err_positive: "必须大于 0",
+	settings_err_nonNegative: "不能小于 0",
+	settings_err_min: "不能小于 %1",
+	settings_err_option: "请选择有效的选项",
+	settings_err_progressExceedsHeartbeat: "不能大于下载心跳间隔",
+	settings_err_timeoutNotGreaterThanHeartbeat: "必须大于下载心跳间隔"
+};
+
+// src/constants/settings.ts
+const SETTING_GROUPS = [
+	{
+		id: "preview",
+		section: "common",
+		title: Texts.settings_group_preview
+	},
+	{
+		id: "sort",
+		section: "common",
+		title: Texts.settings_group_sort
+	},
+	{
+		id: "localTags",
+		section: "common",
+		title: Texts.settings_group_localTags
+	},
+	{
+		id: "cache",
+		section: "advanced",
+		title: Texts.settings_group_cache
+	},
+	{
+		id: "download",
+		section: "advanced",
+		title: Texts.settings_group_download
+	},
+	{
+		id: "network",
+		section: "advanced",
+		title: Texts.settings_group_network
+	},
+	{
+		id: "scheduling",
+		section: "advanced",
+		title: Texts.settings_group_scheduling
+	}
+];
+/** 用户可见配置字段的唯一清单，由 `UserSettingKey` 约束并明确排除 `version` */
+const SETTING_FIELD_MAP = {
+	enablePreview: {
+		key: "enablePreview",
+		section: "common",
+		group: "preview",
+		control: "boolean",
+		label: Texts.settings_field_enablePreview_label,
+		description: Texts.settings_field_enablePreview_desc
+	},
+	enableAnimePreview: {
+		key: "enableAnimePreview",
+		section: "common",
+		group: "preview",
+		control: "boolean",
+		label: Texts.settings_field_enableAnimePreview_label,
+		description: Texts.settings_field_enableAnimePreview_desc
+	},
+	previewDelay: {
+		key: "previewDelay",
+		section: "common",
+		group: "preview",
+		control: "number",
+		label: Texts.settings_field_previewDelay_label,
+		description: Texts.settings_field_previewDelay_desc,
+		unit: Texts.settings_unit_ms,
+		min: 0,
+		step: "any"
+	},
+	linkBlank: {
+		key: "linkBlank",
+		section: "common",
+		group: "preview",
+		control: "boolean",
+		label: Texts.settings_field_linkBlank_label,
+		description: Texts.settings_field_linkBlank_desc
+	},
+	previewHoldMs: {
+		key: "previewHoldMs",
+		section: "common",
+		group: "preview",
+		control: "number",
+		label: Texts.settings_field_previewHoldMs_label,
+		description: Texts.settings_field_previewHoldMs_desc,
+		unit: Texts.settings_unit_ms,
+		step: "any"
+	},
+	previewLoadingOverlayDelayMs: {
+		key: "previewLoadingOverlayDelayMs",
+		section: "common",
+		group: "preview",
+		control: "number",
+		label: Texts.settings_field_previewLoadingOverlayDelayMs_label,
+		description: Texts.settings_field_previewLoadingOverlayDelayMs_desc,
+		unit: Texts.settings_unit_ms,
+		min: 0,
+		step: "any"
+	},
+	previewDownloadNoticeMs: {
+		key: "previewDownloadNoticeMs",
+		section: "common",
+		group: "preview",
+		control: "number",
+		label: Texts.settings_field_previewDownloadNoticeMs_label,
+		description: Texts.settings_field_previewDownloadNoticeMs_desc,
+		unit: Texts.settings_unit_s,
+		scale: 1e3,
+		min: 0,
+		step: "any"
+	},
+	pageCount: {
+		key: "pageCount",
+		section: "common",
+		group: "sort",
+		control: "number",
+		label: Texts.settings_field_pageCount_label,
+		description: Texts.settings_field_pageCount_desc,
+		unit: Texts.settings_unit_pages,
+		min: 1,
+		integer: true,
+		step: "1"
+	},
+	favFilter: {
+		key: "favFilter",
+		section: "common",
+		group: "sort",
+		control: "number",
+		label: Texts.settings_field_favFilter_label,
+		description: Texts.settings_field_favFilter_desc,
+		unit: Texts.settings_unit_bookmarks,
+		min: 0,
+		integer: true,
+		step: "1"
+	},
+	orderType: {
+		key: "orderType",
+		section: "common",
+		group: "sort",
+		control: "select",
+		label: Texts.settings_field_orderType_label,
+		description: Texts.settings_field_orderType_desc,
+		options: [{
+			value: 0,
+			label: Texts.settings_option_orderByBookmark
+		}, {
+			value: 1,
+			label: Texts.settings_option_orderByDate
+		}]
+	},
+	aiFilter: {
+		key: "aiFilter",
+		section: "common",
+		group: "sort",
+		control: "boolean",
+		label: Texts.settings_field_aiFilter_label,
+		description: Texts.settings_field_aiFilter_desc
+	},
+	aiAssistedFilter: {
+		key: "aiAssistedFilter",
+		section: "common",
+		group: "sort",
+		control: "boolean",
+		label: Texts.settings_field_aiAssistedFilter_label,
+		description: Texts.settings_field_aiAssistedFilter_desc
+	},
+	hideFavorite: {
+		key: "hideFavorite",
+		section: "common",
+		group: "sort",
+		control: "boolean",
+		label: Texts.settings_field_hideFavorite_label,
+		description: Texts.settings_field_hideFavorite_desc
+	},
+	hideByTag: {
+		key: "hideByTag",
+		section: "common",
+		group: "sort",
+		control: "boolean",
+		label: Texts.settings_field_hideByTag_label,
+		description: Texts.settings_field_hideByTag_desc
+	},
+	hideByTagList: {
+		key: "hideByTagList",
+		section: "common",
+		group: "sort",
+		control: "text",
+		label: Texts.settings_field_hideByTagList_label,
+		description: Texts.settings_field_hideByTagList_desc,
+		placeholder: Texts.settings_field_hideByTagList_placeholder
+	},
+	enableLocalTags: {
+		key: "enableLocalTags",
+		section: "common",
+		group: "localTags",
+		control: "boolean",
+		label: Texts.settings_field_enableLocalTags_label,
+		description: Texts.settings_field_enableLocalTags_desc
+	},
+	localTagPopoverShowDelayMs: {
+		key: "localTagPopoverShowDelayMs",
+		section: "common",
+		group: "localTags",
+		control: "number",
+		label: Texts.settings_field_localTagPopoverShowDelayMs_label,
+		description: Texts.settings_field_localTagPopoverShowDelayMs_desc,
+		unit: Texts.settings_unit_ms,
+		min: 0,
+		step: "any"
+	},
+	localTagPopoverHideDelayMs: {
+		key: "localTagPopoverHideDelayMs",
+		section: "common",
+		group: "localTags",
+		control: "number",
+		label: Texts.settings_field_localTagPopoverHideDelayMs_label,
+		description: Texts.settings_field_localTagPopoverHideDelayMs_desc,
+		unit: Texts.settings_unit_ms,
+		min: 0,
+		step: "any"
+	},
+	previewPreloadCount: {
+		key: "previewPreloadCount",
+		section: "advanced",
+		group: "cache",
+		control: "number",
+		label: Texts.settings_field_previewPreloadCount_label,
+		description: Texts.settings_field_previewPreloadCount_desc,
+		unit: Texts.settings_unit_images,
+		min: 1,
+		integer: true,
+		step: "1"
+	},
+	previewCacheMaxEntries: {
+		key: "previewCacheMaxEntries",
+		section: "advanced",
+		group: "cache",
+		control: "number",
+		label: Texts.settings_field_previewCacheMaxEntries_label,
+		description: Texts.settings_field_previewCacheMaxEntries_desc,
+		unit: Texts.settings_unit_entries,
+		min: 1,
+		integer: true,
+		step: "1"
+	},
+	previewDetailsMaxStaleMs: {
+		key: "previewDetailsMaxStaleMs",
+		section: "advanced",
+		group: "cache",
+		control: "number",
+		label: Texts.settings_field_previewDetailsMaxStaleMs_label,
+		description: Texts.settings_field_previewDetailsMaxStaleMs_desc,
+		unit: Texts.settings_unit_hour,
+		scale: 36e5,
+		step: "any"
+	},
+	illustrationMutableCacheTtlMs: {
+		key: "illustrationMutableCacheTtlMs",
+		section: "advanced",
+		group: "cache",
+		control: "number",
+		label: Texts.settings_field_illustrationMutableCacheTtlMs_label,
+		description: Texts.settings_field_illustrationMutableCacheTtlMs_desc,
+		unit: Texts.settings_unit_hour,
+		scale: 36e5,
+		step: "any"
+	},
+	illustrationStaticCacheTtlMs: {
+		key: "illustrationStaticCacheTtlMs",
+		section: "advanced",
+		group: "cache",
+		control: "number",
+		label: Texts.settings_field_illustrationStaticCacheTtlMs_label,
+		description: Texts.settings_field_illustrationStaticCacheTtlMs_desc,
+		unit: Texts.settings_unit_day,
+		scale: 864e5,
+		step: "any"
+	},
+	illustrationCacheMaxEntries: {
+		key: "illustrationCacheMaxEntries",
+		section: "advanced",
+		group: "cache",
+		control: "number",
+		label: Texts.settings_field_illustrationCacheMaxEntries_label,
+		description: Texts.settings_field_illustrationCacheMaxEntries_desc,
+		unit: Texts.settings_unit_entries,
+		min: 1,
+		integer: true,
+		step: "1"
+	},
+	newIllustrationNoCacheMs: {
+		key: "newIllustrationNoCacheMs",
+		section: "advanced",
+		group: "cache",
+		control: "number",
+		label: Texts.settings_field_newIllustrationNoCacheMs_label,
+		description: Texts.settings_field_newIllustrationNoCacheMs_desc,
+		unit: Texts.settings_unit_hour,
+		scale: 36e5,
+		step: "any"
+	},
+	illustPagesCacheTtlMs: {
+		key: "illustPagesCacheTtlMs",
+		section: "advanced",
+		group: "cache",
+		control: "number",
+		label: Texts.settings_field_illustPagesCacheTtlMs_label,
+		description: Texts.settings_field_illustPagesCacheTtlMs_desc,
+		unit: Texts.settings_unit_day,
+		scale: 864e5,
+		step: "any"
+	},
+	illustPagesCacheMaxEntries: {
+		key: "illustPagesCacheMaxEntries",
+		section: "advanced",
+		group: "cache",
+		control: "number",
+		label: Texts.settings_field_illustPagesCacheMaxEntries_label,
+		description: Texts.settings_field_illustPagesCacheMaxEntries_desc,
+		unit: Texts.settings_unit_entries,
+		min: 1,
+		integer: true,
+		step: "1"
+	},
+	userIllustrationsCacheTtlMs: {
+		key: "userIllustrationsCacheTtlMs",
+		section: "advanced",
+		group: "cache",
+		control: "number",
+		label: Texts.settings_field_userIllustrationsCacheTtlMs_label,
+		description: Texts.settings_field_userIllustrationsCacheTtlMs_desc,
+		unit: Texts.settings_unit_hour,
+		scale: 36e5,
+		step: "any"
+	},
+	ugoiraCacheTtlMs: {
+		key: "ugoiraCacheTtlMs",
+		section: "advanced",
+		group: "cache",
+		control: "number",
+		label: Texts.settings_field_ugoiraCacheTtlMs_label,
+		description: Texts.settings_field_ugoiraCacheTtlMs_desc,
+		unit: Texts.settings_unit_day,
+		scale: 864e5,
+		step: "any"
+	},
+	ugoiraCacheMaxEntries: {
+		key: "ugoiraCacheMaxEntries",
+		section: "advanced",
+		group: "cache",
+		control: "number",
+		label: Texts.settings_field_ugoiraCacheMaxEntries_label,
+		description: Texts.settings_field_ugoiraCacheMaxEntries_desc,
+		unit: Texts.settings_unit_works,
+		min: 1,
+		integer: true,
+		step: "1"
+	},
+	ugoiraCacheMaxBytes: {
+		key: "ugoiraCacheMaxBytes",
+		section: "advanced",
+		group: "cache",
+		control: "number",
+		label: Texts.settings_field_ugoiraCacheMaxBytes_label,
+		description: Texts.settings_field_ugoiraCacheMaxBytes_desc,
+		unit: Texts.settings_unit_mib,
+		scale: 1048576,
+		min: 1,
+		integer: true,
+		step: "any"
+	},
+	localTagMetadataCacheTtlMs: {
+		key: "localTagMetadataCacheTtlMs",
+		section: "advanced",
+		group: "cache",
+		control: "number",
+		label: Texts.settings_field_localTagMetadataCacheTtlMs_label,
+		description: Texts.settings_field_localTagMetadataCacheTtlMs_desc,
+		unit: Texts.settings_unit_day,
+		scale: 864e5,
+		step: "any"
+	},
+	tagTranslationCacheTtlMs: {
+		key: "tagTranslationCacheTtlMs",
+		section: "advanced",
+		group: "cache",
+		control: "number",
+		label: Texts.settings_field_tagTranslationCacheTtlMs_label,
+		description: Texts.settings_field_tagTranslationCacheTtlMs_desc,
+		unit: Texts.settings_unit_day,
+		scale: 864e5,
+		step: "any"
+	},
+	tagTranslationCacheMaxEntries: {
+		key: "tagTranslationCacheMaxEntries",
+		section: "advanced",
+		group: "cache",
+		control: "number",
+		label: Texts.settings_field_tagTranslationCacheMaxEntries_label,
+		description: Texts.settings_field_tagTranslationCacheMaxEntries_desc,
+		unit: Texts.settings_unit_entries,
+		min: 2,
+		integer: true,
+		step: "1"
+	},
+	completedDownloadsMaxEntries: {
+		key: "completedDownloadsMaxEntries",
+		section: "advanced",
+		group: "download",
+		control: "number",
+		label: Texts.settings_field_completedDownloadsMaxEntries_label,
+		description: Texts.settings_field_completedDownloadsMaxEntries_desc,
+		unit: Texts.settings_unit_entries,
+		min: 1,
+		integer: true,
+		step: "1"
+	},
+	retryableDownloadsMaxEntries: {
+		key: "retryableDownloadsMaxEntries",
+		section: "advanced",
+		group: "download",
+		control: "number",
+		label: Texts.settings_field_retryableDownloadsMaxEntries_label,
+		description: Texts.settings_field_retryableDownloadsMaxEntries_desc,
+		unit: Texts.settings_unit_entries,
+		min: 1,
+		integer: true,
+		step: "1"
+	},
+	downloadProgressPersistMs: {
+		key: "downloadProgressPersistMs",
+		section: "advanced",
+		group: "download",
+		control: "number",
+		label: Texts.settings_field_downloadProgressPersistMs_label,
+		description: Texts.settings_field_downloadProgressPersistMs_desc,
+		unit: Texts.settings_unit_s,
+		scale: 1e3,
+		step: "any"
+	},
+	downloadHeartbeatMs: {
+		key: "downloadHeartbeatMs",
+		section: "advanced",
+		group: "download",
+		control: "number",
+		label: Texts.settings_field_downloadHeartbeatMs_label,
+		description: Texts.settings_field_downloadHeartbeatMs_desc,
+		unit: Texts.settings_unit_s,
+		scale: 1e3,
+		step: "any"
+	},
+	downloadOwnerTimeoutMs: {
+		key: "downloadOwnerTimeoutMs",
+		section: "advanced",
+		group: "download",
+		control: "number",
+		label: Texts.settings_field_downloadOwnerTimeoutMs_label,
+		description: Texts.settings_field_downloadOwnerTimeoutMs_desc,
+		unit: Texts.settings_unit_s,
+		scale: 1e3,
+		step: "any"
+	},
+	requestRetryIntervalMs: {
+		key: "requestRetryIntervalMs",
+		section: "advanced",
+		group: "network",
+		control: "number",
+		label: Texts.settings_field_requestRetryIntervalMs_label,
+		description: Texts.settings_field_requestRetryIntervalMs_desc,
+		unit: Texts.settings_unit_s,
+		scale: 1e3,
+		min: 1e3,
+		step: "any"
+	},
+	requestMaxAttempts: {
+		key: "requestMaxAttempts",
+		section: "advanced",
+		group: "network",
+		control: "number",
+		label: Texts.settings_field_requestMaxAttempts_label,
+		description: Texts.settings_field_requestMaxAttempts_desc,
+		unit: Texts.settings_unit_times,
+		min: 1,
+		integer: true,
+		allowNullUnlimited: true,
+		placeholder: Texts.settings_field_requestMaxAttempts_placeholder,
+		step: "1"
+	},
+	tagRequestTimeoutMs: {
+		key: "tagRequestTimeoutMs",
+		section: "advanced",
+		group: "network",
+		control: "number",
+		label: Texts.settings_field_tagRequestTimeoutMs_label,
+		description: Texts.settings_field_tagRequestTimeoutMs_desc,
+		unit: Texts.settings_unit_s,
+		scale: 1e3,
+		step: "any"
+	},
+	ugoiraChunkBytes: {
+		key: "ugoiraChunkBytes",
+		section: "advanced",
+		group: "network",
+		control: "number",
+		label: Texts.settings_field_ugoiraChunkBytes_label,
+		description: Texts.settings_field_ugoiraChunkBytes_desc,
+		unit: Texts.settings_unit_bytes,
+		min: 65536,
+		integer: true,
+		step: "1"
+	},
+	ugoiraTrailerBytes: {
+		key: "ugoiraTrailerBytes",
+		section: "advanced",
+		group: "network",
+		control: "number",
+		label: Texts.settings_field_ugoiraTrailerBytes_label,
+		description: Texts.settings_field_ugoiraTrailerBytes_desc,
+		unit: Texts.settings_unit_bytes,
+		min: 22,
+		integer: true,
+		step: "1"
+	},
+	databaseOpenTimeoutMs: {
+		key: "databaseOpenTimeoutMs",
+		section: "advanced",
+		group: "scheduling",
+		control: "number",
+		label: Texts.settings_field_databaseOpenTimeoutMs_label,
+		description: Texts.settings_field_databaseOpenTimeoutMs_desc,
+		unit: Texts.settings_unit_s,
+		scale: 1e3,
+		step: "any"
+	},
+	domProbeIntervalMs: {
+		key: "domProbeIntervalMs",
+		section: "advanced",
+		group: "scheduling",
+		control: "number",
+		label: Texts.settings_field_domProbeIntervalMs_label,
+		description: Texts.settings_field_domProbeIntervalMs_desc,
+		unit: Texts.settings_unit_ms,
+		step: "any"
+	},
+	domProbeMaxAttempts: {
+		key: "domProbeMaxAttempts",
+		section: "advanced",
+		group: "scheduling",
+		control: "number",
+		label: Texts.settings_field_domProbeMaxAttempts_label,
+		description: Texts.settings_field_domProbeMaxAttempts_desc,
+		unit: Texts.settings_unit_times,
+		min: 1,
+		integer: true,
+		step: "1"
+	},
+	toolbarProbeIntervalMs: {
+		key: "toolbarProbeIntervalMs",
+		section: "advanced",
+		group: "scheduling",
+		control: "number",
+		label: Texts.settings_field_toolbarProbeIntervalMs_label,
+		description: Texts.settings_field_toolbarProbeIntervalMs_desc,
+		unit: Texts.settings_unit_ms,
+		step: "any"
+	},
+	toolbarProbeMaxAttempts: {
+		key: "toolbarProbeMaxAttempts",
+		section: "advanced",
+		group: "scheduling",
+		control: "number",
+		label: Texts.settings_field_toolbarProbeMaxAttempts_label,
+		description: Texts.settings_field_toolbarProbeMaxAttempts_desc,
+		unit: Texts.settings_unit_times,
+		min: 1,
+		integer: true,
+		step: "1"
+	},
+	localTagRenderDebounceMs: {
+		key: "localTagRenderDebounceMs",
+		section: "advanced",
+		group: "scheduling",
+		control: "number",
+		label: Texts.settings_field_localTagRenderDebounceMs_label,
+		description: Texts.settings_field_localTagRenderDebounceMs_desc,
+		unit: Texts.settings_unit_ms,
+		min: 0,
+		step: "any"
+	},
+	localTagPersistDelayMs: {
+		key: "localTagPersistDelayMs",
+		section: "advanced",
+		group: "scheduling",
+		control: "number",
+		label: Texts.settings_field_localTagPersistDelayMs_label,
+		description: Texts.settings_field_localTagPersistDelayMs_desc,
+		unit: Texts.settings_unit_ms,
+		min: 0,
+		step: "any"
+	},
+	cacheCleanupIdleTimeoutMs: {
+		key: "cacheCleanupIdleTimeoutMs",
+		section: "advanced",
+		group: "scheduling",
+		control: "number",
+		label: Texts.settings_field_cacheCleanupIdleTimeoutMs_label,
+		description: Texts.settings_field_cacheCleanupIdleTimeoutMs_desc,
+		unit: Texts.settings_unit_s,
+		scale: 1e3,
+		step: "any"
+	}
+};
+const SETTING_FIELDS = Object.values(SETTING_FIELD_MAP);
+const USER_SETTING_KEYS = SETTING_FIELDS.map((field) => field.key);
+/** 将内部存储值格式化为面板输入值 */
+const formatSettingInputValue = (descriptor, value) => {
+	if (descriptor.control === "boolean") return Boolean(value);
+	if (descriptor.control === "number") {
+		if (value === null) return "";
+		const scale = descriptor.scale ?? 1;
+		return String(Number((value / scale).toPrecision(12)));
+	}
+	return String(value ?? "");
+};
+/** 校验内部表示的单个字段值是否合法 */
+const validateSettingValue = (descriptor, value) => {
+	switch (descriptor.control) {
+		case "boolean": return typeof value === "boolean" ? null : Texts.settings_err_option;
+		case "text": return typeof value === "string" ? null : Texts.settings_err_required;
+		case "select": return descriptor.options?.some((opt) => opt.value === value) ? null : Texts.settings_err_option;
+		case "number":
+			if (value === null) return descriptor.allowNullUnlimited ? null : Texts.settings_err_required;
+			if (typeof value !== "number" || !Number.isFinite(value)) return Texts.settings_err_number;
+			if (descriptor.integer && !Number.isInteger(value)) return Texts.settings_err_integer;
+			if (descriptor.min !== void 0) {
+				if (descriptor.min === 0 && value < 0) return Texts.settings_err_nonNegative;
+				if (value < descriptor.min) {
+					const displayMin = descriptor.scale ? Number((descriptor.min / descriptor.scale).toPrecision(12)) : descriptor.min;
+					const minText = descriptor.unit ? `${displayMin} ${descriptor.unit}` : String(displayMin);
+					return Texts.settings_err_min.replace("%1", minText);
+				}
+			} else if (value <= 0) return Texts.settings_err_positive;
+			return null;
+	}
+};
+/** 解析并校验来自配置面板的单个用户输入 */
+const parseSettingInput = (descriptor, rawValue) => {
+	if (descriptor.control === "boolean") return {
+		ok: true,
+		value: Boolean(rawValue)
+	};
+	if (descriptor.control === "text") return {
+		ok: true,
+		value: String(rawValue)
+	};
+	if (descriptor.control === "select") {
+		const parsed = Number(rawValue);
+		const error = validateSettingValue(descriptor, parsed);
+		if (error) return {
+			ok: false,
+			message: error
+		};
+		return {
+			ok: true,
+			value: parsed
+		};
+	}
+	const trimmed = String(rawValue).trim();
+	if (!trimmed || descriptor.allowNullUnlimited && trimmed === "不限") {
+		if (descriptor.allowNullUnlimited) return {
+			ok: true,
+			value: null
+		};
+		return {
+			ok: false,
+			message: Texts.settings_err_required
+		};
+	}
+	const rawNumber = Number(trimmed);
+	if (!Number.isFinite(rawNumber)) return {
+		ok: false,
+		message: Texts.settings_err_number
+	};
+	const scale = descriptor.scale ?? 1;
+	const scaled = Number((rawNumber * scale).toPrecision(12));
+	const error = validateSettingValue(descriptor, scaled);
+	if (error) return {
+		ok: false,
+		message: error
+	};
+	return {
+		ok: true,
+		value: scaled
+	};
+};
+
+// src/utils/setting.ts
+const SETTINGS_KEY = "PIXIV_PREVIEWER_L_SETTINGS";
+let activeSettings = null;
+let syncListenerRegistered = false;
+const listeners$1 = /* @__PURE__ */ new Set();
+const normalizeStoredSettings = (raw) => {
+	const normalized = { ...g_defaultSettings };
+	if (!raw || typeof raw !== "object") return normalized;
+	const record = raw;
+	if (typeof record.version === "string") normalized.version = record.version;
+	const target = normalized;
+	for (const descriptor of SETTING_FIELDS) {
+		if (!Object.hasOwn(record, descriptor.key)) continue;
+		const value = record[descriptor.key];
+		if (validateSettingValue(descriptor, value) === null) target[descriptor.key] = value;
+	}
+	return normalized;
+};
+const notifyListeners = (next, prev, source) => {
+	for (const listener of listeners$1) try {
+		listener({ ...next }, { ...prev }, source);
+	} catch (error) {
+		iLog.e("Failed to notify settings listener:", error);
+	}
+};
+const ensureSyncListener = () => {
+	if (syncListenerRegistered) return;
+	syncListenerRegistered = true;
+	GM_addValueChangeListener(SETTINGS_KEY, (_key, _oldValue, newValue, remote) => {
+		if (!remote) return;
+		const prev = activeSettings ?? normalizeStoredSettings(GM_getValue(SETTINGS_KEY));
+		const next = normalizeStoredSettings(newValue);
+		activeSettings = next;
+		notifyListeners(next, prev, "remote");
+	});
+};
+const validateCandidateSettings = (candidate) => {
+	const errors = [];
+	const record = candidate;
+	for (const descriptor of SETTING_FIELDS) {
+		const error = validateSettingValue(descriptor, record[descriptor.key]);
+		if (error) errors.push({
+			key: descriptor.key,
+			message: error
+		});
+	}
+	if (candidate.downloadProgressPersistMs > candidate.downloadHeartbeatMs && !errors.some((e) => e.key === "downloadProgressPersistMs")) errors.push({
+		key: "downloadProgressPersistMs",
+		message: Texts.settings_err_progressExceedsHeartbeat
+	});
+	if (candidate.downloadHeartbeatMs >= candidate.downloadOwnerTimeoutMs && !errors.some((e) => e.key === "downloadOwnerTimeoutMs")) errors.push({
+		key: "downloadOwnerTimeoutMs",
+		message: Texts.settings_err_timeoutNotGreaterThanHeartbeat
+	});
+	return errors;
+};
+const getSettings = () => {
+	ensureSyncListener();
+	if (!activeSettings) activeSettings = normalizeStoredSettings(GM_getValue(SETTINGS_KEY));
+	return { ...activeSettings };
+};
+const subscribeSettings = (listener) => {
+	ensureSyncListener();
+	listeners$1.add(listener);
+	return () => {
+		listeners$1.delete(listener);
+	};
+};
+/** 校验并完整保存用户配置（仅更新指定用户字段，保留最新远程未编辑字段及内部 `version`） */
+const saveUserSettings = (edits) => {
+	ensureSyncListener();
+	let latest;
+	try {
+		latest = normalizeStoredSettings(GM_getValue(SETTINGS_KEY));
+	} catch (error) {
+		iLog.e("Failed to read latest settings before saving:", error);
+		return {
+			ok: false,
+			errors: [{
+				key: null,
+				message: Texts.settings_saveStorageError
+			}]
+		};
+	}
+	const candidate = { ...latest };
+	const candidateRecord = candidate;
+	const editsRecord = edits;
+	for (const descriptor of SETTING_FIELDS) if (Object.hasOwn(editsRecord, descriptor.key)) candidateRecord[descriptor.key] = editsRecord[descriptor.key];
+	candidate.version = latest.version;
+	const errors = validateCandidateSettings(candidate);
+	if (errors.length > 0) return {
+		ok: false,
+		errors
+	};
+	try {
+		GM_setValue(SETTINGS_KEY, candidate);
+	} catch (error) {
+		iLog.e("Failed to save settings:", error);
+		return {
+			ok: false,
+			errors: [{
+				key: null,
+				message: Texts.settings_saveStorageError
+			}]
+		};
+	}
+	const prev = activeSettings ? { ...activeSettings } : latest;
+	activeSettings = { ...candidate };
+	notifyListeners(candidate, prev, "local");
+	return {
+		ok: true,
+		settings: { ...candidate }
+	};
+};
+/** 仅更新内部版本元数据，不改变任何用户配置字段 */
+const updateInternalVersion = (version) => {
+	ensureSyncListener();
+	try {
+		const next = {
+			...normalizeStoredSettings(GM_getValue(SETTINGS_KEY)),
+			version
+		};
+		GM_setValue(SETTINGS_KEY, next);
+		activeSettings = next;
+		return true;
+	} catch (error) {
+		iLog.e("Failed to update internal script version:", error);
+		return false;
+	}
+};
+
 // src/databases/connection.ts
 const INDEX_DB_NAME = "PIXIV_PREVIEWER_L";
 /** 2：拆分静态/可变字段的缓存时间，并新增动图帧缓存表 */
@@ -166,8 +1220,6 @@ const CACHE_TABLE_KEYS = [
 ];
 let dbPromise = null;
 let hasLoggedOpenError = false;
-/** 等待打开数据库的超时时间：升级被其他标签页阻塞时不能无限挂起 */
-const OPEN_DATABASE_TIMEOUT = 1e4;
 const openDatabase = () => new Promise((resolve, reject) => {
 	if (typeof indexedDB === "undefined") {
 		reject(/* @__PURE__ */ new Error("IndexedDB is not available"));
@@ -182,7 +1234,7 @@ const openDatabase = () => new Promise((resolve, reject) => {
 	};
 	const timeout = setTimeout(() => {
 		settle(() => reject(/* @__PURE__ */ new Error("Opening IndexedDB timed out")));
-	}, OPEN_DATABASE_TIMEOUT);
+	}, getSettings().databaseOpenTimeoutMs);
 	const request = indexedDB.open(INDEX_DB_NAME, INDEX_DB_VERSION);
 	request.onupgradeneeded = () => {
 		const db = request.result;
@@ -331,9 +1383,10 @@ const countCacheTable = async (storeNames) => {
 };
 
 // src/databases/illustration-cache.ts
-/** 缓存作品详情；发布不足 1 小时的作品跳过缓存 */
+/** 缓存作品详情；发布不足免缓存窗口的作品跳过缓存 */
 const cacheIllustrationDetails = (illustrations, now = Date.now()) => {
-	const cacheable = illustrations.filter((illustration) => now - illustration.uploadTimestamp * 1e3 > NEW_ILLUSTRATION_NOT_CACHE_TIME);
+	const { newIllustrationNoCacheMs } = getSettings();
+	const cacheable = illustrations.filter((illustration) => now - illustration.uploadTimestamp * 1e3 > newIllustrationNoCacheMs);
 	if (!cacheable.length) return Promise.resolve(true);
 	return runTransaction(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY, (store) => {
 		cacheable.forEach((illustration) => {
@@ -357,11 +1410,12 @@ const cacheIllustrationDetails = (illustrations, now = Date.now()) => {
 	});
 };
 /** 读取作品详情缓存。静态字段超过有效期时删除缓存并返回 `null` */
-const getCachedIllustrationDetails = async (id, now = Date.now(), mutableMaxAge = ILLUSTRATION_DETAILS_CACHE_TIME) => {
+const getCachedIllustrationDetails = async (id, now = Date.now(), mutableMaxAge = getSettings().illustrationMutableCacheTtlMs) => {
+	const { illustrationStaticCacheTtlMs } = getSettings();
 	const entry = await runRequest(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY, "readonly", (store) => store.get(id));
 	if (!entry) return null;
 	const cacheDate = toTimestamp(entry.cacheDate, 0);
-	if (now - toTimestamp(entry.staticDate, cacheDate) > 2592e6) {
+	if (now - toTimestamp(entry.staticDate, cacheDate) > illustrationStaticCacheTtlMs) {
 		deleteCachedIllustrationDetails([id]);
 		return null;
 	}
@@ -403,9 +1457,10 @@ const cacheIllustPages = (id, urls, now = Date.now()) => runTransaction(ILLUST_P
 });
 /** 读取作品分页信息缓存，过期时删除 */
 const getCachedIllustPages = async (id, now = Date.now()) => {
+	const { illustPagesCacheTtlMs } = getSettings();
 	const entry = await runRequest(ILLUST_PAGES_CACHE_TABLE_KEY, "readonly", (store) => store.get(id));
 	if (!entry) return null;
-	if (now - toTimestamp(entry.cacheDate, 0) > 6048e5) {
+	if (now - toTimestamp(entry.cacheDate, 0) > illustPagesCacheTtlMs) {
 		runTransaction(ILLUST_PAGES_CACHE_TABLE_KEY, (store) => {
 			store.delete(id);
 		});
@@ -418,8 +1473,9 @@ const getCachedIllustPages = async (id, now = Date.now()) => {
 };
 /** 清理过期的作品详情与分页缓存 */
 const pruneIllustrationCaches = async () => {
-	await pruneCacheTable(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY, STATIC_DATE_INDEX, ILLUSTRATION_STATIC_CACHE_TIME, ILLUSTRATION_DETAILS_CACHE_MAX_ENTRIES);
-	await pruneCacheTable(ILLUST_PAGES_CACHE_TABLE_KEY, CACHE_DATE_INDEX, ILLUST_PAGES_CACHE_TIME, ILLUST_PAGES_CACHE_MAX_ENTRIES);
+	const { illustrationStaticCacheTtlMs, illustrationCacheMaxEntries, illustPagesCacheTtlMs, illustPagesCacheMaxEntries } = getSettings();
+	await pruneCacheTable(ILLUSTRATION_DETAILS_CACHE_TABLE_KEY, STATIC_DATE_INDEX, illustrationStaticCacheTtlMs, illustrationCacheMaxEntries);
+	await pruneCacheTable(ILLUST_PAGES_CACHE_TABLE_KEY, CACHE_DATE_INDEX, illustPagesCacheTtlMs, illustPagesCacheMaxEntries);
 };
 
 // src/databases/ugoira-cache.ts
@@ -438,9 +1494,10 @@ const hasEnoughStorage = async (size) => {
 };
 /** 读取缓存的动图帧，过期或超出有效期时返回 `null` */
 const getCachedUgoiraFrames = async (id, now = Date.now()) => {
+	const { ugoiraCacheTtlMs } = getSettings();
 	const entry = await runRequest(UGOIRA_FRAMES_CACHE_TABLE_KEY, "readonly", (store) => store.get(id));
 	if (!entry?.frames?.length) return null;
-	if (now - toTimestamp(entry.cacheDate, 0) > 6048e5) {
+	if (now - toTimestamp(entry.cacheDate, 0) > ugoiraCacheTtlMs) {
 		runTransaction(UGOIRA_FRAMES_CACHE_TABLE_KEY, (store) => {
 			store.delete(id);
 		});
@@ -458,7 +1515,7 @@ const getCachedUgoiraFrames = async (id, now = Date.now()) => {
 /** 缓存动图帧。空间不足或数据超出容量上限时跳过缓存 */
 const cacheUgoiraFrames = async (id, data) => {
 	const size = sumFrameSize(data);
-	if (!data.length || size > 67108864) return false;
+	if (!data.length || size > getSettings().ugoiraCacheMaxBytes) return false;
 	if (!await hasEnoughStorage(size)) return false;
 	const cached = await runTransaction(UGOIRA_FRAMES_CACHE_TABLE_KEY, (store) => {
 		const entry = {
@@ -482,6 +1539,7 @@ const cacheUgoiraFrames = async (id, data) => {
 const pruneUgoiraFrameCache = async () => {
 	const db = await getDatabase();
 	if (!db) return;
+	const { ugoiraCacheTtlMs, ugoiraCacheMaxEntries, ugoiraCacheMaxBytes } = getSettings();
 	const now = Date.now();
 	await new Promise((resolve) => {
 		try {
@@ -496,7 +1554,7 @@ const pruneUgoiraFrameCache = async () => {
 				if (!cursor) {
 					entries.sort((a, b) => a.cacheDate - b.cacheDate);
 					for (const entry of entries) {
-						if (!(now - entry.cacheDate > 6048e5) && totalCount <= 20 && totalSize <= 67108864) break;
+						if (!(now - entry.cacheDate > ugoiraCacheTtlMs) && totalCount <= ugoiraCacheMaxEntries && totalSize <= ugoiraCacheMaxBytes) break;
 						store.delete(entry.id);
 						totalCount -= 1;
 						totalSize -= entry.size;
@@ -593,7 +1651,15 @@ const sanitizeIllustFilename = (filename) => {
 	return filename.replace(/^(\d+)-[0-9a-zA-Z]+(_.*)$/, "$1$2");
 };
 const createLRUCache = (maxSize) => {
+	let limit = Math.max(0, Math.floor(maxSize));
 	const map = /* @__PURE__ */ new Map();
+	const evictOverflow = () => {
+		while (map.size > limit) {
+			const oldestKey = map.keys().next().value;
+			if (oldestKey === void 0) break;
+			map.delete(oldestKey);
+		}
+	};
 	return {
 		get(key) {
 			if (!map.has(key)) return void 0;
@@ -603,9 +1669,20 @@ const createLRUCache = (maxSize) => {
 			return val;
 		},
 		set(key, val) {
+			if (limit <= 0) return;
 			if (map.has(key)) map.delete(key);
-			else if (map.size >= maxSize) map.delete(map.keys().next().value);
 			map.set(key, val);
+			evictOverflow();
+		},
+		setMaxSize(nextMaxSize) {
+			limit = Math.max(0, Math.floor(nextMaxSize));
+			evictOverflow();
+		},
+		size() {
+			return map.size;
+		},
+		maxSize() {
+			return limit;
 		}
 	};
 };
@@ -634,10 +1711,9 @@ const createReadThroughCache = (read) => {
 };
 
 // src/services/request.ts
-const xmlHttpRequest = window.GM.xmlHttpRequest;
 const request = (options) => {
 	const { headers, ...restOptions } = options;
-	return xmlHttpRequest({
+	return window.GM.xmlHttpRequest({
 		responseType: "json",
 		...restOptions,
 		headers: {
@@ -647,40 +1723,47 @@ const request = (options) => {
 	});
 };
 const requestWithRetry = async (options) => {
-	const { retryDelay = 1e4, maxRetryTimes = Infinity, onRetry, ...restOptions } = options;
+	const { retryDelay, maxRetryTimes, onRetry, ...restOptions } = options;
+	const maxAttempts = maxRetryTimes === void 0 ? getSettings().requestMaxAttempts ?? Infinity : maxRetryTimes ?? Infinity;
 	let response;
-	let retryTimes = 0;
-	while (retryTimes < maxRetryTimes) {
+	let attempts = 0;
+	while (attempts < maxAttempts) {
 		response = await request(restOptions);
 		if (response.status === 200) {
 			if (!response.response.error) return response;
 		}
-		retryTimes += 1;
-		onRetry?.(response, retryTimes);
-		await pause(retryDelay);
+		attempts += 1;
+		if (attempts >= maxAttempts) break;
+		onRetry?.(response, attempts);
+		await pause(retryDelay ?? getSettings().requestRetryIntervalMs);
 	}
 	throw new Error(`Request for ${restOptions.url} failed: ${response?.responseText}`);
 };
 
 // src/services/download.ts
 const STORAGE_KEY = "pp-downloads";
-/** 已完成的下载记录最多保留的条数 */
-const MAX_COMPLETED_RECORDS = 200;
-/** 待重试（失败或中断）的下载记录最多保留的条数 */
-const MAX_RETRYABLE_RECORDS = 200;
 /** 当前标签页的标识 */
 const TAB_ID = crypto.randomUUID();
-/** 执行下载的标签页超过该时长未更新状态时，视为该标签页已崩溃或卸载 */
-const OWNER_TIMEOUT = 18e4;
-/** 刷新下载状态存活时间的心跳间隔 */
-const HEARTBEAT_INTERVAL = 15e3;
 const listeners = /* @__PURE__ */ new Set();
 const attempts = /* @__PURE__ */ new Map();
 const requests = /* @__PURE__ */ new Map();
 /** 被用户主动中止的尝试 */
 const abortedAttempts = /* @__PURE__ */ new Set();
+/** 配置收紧失联超时前已观察到的远端活动心跳，在新心跳到来前沿用原失联边界 */
+const legacyTimeoutOverrides = /* @__PURE__ */ new Map();
 let downloads;
 let heartbeat;
+const getEffectiveOwnerTimeoutMs = (record, defaultTimeoutMs) => {
+	if (record.status !== "downloading") {
+		legacyTimeoutOverrides.delete(record.id);
+		return defaultTimeoutMs;
+	}
+	const override = legacyTimeoutOverrides.get(record.id);
+	if (!override) return defaultTimeoutMs;
+	if (record.updatedAt === override.observedUpdatedAt) return override.timeoutMs;
+	legacyTimeoutOverrides.delete(record.id);
+	return defaultTimeoutMs;
+};
 /** 清除记录上的下载归属信息 */
 const releaseOwnership = (record) => {
 	delete record.owner;
@@ -691,6 +1774,7 @@ const readStoredDownloads = () => {
 	const saved = GM_getValue(STORAGE_KEY, []);
 	if (!Array.isArray(saved)) return [];
 	const now = Date.now();
+	const defaultTimeoutMs = getSettings().downloadOwnerTimeoutMs;
 	return saved.filter((item) => item && typeof item.id === "string" && typeof item.url === "string" && /^https?:\/\//.test(item.url) && typeof item.filename === "string" && [
 		"downloading",
 		"completed",
@@ -711,10 +1795,11 @@ const readStoredDownloads = () => {
 		if (typeof item.error === "string") record.error = item.error;
 		if (typeof item.owner === "string") record.owner = item.owner;
 		if (Number.isFinite(item.updatedAt)) record.updatedAt = item.updatedAt;
-		if (record.status === "downloading" && (!record.owner || record.updatedAt === void 0 || now - record.updatedAt > OWNER_TIMEOUT)) {
+		if (record.status === "downloading" && (!record.owner || record.updatedAt === void 0 || now - record.updatedAt > getEffectiveOwnerTimeoutMs(record, defaultTimeoutMs))) {
 			record.status = "interrupted";
 			releaseOwnership(record);
-		}
+			legacyTimeoutOverrides.delete(record.id);
+		} else if (record.status !== "downloading") legacyTimeoutOverrides.delete(record.id);
 		return record;
 	});
 };
@@ -756,6 +1841,7 @@ const syncFromStorage = (allowDelete = false) => {
 /** 记录数超出上限时，移除最早的已完成记录和最早的待重试记录 */
 const trimDownloads = () => {
 	if (!downloads) return;
+	const { completedDownloadsMaxEntries, retryableDownloadsMaxEntries } = getSettings();
 	downloads = [...downloads].sort((a, b) => b.createdAt - a.createdAt);
 	const counts = {
 		completed: 0,
@@ -764,7 +1850,7 @@ const trimDownloads = () => {
 	const kept = downloads.filter((record) => {
 		const type = record.status === "completed" ? "completed" : record.status === "failed" || record.status === "interrupted" ? "retryable" : void 0;
 		if (!type) return true;
-		const limit = type === "completed" ? MAX_COMPLETED_RECORDS : MAX_RETRYABLE_RECORDS;
+		const limit = type === "completed" ? completedDownloadsMaxEntries : retryableDownloadsMaxEntries;
 		if (counts[type] < limit) {
 			counts[type] += 1;
 			return true;
@@ -809,18 +1895,25 @@ const publish = (persist = true) => {
 /** 刷新本标签页下载的存活时间，并将已关闭标签页遗留的下载标记为中断 */
 const tick = () => {
 	const now = Date.now();
+	const defaultTimeoutMs = getSettings().downloadOwnerTimeoutMs;
 	let changed = false;
 	for (const record of downloads ?? []) {
-		if (record.status !== "downloading") continue;
+		if (record.status !== "downloading") {
+			legacyTimeoutOverrides.delete(record.id);
+			continue;
+		}
 		if (attempts.has(record.id)) {
 			record.updatedAt = now;
+			legacyTimeoutOverrides.delete(record.id);
 			changed = true;
 			continue;
 		}
-		if (now - (record.updatedAt ?? 0) <= OWNER_TIMEOUT) continue;
+		const effectiveTimeoutMs = getEffectiveOwnerTimeoutMs(record, defaultTimeoutMs);
+		if (now - (record.updatedAt ?? 0) <= effectiveTimeoutMs) continue;
 		iLog.w(`下载所在标签页已关闭，标记为中断：${record.filename}`);
 		record.status = "interrupted";
 		releaseOwnership(record);
+		legacyTimeoutOverrides.delete(record.id);
 		changed = true;
 	}
 	if (changed) publish();
@@ -832,8 +1925,32 @@ const tick = () => {
 const ensureHeartbeat = () => {
 	if (heartbeat !== void 0) return;
 	if (!downloads?.some((record) => record.status === "downloading")) return;
-	heartbeat = setInterval(tick, HEARTBEAT_INTERVAL);
+	heartbeat = setInterval(tick, getSettings().downloadHeartbeatMs);
 };
+subscribeSettings((next, prev) => {
+	if (next.downloadOwnerTimeoutMs < prev.downloadOwnerTimeoutMs) {
+		const knownRecords = downloads ?? (() => {
+			const stored = GM_getValue(STORAGE_KEY, []);
+			return Array.isArray(stored) ? stored : [];
+		})();
+		for (const record of knownRecords) {
+			if (!record || record.status !== "downloading" || attempts.has(record.id) || typeof record.updatedAt !== "number") continue;
+			const effectiveTimeout = getEffectiveOwnerTimeoutMs(record, prev.downloadOwnerTimeoutMs);
+			if (next.downloadOwnerTimeoutMs < effectiveTimeout) legacyTimeoutOverrides.set(record.id, {
+				observedUpdatedAt: record.updatedAt,
+				timeoutMs: effectiveTimeout
+			});
+		}
+	}
+	if ((next.downloadHeartbeatMs !== prev.downloadHeartbeatMs || next.downloadOwnerTimeoutMs !== prev.downloadOwnerTimeoutMs) && attempts.size > 0 && downloads) publish(true);
+	if (next.downloadHeartbeatMs !== prev.downloadHeartbeatMs) {
+		if (heartbeat !== void 0) {
+			clearInterval(heartbeat);
+			heartbeat = void 0;
+		}
+		ensureHeartbeat();
+	}
+});
 GM_addValueChangeListener(STORAGE_KEY, (_key, _oldValue, _newValue, remote) => {
 	if (!remote) return;
 	remoteChangePending = true;
@@ -931,7 +2048,7 @@ const startDownload = (record, options = {}) => {
 				record.loaded = Math.max(0, response.loaded || 0);
 				record.total = response.lengthComputable ? Math.max(0, response.total || 0) : 0;
 				const now = Date.now();
-				const persist = now - lastProgressSave >= 1e3;
+				const persist = now - lastProgressSave >= getSettings().downloadProgressPersistMs;
 				if (persist) lastProgressSave = now;
 				publish(persist);
 				onprogress?.call(this, response);
@@ -1134,7 +2251,10 @@ const injectStyle = (css, id) => {
 * Pixiv 的部分节点由前端异步渲染，`DOMContentLoaded` 时未必存在，
 * 因此需要有限次重试；用尽后通过 `onGiveUp` 告知调用方。
 */
-const waitFor = (probe, action, { interval = 300, maxAttempts = 10, onGiveUp } = {}) => {
+const waitFor = (probe, action, { interval, maxAttempts, onGiveUp } = {}) => {
+	const settings = getSettings();
+	const probeInterval = interval ?? settings.domProbeIntervalMs;
+	const probeMaxAttempts = maxAttempts ?? settings.domProbeMaxAttempts;
 	let attempt = 1;
 	const step = () => {
 		const value = probe();
@@ -1142,12 +2262,12 @@ const waitFor = (probe, action, { interval = 300, maxAttempts = 10, onGiveUp } =
 			action(value);
 			return;
 		}
-		if (attempt >= maxAttempts) {
+		if (attempt >= probeMaxAttempts) {
 			onGiveUp?.();
 			return;
 		}
 		attempt += 1;
-		setTimeout(deferredStep, interval);
+		setTimeout(deferredStep, probeInterval);
 	};
 	/**
 	* 后续尝试在定时器中执行，异常无法传播回调用方，只能就地记录并停止。
@@ -1165,7 +2285,7 @@ const waitFor = (probe, action, { interval = 300, maxAttempts = 10, onGiveUp } =
 
 // src/features/downloads.ts
 const BUTTON_ID = "pp-downloads-button";
-const PANEL_ID = "pp-downloads-panel";
+const PANEL_ID$1 = "pp-downloads-panel";
 const formatBytes = (bytes) => bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.ceil(bytes / 1024)} KB`;
 const formatTime = (timestamp) => {
 	const date = new Date(timestamp);
@@ -1204,7 +2324,7 @@ const injectDownloadPanelStyles = () => {
         width: 10px; height: 10px; border-radius: 50%; background: #e53935;
         border: 2px solid #fff;
       }
-      #${PANEL_ID} {
+      #${PANEL_ID$1} {
         --pp-download-bg: #fff; --pp-download-fg: #222; --pp-download-muted: #666;
         --pp-download-border: #ddd; --pp-download-action: #006eb8;
         --pp-download-danger: #d32f2f; --pp-download-danger-hover: rgba(211, 47, 47, .12);
@@ -1214,55 +2334,55 @@ const injectDownloadPanelStyles = () => {
         border-radius: 12px; background: var(--pp-download-bg); color: var(--pp-download-fg);
         box-shadow: 0 8px 32px #0003; font: 14px/1.5 sans-serif;
       }
-      #${PANEL_ID}[hidden], #${PANEL_ID} [hidden] { display: none; }
-      #${PANEL_ID} header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; }
-      #${PANEL_ID} h2 { margin: 0; font-size: 16px; color: inherit; }
-      #${PANEL_ID} button { border: 0; background: transparent; color: var(--pp-download-action); cursor: pointer; padding: 8px; font: inherit; }
-      #${PANEL_ID} button:disabled { color: var(--pp-download-muted); opacity: .6; cursor: default; }
-      #${PANEL_ID} button:focus-visible, #${PANEL_ID} a:focus-visible, #${PANEL_ID} summary:focus-visible { outline: 2px solid var(--pp-download-action); outline-offset: 2px; }
-      #${PANEL_ID} .pp-download-summary { margin: 0; padding: 0 16px 4px; color: var(--pp-download-muted); }
-      #${PANEL_ID} .pp-download-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; padding: 0 8px 8px; }
-      #${PANEL_ID} .pp-download-actions button { font-size: 12px; }
-      #${PANEL_ID} .pp-download-menu { position: relative; margin-left: auto; }
-      #${PANEL_ID} .pp-download-menu summary {
+      #${PANEL_ID$1}[hidden], #${PANEL_ID$1} [hidden] { display: none; }
+      #${PANEL_ID$1} header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; }
+      #${PANEL_ID$1} h2 { margin: 0; font-size: 16px; color: inherit; }
+      #${PANEL_ID$1} button { border: 0; background: transparent; color: var(--pp-download-action); cursor: pointer; padding: 8px; font: inherit; }
+      #${PANEL_ID$1} button:disabled { color: var(--pp-download-muted); opacity: .6; cursor: default; }
+      #${PANEL_ID$1} button:focus-visible, #${PANEL_ID$1} a:focus-visible, #${PANEL_ID$1} summary:focus-visible { outline: 2px solid var(--pp-download-action); outline-offset: 2px; }
+      #${PANEL_ID$1} .pp-download-summary { margin: 0; padding: 0 16px 4px; color: var(--pp-download-muted); }
+      #${PANEL_ID$1} .pp-download-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; padding: 0 8px 8px; }
+      #${PANEL_ID$1} .pp-download-actions button { font-size: 12px; }
+      #${PANEL_ID$1} .pp-download-menu { position: relative; margin-left: auto; }
+      #${PANEL_ID$1} .pp-download-menu summary {
         display: flex; align-items: center; justify-content: center; list-style: none;
         width: 32px; height: 32px; border-radius: 50%; color: var(--pp-download-action);
         cursor: pointer; font-size: 24px; line-height: 1;
       }
-      #${PANEL_ID} .pp-download-menu summary::-webkit-details-marker { display: none; }
-      #${PANEL_ID} .pp-download-menu summary:hover,
-      #${PANEL_ID} .pp-download-menu[open] summary,
-      #${PANEL_ID} .pp-download-menu-content button:not(:disabled):hover { background: rgba(0, 150, 250, .12); }
-      #${PANEL_ID} .pp-download-menu-content {
+      #${PANEL_ID$1} .pp-download-menu summary::-webkit-details-marker { display: none; }
+      #${PANEL_ID$1} .pp-download-menu summary:hover,
+      #${PANEL_ID$1} .pp-download-menu[open] summary,
+      #${PANEL_ID$1} .pp-download-menu-content button:not(:disabled):hover { background: rgba(0, 150, 250, .12); }
+      #${PANEL_ID$1} .pp-download-menu-content {
         position: absolute; z-index: 1; top: calc(100% + 4px); right: 0;
         min-width: max-content; padding: 4px; border: 1px solid var(--pp-download-border);
         border-radius: 8px; background: var(--pp-download-bg); box-shadow: 0 4px 16px #0003;
       }
-      #${PANEL_ID} .pp-download-menu-content button { display: block; width: 100%; border-radius: 4px; text-align: left; }
-      #${PANEL_ID} ul { list-style: none; margin: 0; padding: 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
-      #${PANEL_ID} li { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--pp-download-border); }
-      #${PANEL_ID} .pp-download-info { flex: 1; min-width: 0; }
-      #${PANEL_ID} a { display: block; color: var(--pp-download-fg); overflow-wrap: anywhere; text-decoration: none; }
-      #${PANEL_ID} a:hover { text-decoration: underline; }
-      #${PANEL_ID} small { display: block; color: var(--pp-download-muted); overflow-wrap: anywhere; }
-      #${PANEL_ID} progress { display: block; width: 100%; height: 6px; margin-top: 8px; accent-color: #0096fa; }
-      #${PANEL_ID} .pp-download-icon {
+      #${PANEL_ID$1} .pp-download-menu-content button { display: block; width: 100%; border-radius: 4px; text-align: left; }
+      #${PANEL_ID$1} ul { list-style: none; margin: 0; padding: 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+      #${PANEL_ID$1} li { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--pp-download-border); }
+      #${PANEL_ID$1} .pp-download-info { flex: 1; min-width: 0; }
+      #${PANEL_ID$1} a { display: block; color: var(--pp-download-fg); overflow-wrap: anywhere; text-decoration: none; }
+      #${PANEL_ID$1} a:hover { text-decoration: underline; }
+      #${PANEL_ID$1} small { display: block; color: var(--pp-download-muted); overflow-wrap: anywhere; }
+      #${PANEL_ID$1} progress { display: block; width: 100%; height: 6px; margin-top: 8px; accent-color: #0096fa; }
+      #${PANEL_ID$1} .pp-download-icon {
         display: inline-flex; align-items: center; justify-content: center;
         flex-shrink: 0; width: 32px; height: 32px; padding: 6px; border-radius: 50%;
       }
-      #${PANEL_ID} .pp-download-icon:not([hidden]) + .pp-download-icon:not([hidden]) { margin-left: -8px; }
-      #${PANEL_ID} .pp-download-icon:hover { background: rgba(0, 150, 250, .12); }
-      #${PANEL_ID} .pp-download-icon svg { display: block; width: 18px; height: 18px; }
-      #${PANEL_ID} .pp-download-icon[hidden] { display: none; }
-      #${PANEL_ID} .pp-download-abort, #${PANEL_ID} .pp-download-remove { color: var(--pp-download-danger); }
-      #${PANEL_ID} .pp-download-abort:hover, #${PANEL_ID} .pp-download-remove:hover { background: var(--pp-download-danger-hover); }
+      #${PANEL_ID$1} .pp-download-icon:not([hidden]) + .pp-download-icon:not([hidden]) { margin-left: -8px; }
+      #${PANEL_ID$1} .pp-download-icon:hover { background: rgba(0, 150, 250, .12); }
+      #${PANEL_ID$1} .pp-download-icon svg { display: block; width: 18px; height: 18px; }
+      #${PANEL_ID$1} .pp-download-icon[hidden] { display: none; }
+      #${PANEL_ID$1} .pp-download-abort, #${PANEL_ID$1} .pp-download-remove { color: var(--pp-download-danger); }
+      #${PANEL_ID$1} .pp-download-abort:hover, #${PANEL_ID$1} .pp-download-remove:hover { background: var(--pp-download-danger-hover); }
       @keyframes pp-download-bounce { 0%, 100% { transform: translateY(-3px); } 50% { transform: translateY(3px); } }
       @keyframes pp-toolbar-pulse { 50% { opacity: .35; } }
       @media (prefers-reduced-motion: reduce) {
         #${BUTTON_ID}[data-active="true"] svg, .pp-toolbar-button[aria-busy="true"] svg { animation: none; }
       }
       @media (prefers-color-scheme: dark) {
-        #${PANEL_ID} { --pp-download-bg: #222; --pp-download-fg: #eee;
+        #${PANEL_ID$1} { --pp-download-bg: #222; --pp-download-fg: #eee;
           --pp-download-muted: #bbb; --pp-download-border: #444; --pp-download-action: #72c5ff;
           --pp-download-danger: #ff6b6b; --pp-download-danger-hover: rgba(255, 107, 107, .16); }
       }
@@ -1277,7 +2397,7 @@ const loadDownloadPanel = (toolbar) => {
 		title: "下载记录",
 		"aria-label": "下载记录",
 		"aria-expanded": "false",
-		"aria-controls": PANEL_ID,
+		"aria-controls": PANEL_ID$1,
 		"aria-haspopup": "dialog"
 	}).addClass("pp-toolbar-button").html(download_default);
 	button.find("svg").attr("aria-hidden", "true");
@@ -1285,7 +2405,7 @@ const loadDownloadPanel = (toolbar) => {
 	$("<div>").append(button).appendTo(toolbar);
 	toolbar.style.zIndex = "10000";
 	const panel = $("<div>").attr({
-		id: PANEL_ID,
+		id: PANEL_ID$1,
 		role: "dialog",
 		"aria-labelledby": "pp-downloads-heading"
 	}).prop("hidden", true).appendTo("body");
@@ -1500,8 +2620,6 @@ const createPendingPromiseCache = () => {
 // src/utils/tags.ts
 const LOCAL_TAGS_KEY = "PIXIV_PREVIEWER_L_LOCAL_TAGS";
 const LOCAL_TAG_TRANSLATIONS_KEY = "PIXIV_PREVIEWER_L_TAG_TRANSLATIONS";
-/** 翻译缓存最多保留的条目数 */
-const LOCAL_TAG_TRANSLATIONS_MAX_ENTRIES = 2e3;
 const emptyLocalTagState = () => ({
 	tags: [],
 	autoSort: false
@@ -1513,13 +2631,29 @@ const emptyLocalTagState = () => ({
 const localTagState = createReadThroughCache(() => GM_getValue(LOCAL_TAGS_KEY, emptyLocalTagState()));
 const tagTranslationState = createReadThroughCache(() => GM_getValue(LOCAL_TAG_TRANSLATIONS_KEY, { translations: {} }));
 let persistTimer = null;
+let persistSettingsSubscribed = false;
+const ensurePersistSettingsListener = () => {
+	if (persistSettingsSubscribed) return;
+	persistSettingsSubscribed = true;
+	subscribeSettings((next, prev) => {
+		if (next.localTagPersistDelayMs !== prev.localTagPersistDelayMs && persistTimer !== null) {
+			if (next.localTagPersistDelayMs === 0) flushLocalTagState();
+			else {
+				clearTimeout(persistTimer);
+				persistTimer = null;
+				schedulePersist();
+			}
+		}
+	});
+};
 /** 延迟批量落盘，合并同一轮操作中的多次写入 */
 const schedulePersist = () => {
+	ensurePersistSettingsListener();
 	if (persistTimer !== null) return;
 	persistTimer = setTimeout(() => {
 		persistTimer = null;
 		GM_setValue(LOCAL_TAGS_KEY, structuredClone(localTagState.peek()));
-	}, 500);
+	}, getSettings().localTagPersistDelayMs);
 };
 /** 立即落盘 pending 的修改，用于标签页隐藏等场景 */
 const flushLocalTagState = () => {
@@ -1551,7 +2685,7 @@ const getCachedLocalTagDetails = (tag) => {
 	const item = getLocalTag(tag);
 	if (!item?.metadata) return;
 	const age = Date.now() - item.metadata.cachedAt;
-	if (age >= 0 && age < 2592e6) return item.metadata.details;
+	if (age >= 0 && age < getSettings().localTagMetadataCacheTtlMs) return item.metadata.details;
 	delete item.metadata;
 	schedulePersist();
 };
@@ -1612,25 +2746,42 @@ const recordLocalTagVisit = (tag) => {
 const getCachedTagTranslation = (tag) => {
 	const entry = tagTranslationState.get().translations[tag];
 	if (!entry) return void 0;
-	if (Date.now() - entry.cachedAt > 6048e5) {
+	if (Date.now() - entry.cachedAt > getSettings().tagTranslationCacheTtlMs) {
 		delete tagTranslationState.peek().translations[tag];
 		return;
 	}
 	return entry.translation;
 };
-/** 缓存标签中文翻译；条目数超限时淘汰最旧的一半，避免无界增长 */
+const evictOverflowTagTranslations = (state, maxEntries) => {
+	const entries = Object.entries(state.translations);
+	if (entries.length <= maxEntries) return false;
+	const keepCount = Math.floor(maxEntries / 2);
+	const kept = entries.sort((a, b) => b[1].cachedAt - a[1].cachedAt).slice(0, keepCount);
+	state.translations = Object.fromEntries(kept);
+	return true;
+};
+/** 缓存标签中文翻译；条目数超限时按容量一半向下取整淘汰最旧条目 */
 const cacheTagTranslation = (tag, translation) => {
 	const state = tagTranslationState.peek();
 	state.translations[tag] = {
 		translation,
 		cachedAt: Date.now()
 	};
-	const entries = Object.entries(state.translations);
-	if (entries.length > LOCAL_TAG_TRANSLATIONS_MAX_ENTRIES) {
-		const kept = entries.sort((a, b) => b[1].cachedAt - a[1].cachedAt).slice(0, LOCAL_TAG_TRANSLATIONS_MAX_ENTRIES / 2);
-		state.translations = Object.fromEntries(kept);
-	}
+	evictOverflowTagTranslations(state, getSettings().tagTranslationCacheMaxEntries);
 	GM_setValue(LOCAL_TAG_TRANSLATIONS_KEY, state);
+};
+/** 按当前有效期与容量清理已保存的标签翻译缓存 */
+const pruneTagTranslationCache = () => {
+	const { tagTranslationCacheTtlMs, tagTranslationCacheMaxEntries } = getSettings();
+	const state = tagTranslationState.get();
+	const now = Date.now();
+	let changed = false;
+	for (const [tag, entry] of Object.entries(state.translations)) if (now - entry.cachedAt > tagTranslationCacheTtlMs) {
+		delete state.translations[tag];
+		changed = true;
+	}
+	if (evictOverflowTagTranslations(state, tagTranslationCacheMaxEntries)) changed = true;
+	if (changed) GM_setValue(LOCAL_TAG_TRANSLATIONS_KEY, state);
 };
 const getTagFromPath = (pathname) => {
 	const match = pathname.match(/^\/(?:en\/)?tags\/([^/]+)/);
@@ -1666,8 +2817,9 @@ const getIllustMangaTotal = (body) => {
 	const mangaTotal = searchBody.manga?.total ?? 0;
 	if (typeof illustTotal === "number" && typeof mangaTotal === "number") return illustTotal + mangaTotal;
 };
-/** 如果标签在本地列表中，记录其插画漫画作品总数 */
+/** 如果标签在本地列表中且功能已启用，记录其插画漫画作品总数 */
 const recordTagTotal = (tag, body) => {
+	if (!getSettings().enableLocalTags) return;
 	if (!hasLocalTag(tag)) return;
 	const total = getIllustMangaTotal(body);
 	if (total !== void 0) recordLocalTagTotal(tag, total);
@@ -1676,7 +2828,7 @@ const requestTagTopBody = async (tag) => {
 	const response = await request({
 		method: "GET",
 		url: `/ajax/search/top/${encodeURIComponent(tag)}?lang=zh`,
-		timeout: 1e4
+		timeout: getSettings().tagRequestTimeoutMs
 	});
 	const data = response.response;
 	if (response.status !== 200 || data.error || !data.body) throw new Error(data.message || "标签信息加载失败");
@@ -1707,7 +2859,7 @@ const getTagDetails = (tag) => {
 	return pendingDetails.run(tag, () => request({
 		method: "GET",
 		url: `/ajax/tag/info?tag=${encodeURIComponent(tag)}&lang=zh`,
-		timeout: 1e4
+		timeout: getSettings().tagRequestTimeoutMs
 	}).then((response) => {
 		const data = response.response;
 		if (response.status !== 200 || data.error || !data.body) throw new Error(data.message || "标签详情加载失败");
@@ -1719,12 +2871,22 @@ const getTagDetails = (tag) => {
 // src/utils/debounce.ts
 function debounce(func, delay = 100) {
 	let timeout = null;
-	return function(...args) {
-		if (timeout) clearTimeout(timeout);
+	const debounced = function(...args) {
+		if (timeout !== null) clearTimeout(timeout);
+		const wait = typeof delay === "function" ? delay() : delay;
 		timeout = setTimeout(() => {
+			timeout = null;
 			func(...args);
-		}, delay);
+		}, wait);
 	};
+	debounced.cancel = () => {
+		if (timeout !== null) {
+			clearTimeout(timeout);
+			timeout = null;
+		}
+	};
+	debounced.isPending = () => timeout !== null;
+	return debounced;
 }
 
 // src/utils/tag-colors.ts
@@ -1903,20 +3065,24 @@ const getTagFromSearchUrl = (url) => {
 	}
 };
 const recordTagSearchTotal = (tag, data) => {
+	if (!getSettings().enableLocalTags) return;
 	const response = data;
 	if (!response || response.error) return;
 	recordTagTotal(tag, response.body);
 };
-/** 拦截页面自身的标签 top 搜索请求，记录访问标签页时的作品总数 */
+let isSearchIntercepted = false;
+/** 拦截页面自身的标签 top 搜索请求，记录访问标签页时的作品总数（仅安装一次） */
 const interceptTagSearchRequests = () => {
+	if (isSearchIntercepted) return;
+	isSearchIntercepted = true;
 	try {
 		const pageFetch = unsafeWindow.fetch.bind(unsafeWindow);
 		unsafeWindow.fetch = function(input, init) {
 			const url = typeof input === "string" ? input : "url" in input ? input.url : input.href;
 			const response = pageFetch(input, init);
 			const tag = getTagFromSearchUrl(url);
-			if (tag) response.then((result) => {
-				if (!result.ok) return void 0;
+			if (tag && getSettings().enableLocalTags) response.then((result) => {
+				if (!result.ok || !getSettings().enableLocalTags) return void 0;
 				return result.clone().json();
 			}).then((data) => {
 				if (data) recordTagSearchTotal(tag, data);
@@ -1938,7 +3104,8 @@ const interceptTagSearchRequests = () => {
 		};
 		XHR.prototype.send = function(body) {
 			const tag = getTagFromSearchUrl(requestUrls.get(this) ?? "");
-			if (tag) this.addEventListener("load", () => {
+			if (tag && getSettings().enableLocalTags) this.addEventListener("load", () => {
+				if (!getSettings().enableLocalTags) return;
 				if (this.status < 200 || this.status >= 300) return;
 				try {
 					recordTagSearchTotal(tag, this.responseType === "json" ? this.response : JSON.parse(this.responseText));
@@ -1958,8 +3125,52 @@ const getTagLink = (target) => {
 	if (url.origin !== location.origin) return null;
 	return getTagFromPath(url.pathname) ? link : null;
 };
+let activeLocalTagsTeardown = null;
+let gmTagListenerRegistered = false;
+let onRemoteLocalTagsUpdate = null;
+let visitUrlWatcherRegistered = false;
+let lastRecordedVisitTag = null;
+/** 仅按路径变更重置已记录的访问标签，避免在同一标签页重复启停功能时重复计数 */
+const resetLocalTagVisitTrackingOnPath = (pathname) => {
+	if (getTagFromPath(pathname) !== lastRecordedVisitTag) lastRecordedVisitTag = null;
+};
+/** 同一路径下仅记录一次本地标签访问计数 */
+const syncLocalTagVisitForPath = (pathname) => {
+	const tag = getTagFromPath(pathname);
+	if (tag && tag !== lastRecordedVisitTag) {
+		lastRecordedVisitTag = tag;
+		recordLocalTagVisit(tag);
+		return true;
+	}
+	if (!tag) lastRecordedVisitTag = null;
+	return false;
+};
+const ensureLocalTagGmListener = () => {
+	if (gmTagListenerRegistered) return;
+	gmTagListenerRegistered = true;
+	GM_addValueChangeListener(LOCAL_TAGS_KEY, (_key, _oldValue, _newValue, remote) => {
+		if (!remote) return;
+		invalidateLocalTagState();
+		onRemoteLocalTagsUpdate?.();
+	});
+};
+const ensureLocalTagVisitUrlWatcher = () => {
+	if (visitUrlWatcherRegistered) return;
+	visitUrlWatcherRegistered = true;
+	$(window).on("urlchange.ppLocalTagsVisit", () => {
+		resetLocalTagVisitTrackingOnPath(location.pathname);
+	});
+};
+const unloadLocalTags = () => {
+	if (!activeLocalTagsTeardown) return;
+	activeLocalTagsTeardown();
+	activeLocalTagsTeardown = null;
+};
 const loadLocalTags = () => {
-	if ($(`#${POPOVER_ID}`).length) return;
+	if (activeLocalTagsTeardown || $(`#${POPOVER_ID}`).length) return;
+	ensureLocalTagVisitUrlWatcher();
+	ensureLocalTagGmListener();
+	let disposed = false;
 	injectStyle(`
     #${POPOVER_ID}, #${MANAGER_ID}, .${STRIP_CLASS} {
       --pp-tag-bg: #fff; --pp-tag-fg: #333; --pp-tag-muted: #666;
@@ -2088,13 +3299,16 @@ const loadLocalTags = () => {
 		button?.text("正在添加…");
 		updateAction();
 		getTagTranslation(tag).then((label) => {
+			if (disposed || !getSettings().enableLocalTags) return;
 			addLocalTag(tag, label);
 			refresh();
 		}).finally(() => {
 			addingTag = null;
+			if (disposed) return;
 			button?.prop("disabled", false);
 			updateAction();
 		}).catch((error) => {
+			if (disposed) return;
 			if (button !== action || activeTag === tag) button?.text("添加失败，点击重试");
 			iLog.w("Failed to add local tag:", error);
 		});
@@ -2113,6 +3327,8 @@ const loadLocalTags = () => {
 	const hidePopover = () => {
 		clearTimeout(showTimer);
 		clearTimeout(hideTimer);
+		showTimer = void 0;
+		hideTimer = void 0;
 		popover.prop("hidden", true);
 		scrollParents.off("scroll.ppLocalTags");
 		scrollParents = $();
@@ -2146,7 +3362,7 @@ const loadLocalTags = () => {
 		stats.prop("hidden", false);
 		try {
 			const total = await getTagCurrentTotal(tag);
-			if (total === void 0 || activeLink !== link || activeTag !== tag) return;
+			if (disposed || total === void 0 || activeLink !== link || activeTag !== tag) return;
 			if (lastTotal === void 0) stats.text(`插画漫画作品总数：${total} 件`);
 			else {
 				const added = total - lastTotal;
@@ -2156,6 +3372,7 @@ const loadLocalTags = () => {
 		} catch {}
 	};
 	const showPopover = async (link) => {
+		if (disposed) return;
 		const tag = getTagFromPath(new URL($(link).prop("href")).pathname);
 		if (!tag || !$.contains($("html").get(0), link) || manager.prop("open")) return;
 		activeLink = link;
@@ -2174,7 +3391,7 @@ const loadLocalTags = () => {
 		updateStats(tag, link);
 		try {
 			const details = await getTagDetails(tag);
-			if (activeLink !== link || activeTag !== tag) return;
+			if (disposed || activeLink !== link || activeTag !== tag) return;
 			title.text(details.tag || tag);
 			abstract.text(details.abstract || "暂无标签简介");
 			if (details.thumbnail) {
@@ -2186,10 +3403,10 @@ const loadLocalTags = () => {
 				}).prop("hidden", false);
 			}
 		} catch {
-			if (activeLink !== link || activeTag !== tag) return;
+			if (disposed || activeLink !== link || activeTag !== tag) return;
 			abstract.text("标签详情加载失败，请稍后重新悬浮重试。");
 		}
-		positionPopover();
+		if (!disposed) positionPopover();
 	};
 	const renderManager = () => {
 		const focusKey = manager.find(":focus").attr("data-focus-key");
@@ -2339,6 +3556,7 @@ const loadLocalTags = () => {
 		strip.append(links);
 	};
 	function refresh() {
+		if (disposed) return;
 		$(`.${STRIP_CLASS}`).each((_, strip) => renderStrip($(strip)));
 		updateAction();
 		positionPopover();
@@ -2375,14 +3593,16 @@ const loadLocalTags = () => {
 		const target = event.target;
 		if ($(target).closest(popover).length) {
 			clearTimeout(hideTimer);
+			hideTimer = void 0;
 			return;
 		}
 		const link = getTagLink(target);
 		if (!link || $(link).closest(manager).length) return;
 		clearTimeout(hideTimer);
+		hideTimer = void 0;
 		if (link === activeLink) return;
 		clearTimeout(showTimer);
-		showTimer = setTimeout(() => void showPopover(link), 200);
+		showTimer = setTimeout(() => void showPopover(link), getSettings().localTagPopoverShowDelayMs);
 	};
 	const leave = (event) => {
 		const link = getTagLink(event.target);
@@ -2391,42 +3611,72 @@ const loadLocalTags = () => {
 		const related = event.relatedTarget;
 		if (related instanceof Node && ($(related).closest(popover).length || link && $(related).closest(link).length)) return;
 		clearTimeout(showTimer);
+		showTimer = void 0;
 		clearTimeout(hideTimer);
-		hideTimer = setTimeout(hidePopover, 180);
+		hideTimer = setTimeout(hidePopover, getSettings().localTagPopoverHideDelayMs);
 	};
-	$(document).on("mouseover", enter).on("focusin", enter).on("mouseout", leave).on("focusout", leave).on("keydown", (event) => {
+	$(document).on("mouseover.ppLocalTags", enter).on("focusin.ppLocalTags", enter).on("mouseout.ppLocalTags", leave).on("focusout.ppLocalTags", leave).on("keydown.ppLocalTags", (event) => {
 		if (event.key === "Escape") hidePopover();
-	}).on("scroll", hidePopover);
-	$(window).on("resize", positionPopover);
-	let previousTag = null;
+	}).on("scroll.ppLocalTags", hidePopover);
+	$(window).on("resize.ppLocalTags", positionPopover);
 	const visitPage = () => {
-		const tag = getTagFromPath(location.pathname);
-		if (tag && tag !== previousTag) {
-			recordLocalTagVisit(tag);
-			refresh();
-		}
-		previousTag = tag;
+		if (disposed) return;
+		if (syncLocalTagVisitForPath(location.pathname)) refresh();
 	};
-	$(window).on("urlchange", () => {
+	$(window).on("urlchange.ppLocalTags", () => {
+		if (disposed) return;
 		hidePopover();
 		if (manager.prop("open")) manager.get(0).close();
 		$(`.${STRIP_CLASS}`).remove();
 		visitPage();
 		mountEntries();
 	});
-	GM_addValueChangeListener(LOCAL_TAGS_KEY, (_key, _oldValue, _newValue, remote) => {
-		if (!remote) return;
-		invalidateLocalTagState();
-		refresh();
-	});
-	window.addEventListener("pagehide", flushLocalTagState);
-	new MutationObserver(debounce(() => {
+	onRemoteLocalTagsUpdate = refresh;
+	const onPageHide = () => flushLocalTagState();
+	window.addEventListener("pagehide", onPageHide);
+	const debouncedObserver = debounce(() => {
+		if (disposed) return;
 		if (activeLink && !$.contains($("html").get(0), activeLink)) hidePopover();
 		mountEntries();
-	}, 100)).observe($("body").get(0), {
+	}, () => getSettings().localTagRenderDebounceMs);
+	const observer = new MutationObserver(debouncedObserver);
+	observer.observe($("body").get(0), {
 		childList: true,
 		subtree: true
 	});
+	const unsubscribeSettings = subscribeSettings((next, prev) => {
+		if (next.localTagPopoverShowDelayMs !== prev.localTagPopoverShowDelayMs || next.localTagPopoverHideDelayMs !== prev.localTagPopoverHideDelayMs) {
+			clearTimeout(showTimer);
+			clearTimeout(hideTimer);
+			showTimer = void 0;
+			hideTimer = void 0;
+		}
+		if (next.localTagRenderDebounceMs !== prev.localTagRenderDebounceMs && debouncedObserver.isPending()) {
+			debouncedObserver.cancel();
+			debouncedObserver();
+		}
+	});
+	activeLocalTagsTeardown = () => {
+		disposed = true;
+		unsubscribeSettings();
+		flushLocalTagState();
+		clearTimeout(showTimer);
+		clearTimeout(hideTimer);
+		showTimer = void 0;
+		hideTimer = void 0;
+		debouncedObserver.cancel();
+		observer.disconnect();
+		scrollParents.off("scroll.ppLocalTags");
+		scrollParents = $();
+		$(document).off(".ppLocalTags");
+		$(window).off(".ppLocalTags");
+		window.removeEventListener("pagehide", onPageHide);
+		onRemoteLocalTagsUpdate = null;
+		if (manager.prop("open")) manager.get(0).close();
+		popover.remove();
+		manager.remove();
+		$(`.${STRIP_CLASS}`).remove();
+	};
 	visitPage();
 	mountEntries();
 };
@@ -2462,7 +3712,8 @@ const requestIllustrationDetails = async (id, retry) => {
 * 可以传入更大的值，减少重复请求。
 */
 const getIllustrationDetailsWithCache = (id, retry = false, { maxStale = 0 } = {}) => pendingIllustrationDetails.run(`${id}|${retry}|${maxStale}`, async () => {
-	const cached = await getCachedIllustrationDetails(id, Date.now(), ILLUSTRATION_DETAILS_CACHE_TIME + maxStale);
+	const { illustrationMutableCacheTtlMs } = getSettings();
+	const cached = await getCachedIllustrationDetails(id, Date.now(), illustrationMutableCacheTtlMs + maxStale);
 	if (cached?.mutableFresh) {
 		iLog.d(`Use cached details of illustration ${id}`, cached.details);
 		return cached.details;
@@ -2501,7 +3752,7 @@ const readUserIllustrationsCache = (userId) => {
 		if (!cacheString) return null;
 		const entry = JSON.parse(cacheString);
 		if (entry.version !== USER_ILLUSTRATIONS_CACHE_VERSION || typeof entry.cachedAt !== "number" || !Array.isArray(entry.artworks) || !Array.isArray(entry.illusts) || !Array.isArray(entry.manga)) return null;
-		if (Date.now() - entry.cachedAt > 108e5) return null;
+		if (Date.now() - entry.cachedAt > getSettings().userIllustrationsCacheTtlMs) return null;
 		return entry;
 	} catch (error) {
 		iLog.i("Failed to read user illustrations cache:", error);
@@ -2559,10 +3810,32 @@ const clearUserIllustrationsCache = () => {
 
 // src/services/cache.ts
 let hasPruned = false;
+let activePrunePromise = null;
+let rerunPruneRequested = false;
 /** 页面解析期间不抢占主线程，空闲时再执行重型清理 */
 const whenIdle = (task) => {
-	if (typeof requestIdleCallback === "function") requestIdleCallback(task, { timeout: 3e3 });
-	else setTimeout(task, 1e3);
+	requestIdleCallback(task, { timeout: getSettings().cacheCleanupIdleTimeoutMs });
+};
+const runCachePrune = async () => {
+	if (activePrunePromise) {
+		rerunPruneRequested = true;
+		return activePrunePromise;
+	}
+	activePrunePromise = (async () => {
+		do {
+			rerunPruneRequested = false;
+			await new Promise((resolve) => whenIdle(resolve));
+			try {
+				pruneTagTranslationCache();
+				await Promise.all([pruneIllustrationCaches(), pruneUgoiraFrameCache()]);
+			} catch (error) {
+				iLog.w("Failed to prune caches:", error);
+			}
+		} while (rerunPruneRequested);
+	})().finally(() => {
+		activePrunePromise = null;
+	});
+	return activePrunePromise;
 };
 /**
 * 提前建立 IndexedDB 连接。
@@ -2580,13 +3853,12 @@ const warmUpCacheDatabase = () => {
 const pruneCachesOnStartup = async () => {
 	if (hasPruned) return;
 	hasPruned = true;
-	await new Promise((resolve) => whenIdle(resolve));
-	try {
-		await Promise.all([pruneIllustrationCaches(), pruneUgoiraFrameCache()]);
-	} catch (error) {
-		iLog.w("Failed to prune caches on startup:", error);
-	}
+	await runCachePrune();
 };
+/**
+* 在配置缩小缓存上限或有效期后安排一次持久化缓存清理，不受启动单次标记阻止。
+*/
+const scheduleCachePrune = () => runCachePrune();
 const countTagTranslations = () => {
 	const state = GM_getValue(LOCAL_TAG_TRANSLATIONS_KEY, { translations: {} });
 	return Object.keys(state?.translations ?? {}).length;
@@ -2637,6 +3909,59 @@ const getUgoiraMetadataRequestUrl = (id) => {
 // src/utils/event.ts
 const stopEventPropagation = (event) => {
 	event.stopPropagation();
+};
+
+// src/utils/artwork-link.ts
+const LINK_BLANK_ATTR = "data-pp-link-blank";
+const SORT_ARTWORK_ATTR = "data-pp-sort-artwork";
+const originalAttrsMap = /* @__PURE__ */ new WeakMap();
+/** 判断元素是否为作品详情链接，仅处理 `/artworks/<id>` 链接，不影响作者与标签链接 */
+const getArtworkAnchor = (target) => {
+	const link = target.closest("a").get(0);
+	if (!(link instanceof HTMLAnchorElement)) return null;
+	const href = link.getAttribute("href");
+	if (!href || !/\/artworks\/(\d+)(#(\d+))?/.test(href)) return null;
+	return link;
+};
+/** 为作品链接应用新标签页打开属性，首次修改前记录原属性以便关闭时还原 */
+const applyArtworkLinkBlank = (anchor) => {
+	if (!anchor.hasAttribute(LINK_BLANK_ATTR)) {
+		originalAttrsMap.set(anchor, {
+			target: anchor.getAttribute("target"),
+			rel: anchor.getAttribute("rel")
+		});
+		anchor.setAttribute(LINK_BLANK_ATTR, "1");
+	}
+	anchor.setAttribute("target", "_blank");
+	anchor.setAttribute("rel", "external");
+	const $anchor = $(anchor);
+	$anchor.off("click", stopEventPropagation);
+	$anchor.on("click", stopEventPropagation);
+};
+/** 仅撤销脚本对作品链接改写的属性和事件，恢复页面原本行为 */
+const revertArtworkLinkBlank = (anchor) => {
+	if (!anchor.hasAttribute(LINK_BLANK_ATTR)) return;
+	const original = originalAttrsMap.get(anchor);
+	if (original?.target !== null && original?.target !== void 0) anchor.setAttribute("target", original.target);
+	else anchor.removeAttribute("target");
+	if (original?.rel !== null && original?.rel !== void 0) anchor.setAttribute("rel", original.rel);
+	else anchor.removeAttribute("rel");
+	anchor.removeAttribute(LINK_BLANK_ATTR);
+	$(anchor).off("click", stopEventPropagation);
+	originalAttrsMap.delete(anchor);
+};
+/** 标记由脚本排序生成的作品链接，并根据当前设置决定是否强制新标签页打开 */
+const markSortedArtworkLink = (anchor, linkBlankEnabled) => {
+	anchor.setAttribute(SORT_ARTWORK_ATTR, "1");
+	if (linkBlankEnabled) applyArtworkLinkBlank(anchor);
+};
+/** 在“在新标签页打开作品”配置变更后同步页面中由脚本处理过的作品链接 */
+const syncArtworkLinksBlank = (enabled) => {
+	if (!enabled) {
+		document.querySelectorAll(`a[${LINK_BLANK_ATTR}="1"]`).forEach(revertArtworkLinkBlank);
+		return;
+	}
+	document.querySelectorAll(`a[${SORT_ARTWORK_ATTR}="1"]`).forEach(applyArtworkLinkBlank);
 };
 
 // src/utils/illustration.ts
@@ -2690,9 +4015,6 @@ const mouseMonitor = new MouseMonitor();
 var ZipImagePlayer = class {
 	canvas;
 	op;
-	_URL;
-	_maxLoadAhead;
-	_isSafari;
 	_loadingState;
 	_dead;
 	_context;
@@ -2702,17 +4024,15 @@ var ZipImagePlayer = class {
 	_loadFrame;
 	_frameImages;
 	_paused;
-	_loadTimer;
 	_timer;
 	_failed;
 	_len;
 	_buf;
-	_bytes;
 	_pHead;
 	_pNextHead;
 	_pFetch;
 	_pTail;
-	_trailerBytes = 3e4;
+	_trailerBytes;
 	_listeners = {};
 	on(event, handler) {
 		this._listeners[event] = handler;
@@ -2727,18 +4047,7 @@ var ZipImagePlayer = class {
 	constructor(options) {
 		this.canvas = options.canvas;
 		this.op = options;
-		const w = window;
-		this._URL = window.URL || w.webkitURL;
-		this._maxLoadAhead = 0;
-		if (!this._URL) {
-			this._debugLog("No URL support! Will use slower data: URLs.");
-			this._maxLoadAhead = 10;
-		}
-		if (!window.Blob) this._error("No Blob support");
-		if (!window.Uint8Array) this._error("No Uint8Array support");
-		if (!window.DataView) this._error("No DataView support");
-		if (!window.ArrayBuffer) this._error("No ArrayBuffer support");
-		this._isSafari = Object.prototype.toString.call(window.HTMLElement).indexOf("Constructor") > 0;
+		this._trailerBytes = Math.max(22, Math.floor(options.trailerBytes ?? 3e4));
 		this._loadingState = 0;
 		this._dead = false;
 		const context = options.canvas.getContext("2d");
@@ -2751,12 +4060,10 @@ var ZipImagePlayer = class {
 		this._loadFrame = 0;
 		this._frameImages = [];
 		this._paused = false;
-		this._loadTimer = null;
 		this._timer = null;
 		this._failed = false;
 		this._len = 0;
 		this._buf = null;
-		this._bytes = null;
 		this._pHead = 0;
 		this._pNextHead = 0;
 		this._pFetch = 0;
@@ -2788,11 +4095,10 @@ var ZipImagePlayer = class {
 				length = xhr.response.byteLength;
 				this._len = length;
 				this._buf = xhr.response;
-				this._bytes = new Uint8Array(this._buf);
 			} else {
 				if (xhr.status != 206) this._error("Unexpected HTTP status " + xhr.status);
 				if (xhr.response.byteLength != length) this._error("Unexpected length " + xhr.response.byteLength + " (expected " + length + ")");
-				this._bytes.set(new Uint8Array(xhr.response), offset);
+				new Uint8Array(this._buf).set(new Uint8Array(xhr.response), offset);
 			}
 			if (callback) callback(offset, length);
 		}, false);
@@ -2802,10 +4108,6 @@ var ZipImagePlayer = class {
 		if (offset != null && length != null) {
 			const end = offset + length;
 			xhr.setRequestHeader("Range", "bytes=" + offset + "-" + (end - 1));
-			if (this._isSafari) {
-				xhr.setRequestHeader("Cache-control", "no-cache");
-				xhr.setRequestHeader("If-None-Match", Math.random().toString());
-			}
 		}
 		xhr.send();
 	}
@@ -2841,7 +4143,6 @@ var ZipImagePlayer = class {
 			this._debugLog("Len: " + len);
 			this._len = len;
 			this._buf = new ArrayBuffer(len);
-			this._bytes = new Uint8Array(this._buf);
 			let off = len - this._trailerBytes;
 			if (off < 0) off = 0;
 			this._pTail = len;
@@ -2897,7 +4198,7 @@ var ZipImagePlayer = class {
 	_loadNextChunk() {
 		if (this._pFetch >= this._pTail) return;
 		const off = this._pFetch;
-		let len = this.op.chunkSize;
+		let len = this.op.chunkSize ?? 3e5;
 		if (this._pFetch + len > this._pTail) len = this._pTail - this._pFetch;
 		this._pFetch += len;
 		this._load(off, len, (loadedOff, loadedLen) => {
@@ -2908,7 +4209,7 @@ var ZipImagePlayer = class {
 				} else this._pHead = loadedOff + loadedLen;
 				if (this._pHead >= this._pTail) this._pHead = this._len;
 				$(this).triggerHandler("loadProgress", [this._pHead / this._len]);
-				if (!this._loadTimer) this._loadNextFrame();
+				this._loadNextFrame();
 			} else this._pNextHead = loadedOff + loadedLen;
 			this._loadNextChunk();
 		});
@@ -2943,27 +4244,17 @@ var ZipImagePlayer = class {
 		this._loadFrame += 1;
 		const off = this._fileDataStart(this._files[meta.file].off);
 		const end = off + this._files[meta.file].len;
-		let url;
 		const mime_type = this.op.metadata.mime_type ?? "image/png";
-		if (this._URL) {
-			let slice;
-			if (!this._buf.slice) {
-				slice = new ArrayBuffer(this._files[meta.file].len);
-				new Uint8Array(slice).set(this._bytes.subarray(off, end));
-			} else slice = this._buf.slice(off, end);
-			const blob = new Blob([slice], { type: mime_type });
-			this.op.onFrameDecoded?.({
-				index: frame,
-				file: meta.file,
-				delay: meta.delay,
-				blob
-			});
-			url = this._URL.createObjectURL(blob);
-			this._loadImage(frame, url, true);
-		} else {
-			url = "data:" + mime_type + ";base64," + base64ArrayBuffer(this._buf, off, end - off);
-			this._loadImage(frame, url, false);
-		}
+		const slice = this._buf.slice(off, end);
+		const blob = new Blob([slice], { type: mime_type });
+		this.op.onFrameDecoded?.({
+			index: frame,
+			file: meta.file,
+			delay: meta.delay,
+			blob
+		});
+		const url = URL.createObjectURL(blob);
+		this._loadImage(frame, url, true);
 	}
 	/** 从帧缓存中加载下一帧 */
 	_loadCachedFrame() {
@@ -2972,14 +4263,14 @@ var ZipImagePlayer = class {
 		if (frame >= this._frameCount) return;
 		this._loadFrame += 1;
 		const blob = this.op.cachedFrames[frame];
-		this._loadImage(frame, this._URL.createObjectURL(blob), true);
+		this._loadImage(frame, URL.createObjectURL(blob), true);
 	}
 	_loadImage(frame, url, isBlob) {
 		const image = new Image();
 		const meta = this.op.metadata.frames[frame];
 		image.addEventListener("load", () => {
 			this._debugLog("Loaded " + meta.file + " to frame " + frame);
-			if (isBlob) this._URL.revokeObjectURL(url);
+			if (isBlob) URL.revokeObjectURL(url);
 			if (this._dead) return;
 			this._frameImages[frame] = image;
 			this._emit("frameLoaded", frame);
@@ -2987,12 +4278,7 @@ var ZipImagePlayer = class {
 			if (frame >= this._frameCount - 1) {
 				this._setLoadingState(2);
 				this._buf = null;
-				this._bytes = null;
-			} else if (!this._maxLoadAhead || frame - this._frame < this._maxLoadAhead) this._loadNextFrame();
-			else if (!this._loadTimer) this._loadTimer = setTimeout(() => {
-				this._loadTimer = null;
-				this._loadNextFrame();
-			}, 200);
+			} else this._loadNextFrame();
 		});
 		image.src = url;
 	}
@@ -3063,10 +4349,8 @@ var ZipImagePlayer = class {
 		this._debugLog("Stopped!");
 		this._dead = true;
 		if (this._timer) clearTimeout(this._timer);
-		if (this._loadTimer) clearTimeout(this._loadTimer);
 		this._frameImages = [];
 		this._buf = null;
-		this._bytes = null;
 		$(this).triggerHandler("stop");
 	}
 	getCurrentFrame() {
@@ -3085,44 +4369,13 @@ var ZipImagePlayer = class {
 		return this._failed;
 	}
 };
-function base64ArrayBuffer(arrayBuffer, off, byteLength) {
-	let base64 = "";
-	const encodings = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-	const bytes = new Uint8Array(arrayBuffer);
-	const byteRemainder = byteLength % 3;
-	const mainLength = off + byteLength - byteRemainder;
-	let a, b, c, d;
-	let chunk;
-	for (let i = off; i < mainLength; i = i + 3) {
-		chunk = bytes[i] << 16 | bytes[i + 1] << 8 | bytes[i + 2];
-		a = (chunk & 16515072) >> 18;
-		b = (chunk & 258048) >> 12;
-		c = (chunk & 4032) >> 6;
-		d = chunk & 63;
-		base64 += encodings[a] + encodings[b] + encodings[c] + encodings[d];
-	}
-	if (byteRemainder == 1) {
-		chunk = bytes[mainLength];
-		a = (chunk & 252) >> 2;
-		b = (chunk & 3) << 4;
-		base64 += encodings[a] + encodings[b] + "==";
-	} else if (byteRemainder == 2) {
-		chunk = bytes[mainLength] << 8 | bytes[mainLength + 1];
-		a = (chunk & 64512) >> 10;
-		b = (chunk & 1008) >> 4;
-		c = (chunk & 15) << 2;
-		base64 += encodings[a] + encodings[b] + encodings[c] + "=";
-	}
-	return base64;
-}
 
 // src/features/preview.ts
 /**
 * 已解码预览图片的 LRU 缓存。同一个作品反复悬停时复用最近解码的位图，
-* 无需等待浏览器重新解码。数量上限刻意保守：原图预览单张解码后可达数 MB，
-* 超出上限的记录交给浏览器自身的图片缓存。
+* 无需等待浏览器重新解码。容量按 `previewPreloadCount * 2` 自动派生。
 */
-const decodedPreviewImages = createLRUCache(10);
+const decodedPreviewImages = createLRUCache(g_defaultSettings.previewPreloadCount * 2);
 const getDecodedImageCacheKey = (illustId, page) => `${illustId}_p${page}`;
 /** 创建带旋转动画的 loading 图标，预览窗口的加载状态共用 */
 const createLoadingSpinner = () => $(loading_default).css({
@@ -3130,34 +4383,33 @@ const createLoadingSpinner = () => $(loading_default).css({
 	animation: "pp-spin 1s linear infinite"
 });
 let isInitialized$1 = false;
-const loadIllustPreview = (options) => {
+const loadIllustPreview = () => {
 	if (isInitialized$1) return;
-	const { previewDelay, enableAnimePreview, linkBlank } = options;
-	const mouseHoverDebounceWait = previewDelay / 5;
-	const mouseHoverPreviewWait = previewDelay - mouseHoverDebounceWait;
+	decodedPreviewImages.setMaxSize(getSettings().previewPreloadCount * 2);
 	/**
 	* 获取作品的元数据信息
 	* @param target 查找的 JQuery 对象
 	* @returns 作品的元数据
 	*/
 	const getIllustMetadata = (target) => {
-		const imgLink = target.closest("a");
-		if (!imgLink.length) return null;
-		const illustHrefMatch = imgLink.attr("href")?.match(/\/artworks\/(\d+)(#(\d+))?/);
+		const imgLink = getArtworkAnchor(target);
+		if (!imgLink) return null;
+		const $imgLink = $(imgLink);
+		const illustHrefMatch = $imgLink.attr("href")?.match(/\/artworks\/(\d+)(#(\d+))?/);
 		if (!illustHrefMatch) return null;
 		const illustId = illustHrefMatch[1];
 		const previewPage = illustHrefMatch[3] ? Math.max(1, Number(illustHrefMatch[3])) : void 0;
-		const ugoiraSvg = imgLink.children("div:first").find("svg:first");
-		const playIcon = imgLink.children("div:first").find("pixiv-icon[name=\"24/Play\"]");
+		const ugoiraSvg = $imgLink.children("div:first").find("svg:first");
+		const playIcon = $imgLink.children("div:first").find("pixiv-icon[name=\"24/Play\"]");
 		return {
 			/** 作品 ID */
 			illustId,
 			/** 作品页码 */
 			previewPage,
 			/** 作品类型 */
-			illustType: ugoiraSvg.length || playIcon.length || imgLink.hasClass("ugoku-illust") ? 2 : 0,
+			illustType: ugoiraSvg.length || playIcon.length || $imgLink.hasClass("ugoku-illust") ? 2 : 0,
 			/** 作品链接 DOM */
-			illustLinkDom: imgLink
+			illustLinkDom: $imgLink
 		};
 	};
 	/**
@@ -3169,8 +4421,9 @@ const loadIllustPreview = (options) => {
 		let currentHoveredIllustId = "";
 		let getIllustPagesRequest = null;
 		let getUgoiraMetaRequest = null;
-		const getIllustPagesCache = createLRUCache(100);
-		const getUgoiraMetadataCache = createLRUCache(100);
+		const initialCacheMax = getSettings().previewCacheMaxEntries;
+		const getIllustPagesCache = createLRUCache(initialCacheMax);
+		const getUgoiraMetadataCache = createLRUCache(initialCacheMax);
 		/** 获取动图元数据并展示动图预览（命中缓存时直接展示） */
 		const previewAsUgoira = ({ target, illustId, illustDetailsPromise }) => {
 			const showUgoira = (metadata) => {
@@ -3229,7 +4482,7 @@ const loadIllustPreview = (options) => {
 				if (currentHoveredIllustId !== illustId) return;
 				if (!previewedIllust.isActiveIllust(illustId)) return;
 				const isUgoira = illustrationDetails && (checkIsUgoira(illustrationDetails.type) || checkIsUgoiraUsingTags(illustrationDetails.tags));
-				if (enableAnimePreview && isUgoira) {
+				if (getSettings().enableAnimePreview && isUgoira) {
 					previewedIllust.updateIllustrationDetails(illustrationDetails);
 					previewAsUgoira({
 						target,
@@ -3241,16 +4494,18 @@ const loadIllustPreview = (options) => {
 				previewedIllust.updateIllustrationDetails(illustrationDetails);
 			});
 		};
-		return ({ target, illustId, previewPage, illustType }) => {
+		const trigger = ({ target, illustId, previewPage, illustType }) => {
+			const settings = getSettings();
+			if (!settings.enablePreview) return;
 			if (currentHoveredIllustId === illustId && previewedIllust.isActiveIllust(illustId)) return;
 			getIllustPagesRequest?.abort();
 			getUgoiraMetaRequest?.abort();
 			currentHoveredIllustId = illustId;
-			if (illustType === 2 && !enableAnimePreview) {
+			if (illustType === 2 && !settings.enableAnimePreview) {
 				iLog.i("动图预览已禁用，跳过");
 				return;
 			}
-			const illustDetailsPromise = getIllustrationDetailsWithCache(illustId, false, { maxStale: PREVIEW_DETAILS_MAX_STALE_TIME }).catch((error) => {
+			const illustDetailsPromise = getIllustrationDetailsWithCache(illustId, false, { maxStale: settings.previewDetailsMaxStaleMs }).catch((error) => {
 				iLog.e(`An error occurred while fetching illustration details of ${illustId}: ${error}`);
 				return null;
 			});
@@ -3331,53 +4586,110 @@ const loadIllustPreview = (options) => {
 				return;
 			}
 		};
+		const cancel = () => {
+			currentHoveredIllustId = "";
+			getIllustPagesRequest?.abort();
+			getIllustPagesRequest = null;
+			getUgoiraMetaRequest?.abort();
+			getUgoiraMetaRequest = null;
+		};
+		const setCacheMaxEntries = (maxEntries) => {
+			getIllustPagesCache.setMaxSize(maxEntries);
+			getUgoiraMetadataCache.setMaxSize(maxEntries);
+		};
+		return {
+			trigger,
+			cancel,
+			setCacheMaxEntries
+		};
 	})();
+	let pendingHoverTimeout = null;
+	let pendingHoverCleanup = null;
+	const cancelPendingTrigger = () => {
+		if (pendingHoverTimeout !== null) {
+			clearTimeout(pendingHoverTimeout);
+			pendingHoverTimeout = null;
+		}
+		pendingHoverCleanup?.();
+		pendingHoverCleanup = null;
+	};
 	const onMouseOverIllust = (target) => {
-		if (previewedIllust.oneHandedMode) return;
+		const settings = getSettings();
+		if (!settings.enablePreview || previewedIllust.oneHandedMode) return;
 		const { illustId, previewPage, illustType, illustLinkDom } = getIllustMetadata(target) || {};
 		if (illustId === void 0 || illustType === void 0) return;
-		if (linkBlank && illustLinkDom) {
-			illustLinkDom.attr({
-				target: "_blank",
-				rel: "external"
-			});
-			illustLinkDom.off("click", stopEventPropagation);
-			illustLinkDom.on("click", stopEventPropagation);
-		}
-		const previewIllustTimeout = setTimeout(() => {
-			if (previewedIllust.oneHandedMode) return;
-			previewIllust({
+		if (settings.linkBlank && illustLinkDom) applyArtworkLinkBlank(illustLinkDom.get(0));
+		cancelPendingTrigger();
+		const hoverDelay = settings.previewDelay;
+		const mouseHoverPreviewWait = hoverDelay - hoverDelay / 5;
+		const onMouseMove = (mouseMoveEvent) => {
+			if (mouseMoveEvent.ctrlKey || mouseMoveEvent.metaKey) cancelPendingTrigger();
+		};
+		const onMouseOut = () => {
+			cancelPendingTrigger();
+		};
+		target.on("mousemove", onMouseMove);
+		target.on("mouseout", onMouseOut);
+		pendingHoverCleanup = () => {
+			target.off("mousemove", onMouseMove);
+			target.off("mouseout", onMouseOut);
+		};
+		pendingHoverTimeout = setTimeout(() => {
+			cancelPendingTrigger();
+			if (!getSettings().enablePreview || previewedIllust.oneHandedMode) return;
+			previewIllust.trigger({
 				target,
 				illustId,
 				previewPage,
 				illustType
 			});
 		}, mouseHoverPreviewWait);
-		const onMouseMove = (mouseMoveEvent) => {
-			if (mouseMoveEvent.ctrlKey || mouseMoveEvent.metaKey) {
-				clearTimeout(previewIllustTimeout);
-				target.off("mousemove", onMouseMove);
-			}
-		};
-		target.on("mousemove", onMouseMove);
-		const onMouseOut = () => {
-			clearTimeout(previewIllustTimeout);
-			target.off("mouseout", onMouseOut);
-		};
-		target.on("mouseout", onMouseOut);
 	};
-	const onMouseMoveDocument = (() => {
-		const debouncedOnMouseOverIllust = debounce(onMouseOverIllust, mouseHoverDebounceWait);
-		let prevTarget = null;
-		return (mouseMoveEvent) => {
-			if (previewedIllust.oneHandedMode || mouseMoveEvent.ctrlKey || mouseMoveEvent.metaKey) return;
-			if (mouseMoveEvent.target === prevTarget) return;
-			prevTarget = mouseMoveEvent.target;
-			const currentTarget = $(mouseMoveEvent.target);
-			debouncedOnMouseOverIllust(currentTarget);
-		};
-	})();
+	const debouncedOnMouseOverIllust = debounce(onMouseOverIllust, () => getSettings().previewDelay / 5);
+	let prevTarget = null;
+	const cancelAllHoverTimers = () => {
+		debouncedOnMouseOverIllust.cancel();
+		cancelPendingTrigger();
+	};
+	const onMouseMoveDocument = (mouseMoveEvent) => {
+		const settings = getSettings();
+		if (!settings.enablePreview && !settings.linkBlank) {
+			prevTarget = null;
+			return;
+		}
+		if (previewedIllust.oneHandedMode || mouseMoveEvent.ctrlKey || mouseMoveEvent.metaKey) return;
+		if (mouseMoveEvent.target === prevTarget) return;
+		prevTarget = mouseMoveEvent.target;
+		const currentTarget = $(mouseMoveEvent.target);
+		if (settings.linkBlank) {
+			const link = getArtworkAnchor(currentTarget);
+			if (link) applyArtworkLinkBlank(link);
+		}
+		if (!settings.enablePreview) return;
+		debouncedOnMouseOverIllust(currentTarget);
+	};
 	$(document).on("mousemove", onMouseMoveDocument);
+	subscribeSettings((next, prev) => {
+		if (next.previewPreloadCount !== prev.previewPreloadCount) decodedPreviewImages.setMaxSize(next.previewPreloadCount * 2);
+		if (next.previewCacheMaxEntries !== prev.previewCacheMaxEntries) previewIllust.setCacheMaxEntries(next.previewCacheMaxEntries);
+		if (next.linkBlank !== prev.linkBlank) syncArtworkLinksBlank(next.linkBlank);
+		if (!next.enablePreview && prev.enablePreview) {
+			cancelAllHoverTimers();
+			previewIllust.cancel();
+			previewedIllust.reset();
+			prevTarget = null;
+			return;
+		}
+		if (next.enablePreview && !prev.enablePreview) prevTarget = null;
+		if (next.previewDelay !== prev.previewDelay) {
+			cancelAllHoverTimers();
+			prevTarget = null;
+		}
+		if (!next.enableAnimePreview && prev.enableAnimePreview && previewedIllust.isUgoiraActive()) {
+			previewIllust.cancel();
+			previewedIllust.reset();
+		}
+	});
 	(function inactiveUnexpectedDoms() {
 		injectStyle(`
 @keyframes pp-spin {
@@ -3598,6 +4910,12 @@ var PreviewedIllust = class {
 	isActiveIllust(illustId) {
 		return this.illustId === illustId;
 	}
+	/** 当前是否正在加载或展示动图预览 */
+	isUgoiraActive() {
+		if (!this.illustId) return false;
+		if (this.#currentUgoiraPlayer || this.previewImageElement.is("canvas")) return true;
+		return Boolean(this.illustDetails && (checkIsUgoira(this.illustDetails.type) || checkIsUgoiraUsingTags(this.illustDetails.tags)));
+	}
 	/**
 	* 准备预览窗口并接管占位或静态预览状态。
 	* 同一个作品仍在展示时直接复用其 DOM 节点，避免关闭窗口造成闪烁或打断展示。
@@ -3665,7 +4983,7 @@ var PreviewedIllust = class {
 			this.#pageLoadingOverlayTimeout = null;
 			if (!this.#isPageImageLoading) return;
 			this.pageLoadingOverlayElement.show();
-		}, 120);
+		}, getSettings().previewLoadingOverlayDelayMs);
 	}
 	#clearPageLoadingOverlayTimeout() {
 		if (this.#pageLoadingOverlayTimeout !== null) {
@@ -3729,7 +5047,7 @@ var PreviewedIllust = class {
 		const cachedImage = decodedPreviewImages.get(getDecodedImageCacheKey(this.illustId, page));
 		return !!cachedImage?.complete && cachedImage.naturalWidth > 0;
 	}
-	preloadImages(from = this.currentPage - 1, to = this.currentPage - 1 + 5) {
+	preloadImages(from = this.currentPage - 1, to = this.currentPage - 1 + getSettings().previewPreloadCount) {
 		for (let i = from; i < to && i < this.regularUrls.length; i += 1) {
 			const cacheKey = getDecodedImageCacheKey(this.illustId, i + 1);
 			if (decodedPreviewImages.get(cacheKey)) continue;
@@ -3794,7 +5112,7 @@ var PreviewedIllust = class {
 				ontimeout: onDownloadFailed,
 				onabort: onDownloadFailed,
 				onprogress: (ev) => {
-					if (this.currentPage !== downloadPage) return;
+					if (this.downloadOriginalElement !== downloadElement || this.currentPage !== downloadPage) return;
 					try {
 						const loaded = ev.loaded ?? 0;
 						const total = ev.total ?? 0;
@@ -3806,7 +5124,7 @@ var PreviewedIllust = class {
 					}
 				},
 				onload: () => {
-					if (this.currentPage !== downloadPage) return;
+					if (this.downloadOriginalElement !== downloadElement || this.currentPage !== downloadPage) return;
 					textSpan.text("已下载");
 					this.downloadOriginalElement.css({
 						backgroundImage: "",
@@ -3816,7 +5134,7 @@ var PreviewedIllust = class {
 					this.#downloadResetTimeout = setTimeout(() => {
 						textSpan.text(originalText);
 						this.#downloadResetTimeout = null;
-					}, 3e3);
+					}, getSettings().previewDownloadNoticeMs);
 				}
 			}
 		});
@@ -3888,10 +5206,12 @@ var PreviewedIllust = class {
 		this.bindUgoiraPreviewEvents();
 	}
 	createUgoiraPlayer(options) {
+		const { ugoiraChunkBytes, ugoiraTrailerBytes } = getSettings();
 		const canvas = document.createElement("canvas");
 		return new ZipImagePlayer({
 			canvas,
-			chunkSize: 3e5,
+			chunkSize: ugoiraChunkBytes,
+			trailerBytes: ugoiraTrailerBytes,
 			loop: true,
 			autoStart: true,
 			debug: false,
@@ -4018,6 +5338,7 @@ var PreviewedIllust = class {
 		const isTargetIllust = this.illustElement.is(event.target) || targetLink.length > 0 && (targetLink.is(event.target) || targetLink.has(event.target).length > 0);
 		if (this.oneHandedMode || !isTargetIllust) return;
 		this.cancelLongPress();
+		const holdMs = getSettings().previewHoldMs;
 		this.#longPressProgress = $(`<svg viewBox="0 0 32 32" aria-hidden="true">
         <circle cx="16" cy="16" r="12" fill="none"
           stroke="rgba(0, 0, 0, 0.35)" stroke-width="4" />
@@ -4025,7 +5346,7 @@ var PreviewedIllust = class {
           stroke="rgb(0, 150, 250)" stroke-width="4" stroke-linecap="round"
           pathLength="1" stroke-dasharray="1" stroke-dashoffset="1"
           transform="rotate(-90 16 16)"
-          style="animation: pp-one-handed-progress ${300}ms linear forwards" />
+          style="animation: pp-one-handed-progress ${holdMs}ms linear forwards" />
       </svg>`).css({
 			position: "fixed",
 			left: `${event.clientX - 16}px`,
@@ -4040,7 +5361,7 @@ var PreviewedIllust = class {
 			this.#suppressLongPressClick = true;
 			this.previewWrapperElement.css({ "pointer-events": "auto" });
 			this.cancelLongPress();
-		}, 300);
+		}, holdMs);
 	};
 	cancelLongPress = () => {
 		if (this.#longPressTimeout !== null) {
@@ -4169,6 +5490,667 @@ var PreviewedIllust = class {
 	}
 };
 
+// src/icons/restore-default.svg
+var restore_default_default = "<svg\n  xmlns=\"http://www.w3.org/2000/svg\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n  aria-hidden=\"true\"\n  focusable=\"false\"\n>\n  <path d=\"M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8\" />\n  <path d=\"M3 3v5h5\" />\n  <circle cx=\"12\" cy=\"12\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\" />\n</svg>";
+
+// src/icons/undo.svg
+var undo_default = "<svg\n  xmlns=\"http://www.w3.org/2000/svg\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n  aria-hidden=\"true\"\n  focusable=\"false\"\n>\n  <path d=\"M9 14 4 9l5-5\" />\n  <path d=\"M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11\" />\n</svg>";
+
+// src/features/settings-panel.ts
+const PANEL_ID = "pp-settings-panel";
+const HEADING_ID = "pp-settings-heading";
+const createInitialDraft = (baseline) => {
+	const draft = {};
+	for (const descriptor of SETTING_FIELDS) draft[descriptor.key] = formatSettingInputValue(descriptor, baseline[descriptor.key]);
+	return draft;
+};
+/**
+* 隔离面板草稿与运行中配置的状态会话。
+* 保留明确编辑过的字段，使其在远程同步时不被覆盖，并在保存时与最新持久化配置合并。
+*/
+const createSettingsDraftSession = (initialBaseline = getSettings(), persist = saveUserSettings) => {
+	let baseline = { ...initialBaseline };
+	let draftRaw = createInitialDraft(baseline);
+	const editedKeys = /* @__PURE__ */ new Set();
+	const getBaselineFormatted = (key) => formatSettingInputValue(SETTING_FIELD_MAP[key], baseline[key]);
+	const getDefaultFormatted = (key) => formatSettingInputValue(SETTING_FIELD_MAP[key], g_defaultSettings[key]);
+	const isFieldModified = (key) => draftRaw[key] !== getBaselineFormatted(key);
+	const isFieldDefault = (key) => draftRaw[key] === getDefaultFormatted(key);
+	return {
+		getBaseline: () => ({ ...baseline }),
+		getDraftValue: (key) => draftRaw[key],
+		getEditedKeys: () => editedKeys,
+		isFieldModified,
+		isFieldDefault,
+		hasModifiedFields: () => SETTING_FIELDS.some((field) => isFieldModified(field.key)),
+		setInput: (key, value) => {
+			draftRaw[key] = value;
+			if (value === getBaselineFormatted(key)) editedKeys.delete(key);
+			else editedKeys.add(key);
+		},
+		revertField: (key) => {
+			const previousValue = getBaselineFormatted(key);
+			draftRaw[key] = previousValue;
+			editedKeys.delete(key);
+			return previousValue;
+		},
+		restoreField: (key) => {
+			const descriptor = SETTING_FIELD_MAP[key];
+			const defaultFormatted = formatSettingInputValue(descriptor, g_defaultSettings[key]);
+			draftRaw[key] = defaultFormatted;
+			editedKeys.add(key);
+			return draftRaw[key];
+		},
+		restoreAll: () => {
+			for (const descriptor of SETTING_FIELDS) {
+				draftRaw[descriptor.key] = formatSettingInputValue(descriptor, g_defaultSettings[descriptor.key]);
+				editedKeys.add(descriptor.key);
+			}
+			return { ...draftRaw };
+		},
+		applyRemoteUpdate: (remoteSettings) => {
+			baseline = { ...remoteSettings };
+			const updatedKeys = [];
+			for (const descriptor of SETTING_FIELDS) {
+				if (editedKeys.has(descriptor.key)) continue;
+				draftRaw[descriptor.key] = formatSettingInputValue(descriptor, remoteSettings[descriptor.key]);
+				updatedKeys.push(descriptor.key);
+			}
+			return updatedKeys;
+		},
+		save: () => {
+			const parseErrors = [];
+			const parsedAll = {};
+			for (const descriptor of SETTING_FIELDS) {
+				const parsed = parseSettingInput(descriptor, draftRaw[descriptor.key]);
+				if (!parsed.ok) parseErrors.push({
+					key: descriptor.key,
+					message: parsed.message
+				});
+				else parsedAll[descriptor.key] = parsed.value;
+			}
+			if (parseErrors.length > 0) return {
+				ok: false,
+				errors: parseErrors
+			};
+			const edits = {};
+			for (const key of editedKeys) edits[key] = parsedAll[key];
+			const result = persist(edits);
+			if (result.ok) {
+				baseline = { ...result.settings };
+				draftRaw = createInitialDraft(baseline);
+				editedKeys.clear();
+			}
+			return result;
+		}
+	};
+};
+const injectSettingsPanelStyles = () => {
+	injectStyle(`
+      #${PANEL_ID} {
+        --pp-settings-bg: #fff;
+        --pp-settings-fg: #222;
+        --pp-settings-muted: #666;
+        --pp-settings-border: #ddd;
+        --pp-settings-surface: #f7f9fb;
+        --pp-settings-action: #006eb8;
+        --pp-settings-action-fg: #fff;
+        --pp-settings-accent-bg: rgba(0, 110, 184, .08);
+        --pp-settings-accent-border: rgba(0, 110, 184, .38);
+        --pp-settings-danger: #c62828;
+        --pp-settings-danger-bg: rgba(198, 40, 40, .08);
+        --pp-settings-success: #1b5e20;
+        --pp-settings-success-bg: rgba(27, 94, 32, .08);
+        position: fixed;
+        right: 20px;
+        bottom: 20px;
+        z-index: 100001;
+        display: flex;
+        flex-direction: column;
+        width: min(460px, calc(100vw - 24px));
+        max-height: min(680px, calc(100vh - 24px));
+        box-sizing: border-box;
+        border: 1px solid var(--pp-settings-border);
+        border-radius: 12px;
+        background: var(--pp-settings-bg);
+        color: var(--pp-settings-fg);
+        box-shadow: 0 12px 36px rgba(0, 0, 0, .24);
+        font: 13px/1.45 sans-serif;
+      }
+      #${PANEL_ID} *, #${PANEL_ID} *::before, #${PANEL_ID} *::after {
+        box-sizing: border-box;
+      }
+      #${PANEL_ID} [hidden] {
+        display: none;
+      }
+      #${PANEL_ID} header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--pp-settings-border);
+        flex-shrink: 0;
+      }
+      #${PANEL_ID} h2 {
+        margin: 0;
+        font-size: 16px;
+        color: inherit;
+      }
+      #${PANEL_ID} .pp-settings-body {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        padding: 12px 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+      #${PANEL_ID} .pp-settings-group {
+        border: 1px solid var(--pp-settings-border);
+        border-radius: 8px;
+        padding: 10px 12px;
+        background: var(--pp-settings-surface);
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      #${PANEL_ID} .pp-settings-group h3 {
+        margin: 0;
+        font-size: 14px;
+        color: inherit;
+      }
+      #${PANEL_ID} .pp-settings-advanced-toggle {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 12px;
+        font-weight: 600;
+        background: var(--pp-settings-surface);
+      }
+      #${PANEL_ID} .pp-settings-advanced-toggle[data-modified="true"] {
+        color: var(--pp-settings-action);
+        border-color: var(--pp-settings-accent-border);
+        background: var(--pp-settings-accent-bg);
+      }
+      #${PANEL_ID} .pp-settings-advanced-body {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      #${PANEL_ID} .pp-settings-advanced-body[hidden] {
+        display: none;
+      }
+      #${PANEL_ID} .pp-settings-field {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding: 8px;
+        border-radius: 6px;
+        border-top: 1px solid var(--pp-settings-border);
+      }
+      #${PANEL_ID} .pp-settings-field:first-of-type {
+        border-top: 0;
+      }
+      #${PANEL_ID} .pp-settings-field[data-modified="true"] {
+        background: var(--pp-settings-accent-bg);
+        box-shadow: inset 3px 0 0 var(--pp-settings-action);
+      }
+      #${PANEL_ID} .pp-settings-field[data-modified="true"] .pp-settings-label {
+        color: var(--pp-settings-action);
+      }
+      #${PANEL_ID} .pp-settings-field[data-modified="true"] input[type="text"]:not([aria-invalid="true"]),
+      #${PANEL_ID} .pp-settings-field[data-modified="true"] select:not([aria-invalid="true"]) {
+        border-color: var(--pp-settings-action);
+      }
+      #${PANEL_ID} .pp-settings-field[data-modified="true"] input[type="checkbox"] {
+        accent-color: var(--pp-settings-action);
+      }
+      #${PANEL_ID} .pp-settings-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      #${PANEL_ID} .pp-settings-label {
+        font-weight: 600;
+        flex: 1;
+        min-width: 0;
+        cursor: pointer;
+      }
+      #${PANEL_ID} .pp-settings-control {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        flex-shrink: 0;
+      }
+      #${PANEL_ID} .pp-settings-field[data-control="text"] .pp-settings-row {
+        flex-wrap: wrap;
+      }
+      #${PANEL_ID} .pp-settings-field[data-control="text"] .pp-settings-control {
+        width: 100%;
+      }
+      #${PANEL_ID} input[type="text"],
+      #${PANEL_ID} select {
+        padding: 4px 8px;
+        border: 1px solid var(--pp-settings-border);
+        border-radius: 6px;
+        background: var(--pp-settings-bg);
+        color: var(--pp-settings-fg);
+        font: inherit;
+      }
+      #${PANEL_ID} .pp-settings-field[data-control="number"] input[type="text"] {
+        width: 96px;
+        text-align: right;
+      }
+      #${PANEL_ID} .pp-settings-field[data-control="text"] input[type="text"] {
+        flex: 1;
+        min-width: 0;
+      }
+      #${PANEL_ID} input[aria-invalid="true"],
+      #${PANEL_ID} select[aria-invalid="true"] {
+        border-color: var(--pp-settings-danger);
+      }
+      #${PANEL_ID} .pp-settings-unit {
+        color: var(--pp-settings-muted);
+        font-size: 12px;
+        white-space: nowrap;
+      }
+      #${PANEL_ID} .pp-settings-desc {
+        color: var(--pp-settings-muted);
+        font-size: 12px;
+      }
+      #${PANEL_ID} .pp-settings-error {
+        color: var(--pp-settings-danger);
+        font-size: 12px;
+      }
+      #${PANEL_ID} button {
+        border: 1px solid var(--pp-settings-border);
+        border-radius: 6px;
+        padding: 4px 8px;
+        background: var(--pp-settings-bg);
+        color: var(--pp-settings-fg);
+        cursor: pointer;
+        font: inherit;
+        white-space: nowrap;
+      }
+      #${PANEL_ID} button:hover {
+        border-color: var(--pp-settings-action);
+      }
+      #${PANEL_ID} button.pp-settings-icon-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        width: 24px;
+        height: 24px;
+        padding: 4px;
+        color: var(--pp-settings-muted);
+      }
+      #${PANEL_ID} button.pp-settings-icon-btn[hidden] {
+        display: none;
+      }
+      #${PANEL_ID} button.pp-settings-icon-btn svg {
+        display: block;
+        width: 14px;
+        height: 14px;
+      }
+      #${PANEL_ID} button.pp-settings-revert-one {
+        color: var(--pp-settings-action);
+        border-color: var(--pp-settings-accent-border);
+      }
+      #${PANEL_ID} button.pp-settings-primary {
+        border-color: var(--pp-settings-action);
+        background: var(--pp-settings-action);
+        color: var(--pp-settings-action-fg);
+        font-weight: 600;
+        padding: 6px 14px;
+      }
+      #${PANEL_ID} button:focus-visible,
+      #${PANEL_ID} input:focus-visible,
+      #${PANEL_ID} select:focus-visible {
+        outline: 2px solid var(--pp-settings-action);
+        outline-offset: 2px;
+      }
+      #${PANEL_ID} footer {
+        border-top: 1px solid var(--pp-settings-border);
+        padding: 10px 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        flex-shrink: 0;
+      }
+      #${PANEL_ID} .pp-settings-status {
+        padding: 6px 8px;
+        border-radius: 6px;
+        font-size: 12px;
+      }
+      #${PANEL_ID} .pp-settings-status[data-state="success"] {
+        color: var(--pp-settings-success);
+        background: var(--pp-settings-success-bg);
+      }
+      #${PANEL_ID} .pp-settings-status[data-state="error"] {
+        color: var(--pp-settings-danger);
+        background: var(--pp-settings-danger-bg);
+      }
+      #${PANEL_ID} .pp-settings-actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+      #${PANEL_ID} .pp-settings-actions .pp-settings-restore-all {
+        margin-right: auto;
+      }
+      @media (prefers-color-scheme: dark) {
+        #${PANEL_ID} {
+          --pp-settings-bg: #222;
+          --pp-settings-fg: #eee;
+          --pp-settings-muted: #bbb;
+          --pp-settings-border: #444;
+          --pp-settings-surface: #2a2a2a;
+          --pp-settings-action: #4ea8de;
+          --pp-settings-action-fg: #111;
+          --pp-settings-accent-bg: rgba(78, 168, 222, .14);
+          --pp-settings-accent-border: rgba(78, 168, 222, .5);
+          --pp-settings-danger: #ff7b7b;
+          --pp-settings-danger-bg: rgba(255, 123, 123, .14);
+          --pp-settings-success: #7ee787;
+          --pp-settings-success-bg: rgba(126, 231, 135, .14);
+        }
+      }
+    `, SETTINGS_STYLE_ID);
+};
+let activePanel = null;
+let openScheduled = false;
+const getFieldDomId = (key) => `pp-setting-${key}`;
+const createFieldRow = (descriptor, session, onFieldChange) => {
+	const inputId = getFieldDomId(descriptor.key);
+	const descId = `${inputId}-desc`;
+	const errorId = `${inputId}-err`;
+	const row = $("<div>").addClass("pp-settings-field").attr({
+		"data-setting-key": descriptor.key,
+		"data-control": descriptor.control
+	});
+	const mainRow = $("<div>").addClass("pp-settings-row");
+	const label = $("<label>").addClass("pp-settings-label").attr("for", inputId).text(descriptor.label);
+	const controlWrap = $("<div>").addClass("pp-settings-control");
+	let input;
+	const initialValue = session.getDraftValue(descriptor.key);
+	if (descriptor.control === "boolean") input = $("<input>").attr({
+		id: inputId,
+		type: "checkbox",
+		"aria-describedby": descId
+	}).prop("checked", Boolean(initialValue)).on("change", () => {
+		session.setInput(descriptor.key, Boolean(input.prop("checked")));
+		onFieldChange(descriptor.key);
+	});
+	else if (descriptor.control === "select") {
+		const select = $("<select>").attr({
+			id: inputId,
+			"aria-describedby": descId
+		});
+		for (const option of descriptor.options ?? []) $("<option>").val(String(option.value)).text(option.label).appendTo(select);
+		select.val(String(initialValue)).on("change", () => {
+			session.setInput(descriptor.key, String(select.val() ?? ""));
+			onFieldChange(descriptor.key);
+		});
+		input = select;
+	} else {
+		const isNumber = descriptor.control === "number";
+		input = $("<input>").attr({
+			id: inputId,
+			type: "text",
+			inputmode: isNumber ? descriptor.integer ? "numeric" : "decimal" : "text",
+			placeholder: descriptor.placeholder ?? "",
+			"aria-describedby": descId
+		}).val(String(initialValue)).on("input", () => {
+			session.setInput(descriptor.key, String(input.val() ?? ""));
+			onFieldChange(descriptor.key);
+		});
+	}
+	const restoreOneButton = $("<button>").attr({
+		type: "button",
+		title: Texts.settings_restoreDefault,
+		"aria-label": `${Texts.settings_restoreDefault}：${descriptor.label}`
+	}).addClass("pp-settings-icon-btn pp-settings-reset-one").html(restore_default_default).prop("hidden", session.isFieldDefault(descriptor.key)).on("click", () => {
+		const wasFocused = document.activeElement === restoreOneButton.get(0);
+		const restored = session.restoreField(descriptor.key);
+		syncControlValue(descriptor, input, restored);
+		onFieldChange(descriptor.key);
+		if (wasFocused) input.trigger("focus");
+	});
+	const revertOneButton = $("<button>").attr({
+		type: "button",
+		title: Texts.settings_revertToPrevious,
+		"aria-label": `${Texts.settings_revertToPrevious}：${descriptor.label}`
+	}).addClass("pp-settings-icon-btn pp-settings-revert-one").html(undo_default).prop("hidden", !session.isFieldModified(descriptor.key)).on("click", () => {
+		const wasFocused = document.activeElement === revertOneButton.get(0);
+		const reverted = session.revertField(descriptor.key);
+		syncControlValue(descriptor, input, reverted);
+		onFieldChange(descriptor.key);
+		if (wasFocused) input.trigger("focus");
+	});
+	controlWrap.append(restoreOneButton, revertOneButton, input);
+	if (descriptor.unit) $("<span>").addClass("pp-settings-unit").text(descriptor.unit).appendTo(controlWrap);
+	mainRow.append(label, controlWrap);
+	const desc = $("<div>").addClass("pp-settings-desc").attr("id", descId).text(descriptor.description);
+	const errorEl = $("<div>").addClass("pp-settings-error").attr("id", errorId).prop("hidden", true);
+	row.append(mainRow, desc, errorEl);
+	return {
+		row,
+		input,
+		restoreButton: restoreOneButton,
+		revertButton: revertOneButton,
+		errorEl,
+		descId,
+		errorId
+	};
+};
+const syncControlValue = (descriptor, input, value) => {
+	if (descriptor.control === "boolean") input.prop("checked", Boolean(value));
+	else input.val(String(value));
+};
+let fieldControls = /* @__PURE__ */ new Map();
+const clearFieldError = (key) => {
+	const control = fieldControls.get(key);
+	if (!control) return;
+	control.input.removeAttr("aria-invalid").attr("aria-describedby", control.descId);
+	control.errorEl.prop("hidden", true).text("");
+};
+const showFieldError = (key, message) => {
+	const control = fieldControls.get(key);
+	if (!control) return;
+	control.input.attr("aria-invalid", "true").attr("aria-describedby", `${control.descId} ${control.errorId}`);
+	control.errorEl.text(message).prop("hidden", false);
+};
+/** 打开右下角单实例配置面板；若已打开则聚焦并保留当前草稿 */
+const openSettingsPanel = () => {
+	if (activePanel) {
+		activePanel.focus();
+		return;
+	}
+	if (!document.body) {
+		if (!openScheduled) {
+			openScheduled = true;
+			onDomReady(() => {
+				openScheduled = false;
+				openSettingsPanel();
+			});
+		}
+		return;
+	}
+	injectSettingsPanelStyles();
+	const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+	const session = createSettingsDraftSession();
+	fieldControls = /* @__PURE__ */ new Map();
+	const panel = $("<div>").attr({
+		id: PANEL_ID,
+		role: "dialog",
+		"aria-modal": "false",
+		"aria-labelledby": HEADING_ID
+	});
+	const closeButton = $("<button>").attr({
+		type: "button",
+		"aria-label": Texts.settings_close
+	}).text(Texts.settings_close);
+	$("<header>").append($("<h2>").attr("id", HEADING_ID).text(Texts.settings_panelTitle), closeButton).appendTo(panel);
+	const body = $("<div>").addClass("pp-settings-body").appendTo(panel);
+	const statusBanner = $("<div>").addClass("pp-settings-status").attr({
+		role: "status",
+		"aria-live": "polite"
+	}).prop("hidden", true);
+	const clearStatus = () => {
+		statusBanner.prop("hidden", true).removeAttr("data-state").text("");
+	};
+	const clearAllErrors = () => {
+		for (const key of fieldControls.keys()) clearFieldError(key);
+		clearStatus();
+	};
+	const syncFieldVisualState = (key) => {
+		const control = fieldControls.get(key);
+		if (!control) return;
+		const modified = session.isFieldModified(key);
+		if (modified) control.row.attr("data-modified", "true");
+		else control.row.removeAttr("data-modified");
+		control.restoreButton.prop("hidden", session.isFieldDefault(key));
+		control.revertButton.prop("hidden", !modified);
+	};
+	let advancedToggle = null;
+	const syncAdvancedModifiedState = () => {
+		if (!advancedToggle) return;
+		if (SETTING_FIELDS.some((field) => field.section === "advanced" && session.isFieldModified(field.key))) advancedToggle.attr("data-modified", "true");
+		else advancedToggle.removeAttr("data-modified");
+	};
+	const syncAllVisualStates = () => {
+		for (const key of fieldControls.keys()) syncFieldVisualState(key);
+		syncAdvancedModifiedState();
+	};
+	const renderGroupSection = (group) => {
+		const fields = SETTING_FIELDS.filter((field) => field.group === group.id);
+		if (fields.length === 0) return null;
+		const section = $("<section>").addClass("pp-settings-group").attr("data-setting-group", group.id);
+		$("<h3>").text(group.title).appendTo(section);
+		for (const descriptor of fields) {
+			const created = createFieldRow(descriptor, session, (key) => {
+				clearFieldError(key);
+				clearStatus();
+				syncFieldVisualState(key);
+				syncAdvancedModifiedState();
+			});
+			fieldControls.set(descriptor.key, {
+				descriptor,
+				row: created.row,
+				input: created.input,
+				restoreButton: created.restoreButton,
+				revertButton: created.revertButton,
+				errorEl: created.errorEl,
+				descId: created.descId,
+				errorId: created.errorId
+			});
+			section.append(created.row);
+		}
+		return section;
+	};
+	for (const group of SETTING_GROUPS) {
+		if (group.section !== "common") continue;
+		const section = renderGroupSection(group);
+		if (section) body.append(section);
+	}
+	const advancedGroups = SETTING_GROUPS.filter((group) => group.section === "advanced");
+	const advancedBodyId = "pp-settings-advanced-body";
+	const advancedBody = $("<div>").attr({ id: advancedBodyId }).addClass("pp-settings-advanced-body").prop("hidden", true);
+	for (const group of advancedGroups) {
+		const section = renderGroupSection(group);
+		if (section) advancedBody.append(section);
+	}
+	let advancedExpanded = false;
+	const advancedArrow = $("<span>").attr("aria-hidden", "true").text("▸");
+	advancedToggle = $("<button>").attr({
+		type: "button",
+		"aria-expanded": "false",
+		"aria-controls": advancedBodyId
+	}).addClass("pp-settings-advanced-toggle").append($("<span>").text(Texts.settings_advancedToggle), advancedArrow);
+	const setAdvancedExpanded = (expanded) => {
+		advancedExpanded = expanded;
+		advancedToggle.attr("aria-expanded", String(expanded));
+		advancedArrow.text(expanded ? "▾" : "▸");
+		advancedBody.prop("hidden", !expanded);
+	};
+	advancedToggle.on("click", () => setAdvancedExpanded(!advancedExpanded));
+	body.append(advancedToggle, advancedBody);
+	const restoreAllButton = $("<button>").attr("type", "button").addClass("pp-settings-restore-all").text(Texts.settings_restoreAll).on("click", () => {
+		const nextDraft = session.restoreAll();
+		for (const [key, control] of fieldControls) syncControlValue(control.descriptor, control.input, nextDraft[key]);
+		syncAllVisualStates();
+		clearAllErrors();
+	});
+	const saveButton = $("<button>").attr("type", "button").addClass("pp-settings-primary").text(Texts.settings_save).on("click", () => {
+		clearAllErrors();
+		const result = session.save();
+		if (result.ok) {
+			for (const [key, control] of fieldControls) syncControlValue(control.descriptor, control.input, session.getDraftValue(key));
+			syncAllVisualStates();
+			statusBanner.attr("data-state", "success").text(Texts.settings_saveSuccess).prop("hidden", false);
+			return;
+		}
+		const firstError = result.errors[0];
+		for (const error of result.errors) if (error.key) showFieldError(error.key, error.message);
+		if (!advancedExpanded && result.errors.some((err) => err.key && fieldControls.get(err.key)?.descriptor.section === "advanced")) setAdvancedExpanded(true);
+		if (firstError?.key) {
+			const control = fieldControls.get(firstError.key);
+			const label = control?.descriptor.label ?? firstError.key;
+			statusBanner.attr("data-state", "error").text(Texts.settings_validationFailed.replace("%1", `${label}（${firstError.message}）`)).prop("hidden", false);
+			const inputEl = control?.input.get(0);
+			inputEl?.scrollIntoView({ block: "nearest" });
+			inputEl?.focus();
+		} else statusBanner.attr("data-state", "error").text(Texts.settings_saveFailed.replace("%1", firstError?.message ?? Texts.settings_saveStorageError)).prop("hidden", false);
+	});
+	$("<footer>").append(statusBanner, $("<div>").addClass("pp-settings-actions").append(restoreAllButton, saveButton)).appendTo(panel);
+	const unsubscribe = subscribeSettings((nextSettings, _prev, source) => {
+		if (source !== "remote") return;
+		const updatedKeys = session.applyRemoteUpdate(nextSettings);
+		for (const key of updatedKeys) {
+			const control = fieldControls.get(key);
+			if (control) {
+				clearFieldError(key);
+				syncControlValue(control.descriptor, control.input, session.getDraftValue(key));
+			}
+		}
+		syncAllVisualStates();
+	});
+	const closePanel = (restoreFocus = false) => {
+		unsubscribe();
+		panel.remove();
+		fieldControls = /* @__PURE__ */ new Map();
+		activePanel = null;
+		if (restoreFocus && previousFocus && previousFocus !== document.body && document.contains(previousFocus)) previousFocus.focus({ preventScroll: true });
+		else if (restoreFocus && document.activeElement instanceof HTMLElement) document.activeElement.blur();
+	};
+	const requestClose = (restoreFocus = false) => {
+		if (session.hasModifiedFields() && !confirm(Texts.settings_confirmDiscard)) return;
+		closePanel(restoreFocus);
+	};
+	closeButton.on("click", () => requestClose(true));
+	panel.on("keydown", (event) => {
+		if (event.key === "Escape") {
+			event.preventDefault();
+			event.stopPropagation();
+			requestClose(true);
+		}
+	});
+	panel.appendTo("body");
+	activePanel = {
+		focus: () => {
+			closeButton.trigger("focus");
+		},
+		close: closePanel
+	};
+	activePanel.focus();
+};
+
 // src/icons/heart.svg
 var heart_default = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg viewBox=\"0 0 32 32\"\n     width=\"32\"\n     height=\"32\">\n    <path d=\"&#xA;M21,5.5 C24.8659932,5.5 28,8.63400675 28,12.5 C28,18.2694439 24.2975093,23.1517313 17.2206059,27.1100183&#xA;C16.4622493,27.5342993 15.5379984,27.5343235 14.779626,27.110148 C7.70250208,23.1517462 4,18.2694529 4,12.5&#xA;C4,8.63400691 7.13400681,5.5 11,5.5 C12.829814,5.5 14.6210123,6.4144028 16,7.8282366&#xA;C17.3789877,6.4144028 19.170186,5.5 21,5.5 Z\" />\n    <path d=\"M16,11.3317089 C15.0857201,9.28334665 13.0491506,7.5 11,7.5&#xA;C8.23857625,7.5 6,9.73857647 6,12.5 C6,17.4386065 9.2519779,21.7268174 15.7559337,25.3646328&#xA;C15.9076021,25.4494645 16.092439,25.4494644 16.2441073,25.3646326 C22.7480325,21.7268037 26,17.4385986 26,12.5&#xA;C26,9.73857625 23.7614237,7.5 21,7.5 C18.9508494,7.5 16.9142799,9.28334665 16,11.3317089 Z\"\n          style=\"fill: #fafafa;\" />\n</svg>";
 
@@ -4181,15 +6163,10 @@ var play_default = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg viewBox=\"0
 // src/features/sort.ts
 const BOOKMARK_USER_PAGE_ILLUSTRATION_LIST_SELECTOR = "ul.sc-e967f3f1-1.cEOodl";
 const USER_TYPE_ARTWORKS_PER_PAGE = 48;
+const parseExcludedTags = (raw) => raw.split(",").map((tag) => tag.trim().toLowerCase()).filter(Boolean);
 let isInitialized = false;
-const loadIllustSort = (options) => {
+const loadIllustSort = () => {
 	if (isInitialized) return;
-	const { pageCount: optionPageCount, favFilter: optionFavFilter, orderType = 0, hideFavorite = false, hideByTag = false, hideByTagList: hideByTagListString, aiFilter = false, aiAssistedFilter = false } = options;
-	let pageCount = Number(optionPageCount), favFilter = Number(optionFavFilter);
-	if (pageCount <= 0) pageCount = g_defaultSettings.pageCount;
-	if (favFilter < 0) favFilter = g_defaultSettings.favFilter;
-	const hideByTagList = hideByTagListString.split(",").map((tag) => tag.trim().toLowerCase()).filter((tag) => !!tag);
-	if (aiAssistedFilter) hideByTagList.push(...AI_ASSISTED_TAGS);
 	class IllustSorter {
 		type;
 		illustrations = [];
@@ -4237,9 +6214,11 @@ const loadIllustSort = (options) => {
 				throw new Error(String(error), { cause: error });
 			}
 		}
-		async sort({ type, api, searchParams }) {
+		async sort({ type, api, searchParams, settings }) {
 			this.sorting = true;
 			iLog.i("Start to sort illustrations.");
+			const { pageCount, favFilter, orderType, hideFavorite, hideByTag, hideByTagList, aiFilter, aiAssistedFilter } = settings;
+			const excludedTags = hideByTag ? parseExcludedTags(hideByTagList) : [];
 			this.sortButtonElement.attr({
 				title: "正在排序作品",
 				"aria-label": "正在排序作品",
@@ -4303,10 +6282,9 @@ const loadIllustSort = (options) => {
 				this.setProgress("Filtering illustrations...");
 				const filteredIllustrations = detailedIllustrations.filter((illustration) => {
 					if (hideFavorite && illustration.bookmarkData) return false;
-					if (aiFilter && illustration.aiType === 2) return false;
-					if ((hideByTag || aiAssistedFilter) && hideByTagList.length) {
-						for (const tag of illustration.tags) if (hideByTagList.includes(tag.toLowerCase())) return false;
-					}
+					if (aiFilter && checkIsAiGenerated(illustration.aiType)) return false;
+					if (aiAssistedFilter && checkIsAiAssisted(illustration.tags)) return false;
+					if (excludedTags.length > 0 && illustration.tags.some((tag) => excludedTags.includes(tag.toLowerCase()))) return false;
 					return illustration.bookmarkUserTotal >= favFilter;
 				});
 				this.setProgress("Sorting filtered illustrations...");
@@ -4350,8 +6328,7 @@ const loadIllustSort = (options) => {
 				illustrationAnchor.setAttribute("data-gtm-value", id);
 				illustrationAnchor.setAttribute("data-gtm-user-id", userId);
 				illustrationAnchor.href = `/artworks/${id}`;
-				illustrationAnchor.target = "_blank";
-				illustrationAnchor.rel = "external";
+				markSortedArtworkLink(illustrationAnchor, getSettings().linkBlank);
 				illustrationAnchor.style = "display: block; position: relative; width: 184px;";
 				const illustrationImageWrapper = document.createElement("div");
 				illustrationImageWrapper.style = "position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;";
@@ -4433,7 +6410,8 @@ const loadIllustSort = (options) => {
 		illustSorter.sort({
 			type,
 			api,
-			searchParams: mergedSearchParams
+			searchParams: mergedSearchParams,
+			settings: getSettings()
 		});
 	});
 	window.addEventListener(SORT_NEXT_PAGE_EVENT_NAME, () => {
@@ -4571,72 +6549,6 @@ function getIllustrationsFromResponse(type, response) {
 	return [];
 }
 
-// src/i18n/index.ts
-const Texts = {
-	install_title: "欢迎使用 Pixiv Previewer (LolipopJ Edition) v",
-	upgrade_body: `<div>
-  <p style="line-height: 1.6;">
-    本脚本基于
-    <a style="color: skyblue;" href="https://greasyfork.org/scripts/30766-pixiv-previewer" target="_blank">Pixiv
-      Previewer</a>
-    二次开发，旨在满足开发者自己需要的能力。如果您有不错的想法或建议，请前往原脚本的
-    <a style="color: skyblue;" href="https://greasyfork.org/scripts/30766-pixiv-previewer/feedback"
-      target="_blank">Greasy Fork 反馈页面</a>或开启一个新的
-    <a style="color: skyblue;" href="https://github.com/Ocrosoft/PixivPreviewer/issues" target="_blank">Github 议题</a>！
-  </p>
-  <p style="line-height: 1.6;">
-    如需查看功能更新记录，可前往此脚本的
-    <a style="color: skyblue;" href="https://greasyfork.org/scripts/533844-pixiv-previewer-l/versions" target="_blank"
-      rel="noopener noreferrer">版本历史页面</a>。
-  </p>
-</div>`,
-	setting_language: "语言",
-	setting_preview: "预览",
-	setting_animePreview: "动图预览",
-	setting_sort: "搜索页自动排序",
-	setting_anime: "动图下载（动图预览及详情页生效）",
-	setting_origin: "预览时优先显示原图（慢）",
-	setting_previewDelay: "延迟显示预览图（毫秒）",
-	setting_previewByKey: "使用按键控制预览图展示（Ctrl）",
-	setting_previewByKeyHelp: "开启后鼠标移动到图片上不再展示预览图，按下Ctrl键才展示，同时“延迟显示预览”设置项不生效。",
-	setting_maxPage: "每次排序时统计的最大页数",
-	setting_hideWork: "隐藏收藏数少于设定值的作品",
-	setting_sortOrderByBookmark: "按照收藏数排序作品",
-	setting_hideAiWork: "排序时隐藏 AI 生成作品",
-	setting_hideAiAssistedWork: "排序时隐藏 AI 辅助作品",
-	setting_hideFav: "排序时隐藏已收藏的作品",
-	setting_hideFollowed: "排序时隐藏已关注画师作品",
-	setting_hideByTag: "排序时隐藏指定标签的作品",
-	setting_hideByTagPlaceholder: "输入标签名，多个标签用','分隔",
-	setting_clearFollowingCache: "清除缓存",
-	setting_clearFollowingCacheHelp: "本地缓存了作品详情、作品分页、动图帧与标签信息。清除后再次访问会重新请求接口。",
-	setting_followingCacheCleared: "已清除缓存，请刷新页面。",
-	setting_clearCacheFailed: "部分缓存清除失败，请稍后重试。",
-	cache_usage: "缓存占用",
-	cache_usageHelp: "作品详情 %1 个 · 作品分页 %2 个 · 动图帧 %3 个（%4）· 标签翻译 %5 个",
-	setting_blank: "使用新标签页打开作品详情页",
-	setting_turnPage: "使用键盘←→进行翻页（排序后的搜索页）",
-	setting_save: "保存设置",
-	setting_reset: "重置脚本",
-	setting_resetHint: "这会删除所有设置，相当于重新安装脚本，确定要重置吗？",
-	setting_novelSort: "小说排序",
-	setting_novelMaxPage: "小说排序时统计的最大页数",
-	setting_novelHideWork: "隐藏收藏数少于设定值的作品",
-	setting_novelHideFav: "排序时隐藏已收藏的作品",
-	sort_noWork: "没有可以显示的作品（隐藏了 %1 个作品）",
-	sort_getWorks: "正在获取第 %1/%2 页作品",
-	sort_getBookmarkCount: "获取收藏数：%1/%2",
-	sort_getPublicFollowing: "获取公开关注画师",
-	sort_getPrivateFollowing: "获取私有关注画师",
-	sort_filtering: "过滤%1收藏量低于%2的作品",
-	sort_filteringHideFavorite: "已收藏和",
-	sort_fullSizeThumb: "全尺寸缩略图（搜索页、用户页）",
-	label_sort: "排序",
-	label_sorting: "排序中",
-	label_nextPage: "下一页",
-	label_hideFav: "过滤收藏"
-};
-
 // src/icons/hide-favorites.svg
 var hide_favorites_default = "<svg\n  xmlns=\"http://www.w3.org/2000/svg\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path\n    d=\"M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z\"\n  />\n  <path d=\"M3 3 21 21\" />\n</svg>";
 
@@ -4645,50 +6557,6 @@ var next_page_default = "<svg\n  xmlns=\"http://www.w3.org/2000/svg\"\n  viewBox
 
 // src/icons/sort.svg
 var sort_default = "<svg\n  xmlns=\"http://www.w3.org/2000/svg\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M4 6h16M4 12h10M4 18h4m9-4 3 3 3-3m-3-5v8\" />\n</svg>";
-
-// src/utils/setting.ts
-const SETTINGS_KEY = "PIXIV_PREVIEWER_L_SETTINGS";
-const toggleSettingBooleanValue = (key) => {
-	const settings = getSettings();
-	const newValue = !Boolean(settings[key] ?? g_defaultSettings[key]);
-	GM_setValue(SETTINGS_KEY, {
-		...settings,
-		[key]: newValue
-	});
-};
-const setSettingStringValue = (key, label, { parseValue = (v) => v, onSet }) => {
-	const settings = getSettings();
-	const currentValue = settings[key] ?? g_defaultSettings[key];
-	const newValue = prompt(label, String(currentValue));
-	if (newValue !== null) {
-		const savedValue = parseValue(newValue);
-		GM_setValue(SETTINGS_KEY, {
-			...settings,
-			[key]: savedValue
-		});
-		onSet?.(savedValue);
-	}
-};
-const setSettingValue = (key, value) => {
-	const settings = getSettings();
-	const newValue = value ?? g_defaultSettings[key];
-	GM_setValue(SETTINGS_KEY, {
-		...settings,
-		[key]: newValue
-	});
-};
-const getSettings = () => {
-	const savedSettings = GM_getValue(SETTINGS_KEY) ?? {};
-	const settings = {
-		...g_defaultSettings,
-		...savedSettings
-	};
-	if (Object.keys(g_defaultSettings).some((key) => !Object.hasOwn(savedSettings, key))) GM_setValue(SETTINGS_KEY, settings);
-	return settings;
-};
-const resetSettings = () => {
-	GM_setValue(SETTINGS_KEY, g_defaultSettings);
-};
 
 // src/index.ts
 let g_pageType;
@@ -4824,61 +6692,12 @@ function showSearchLinksForDeletedArtworks() {
 		}
 	});
 }
-let menuIds = [];
 const registerSettingsMenu = () => {
 	const settings = getSettings();
-	for (const menuId of menuIds) GM_unregisterMenuCommand(menuId);
-	menuIds = [];
-	menuIds.push(GM_registerMenuCommand(`🖼️ 插画作品预览 ${settings.enablePreview ? "✅" : "❌"}`, () => {
-		toggleSettingBooleanValue("enablePreview");
-		registerSettingsMenu();
-	}), GM_registerMenuCommand(`🎦 动图作品预览 ${settings.enableAnimePreview ? "✅" : "❌"}`, () => {
-		toggleSettingBooleanValue("enableAnimePreview");
-		registerSettingsMenu();
-	}), GM_registerMenuCommand(`🕗 延迟 ${settings.previewDelay} 毫秒显示预览图`, () => {
-		setSettingStringValue("previewDelay", "延迟显示预览图时间（毫秒）", {
-			parseValue: (newValue) => Number(newValue) || g_defaultSettings.previewDelay,
-			onSet: () => registerSettingsMenu()
-		});
-	}), GM_registerMenuCommand(`🏷️ 本地标签管理 ${settings.enableLocalTags ? "✅" : "❌"}`, () => {
-		toggleSettingBooleanValue("enableLocalTags");
-		location.reload();
-	}), GM_registerMenuCommand(`📚️ 每次排序 ${settings.pageCount} 页`, () => {
-		setSettingStringValue("pageCount", "每次排序的页数", {
-			parseValue: (newValue) => Number(newValue) || g_defaultSettings.pageCount,
-			onSet: () => registerSettingsMenu()
-		});
-	}), GM_registerMenuCommand(`👨‍👩‍👧 排序隐藏收藏数少于 ${settings.favFilter} 的作品`, () => {
-		setSettingStringValue("favFilter", "排序隐藏少于设定收藏数的作品", {
-			parseValue: (newValue) => Number(newValue) || g_defaultSettings.favFilter,
-			onSet: () => registerSettingsMenu()
-		});
-	}), GM_registerMenuCommand(`🎨 按照 ${settings.orderType === 0 ? "作品收藏数" : "作品发布时间"} 排序作品`, () => {
-		setSettingValue("orderType", settings.orderType === 0 ? 1 : 0);
-		registerSettingsMenu();
-	}), GM_registerMenuCommand(`🤖 排序过滤 AI 生成作品 ${settings.aiFilter ? "✅" : "❌"}`, () => {
-		toggleSettingBooleanValue("aiFilter");
-		registerSettingsMenu();
-	}), GM_registerMenuCommand(`🦾 排序过滤 AI 辅助（加笔）作品 ${settings.aiAssistedFilter ? "✅" : "❌"}`, () => {
-		toggleSettingBooleanValue("aiAssistedFilter");
-		registerSettingsMenu();
-	}), GM_registerMenuCommand(`❤️ 排序过滤已收藏作品 ${settings.hideFavorite ? "✅" : "❌"}`, () => {
-		toggleSettingBooleanValue("hideFavorite");
-		registerSettingsMenu();
-	}), GM_registerMenuCommand(`🔖 排序过滤包含指定标签的作品 ${settings.hideByTag ? "✅" : "❌"}`, () => {
-		toggleSettingBooleanValue("hideByTag");
-		registerSettingsMenu();
-	}), GM_registerMenuCommand(`🔖 排序过滤的标签：${settings.hideByTagList}`, () => {
-		setSettingStringValue("hideByTagList", "过滤的标签列表，使用`,`分隔不同标签", { onSet: () => registerSettingsMenu() });
-	}), GM_registerMenuCommand(`📑 在新标签页打开作品 ${settings.linkBlank ? "✅" : "❌"}`, () => {
-		toggleSettingBooleanValue("linkBlank");
-		registerSettingsMenu();
-	}), GM_registerMenuCommand(`🔁 重置设置`, () => {
-		if (confirm("您确定要重置所有设置到脚本的默认值吗？")) {
-			resetSettings();
-			location.reload();
-		}
-	}), GM_registerMenuCommand(`🧹 ${Texts.setting_clearFollowingCache}`, () => {
+	GM_registerMenuCommand(`⚙️ ${Texts.settings_menu}`, () => {
+		openSettingsPanel();
+	});
+	GM_registerMenuCommand(`🧹 ${Texts.setting_clearFollowingCache}`, () => {
 		if (!confirm(`${Texts.setting_clearFollowingCacheHelp}\n\n确定要清除吗？`)) return;
 		clearAllLocalCaches().then((cleared) => {
 			if (!cleared) {
@@ -4888,11 +6707,12 @@ const registerSettingsMenu = () => {
 			alert(Texts.setting_followingCacheCleared);
 			location.reload();
 		});
-	}), GM_registerMenuCommand(`📊 ${Texts.cache_usage}`, () => {
+	});
+	GM_registerMenuCommand(`📊 ${Texts.cache_usage}`, () => {
 		getCacheUsage().then((usage) => {
 			alert(Texts.cache_usageHelp.replace("%1", String(usage.illustrationDetails)).replace("%2", String(usage.illustPages)).replace("%3", String(usage.ugoiraFrames)).replace("%4", formatCacheBytes(usage.ugoiraBytes)).replace("%5", String(usage.tagTranslations)));
 		});
-	}));
+	});
 	return settings;
 };
 const ShowUpgradeMessage = () => {
@@ -4906,7 +6726,7 @@ const ShowUpgradeMessage = () => {
 	$("body").append(bg);
 	bg.get(0).innerHTML = "<img id=\"pps-close\" src=\"https://pp-1252089172.cos.ap-chengdu.myqcloud.com/Close.png\"style=\"position: absolute; right: 35px; top: 20px; width: 32px; height: 32px; cursor: pointer;\"><div style=\"position: absolute; width: 40%; left: 30%; top: 25%; font-size: 25px; font-weight: bold; text-align: center; color: white;\">" + Texts.install_title + g_version + "</div><br><div style=\"position: absolute; left: 50%; top: 35%; font-size: 20px; color: white; transform: translate(-50%,0); height: 50%; overflow: auto;\">" + Texts.upgrade_body + "</div>";
 	$("#pps-close").on("click", () => {
-		setSettingValue("version", g_version);
+		updateInternalVersion(g_version);
 		$("#pp-bg").remove();
 	});
 };
@@ -4966,6 +6786,10 @@ const initializeEarly = () => {
 		iLog.i("Start to initialize Pixiv Previewer with global settings:", g_settings);
 		warmUpCacheDatabase();
 		pruneCachesOnStartup();
+		subscribeSettings((next, prev, source) => {
+			if (source !== "local") return;
+			if (next.illustrationCacheMaxEntries < prev.illustrationCacheMaxEntries || next.illustPagesCacheMaxEntries < prev.illustPagesCacheMaxEntries || next.ugoiraCacheMaxEntries < prev.ugoiraCacheMaxEntries || next.ugoiraCacheMaxBytes < prev.ugoiraCacheMaxBytes || next.tagTranslationCacheMaxEntries < prev.tagTranslationCacheMaxEntries || next.illustrationStaticCacheTtlMs < prev.illustrationStaticCacheTtlMs || next.illustPagesCacheTtlMs < prev.illustPagesCacheTtlMs || next.ugoiraCacheTtlMs < prev.ugoiraCacheTtlMs || next.tagTranslationCacheTtlMs < prev.tagTranslationCacheTtlMs) scheduleCachePrune();
+		});
 		g_pageType = matchPageType();
 		if (g_pageType === void 0) DoLog(3, "Unsupported page.");
 		else {
@@ -4975,8 +6799,8 @@ const initializeEarly = () => {
 				if (artworkId) deleteCachedIllustrationDetails([artworkId]);
 			}
 		}
-		if (g_settings.enablePreview) loadIllustPreview(g_settings);
-		loadIllustSort(g_settings);
+		loadIllustPreview();
+		loadIllustSort();
 	} catch (e) {
 		DoLog(1, "An error occurred while initializing:", e);
 	}
@@ -4988,21 +6812,29 @@ const initializeEarly = () => {
 const initializeDom = () => {
 	try {
 		if (!g_settings) return;
-		if (g_settings.enableLocalTags) loadLocalTags();
+		if (getSettings().enableLocalTags) loadLocalTags();
+		subscribeSettings((next, prev) => {
+			if (next.enableLocalTags === prev.enableLocalTags) return;
+			if (next.enableLocalTags) loadLocalTags();
+			else unloadLocalTags();
+		});
 		if (g_settings.version !== "1.8.1") ShowUpgradeMessage();
 		if (g_pageType === void 0) return;
 		if (g_pageType === 3) waitFor(() => matchPageType() === 3 && document.querySelector("span[to]"), () => showSearchLinksForDeletedArtworks());
 		const page = Pages[g_pageType];
 		if ("CreateToolBar" in page) mountToolbar(page.CreateToolBar());
-		else waitFor(page.FindToolBar, mountToolbar, {
-			interval: 200,
-			maxAttempts: 25,
-			onGiveUp: () => DoLog(2, "Get toolbar failed.")
-		});
+		else {
+			const { toolbarProbeIntervalMs, toolbarProbeMaxAttempts } = getSettings();
+			waitFor(page.FindToolBar, mountToolbar, {
+				interval: toolbarProbeIntervalMs,
+				maxAttempts: toolbarProbeMaxAttempts,
+				onGiveUp: () => DoLog(2, "Get toolbar failed.")
+			});
+		}
 	} catch (e) {
 		DoLog(1, "An error occurred while initializing:", e);
 	}
 };
-if (getSettings().enableLocalTags) interceptTagSearchRequests();
+interceptTagSearchRequests();
 initializeEarly();
 onDomReady(initializeDom);

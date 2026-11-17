@@ -1,4 +1,5 @@
 import { iLog } from "../utils/logger";
+import { getSettings, subscribeSettings } from "../utils/setting";
 import request from "./request";
 
 export type DownloadRecord = {
@@ -21,24 +22,38 @@ export type DownloadRecord = {
 };
 
 const STORAGE_KEY = "pp-downloads";
-/** 已完成的下载记录最多保留的条数 */
-const MAX_COMPLETED_RECORDS = 200;
-/** 待重试（失败或中断）的下载记录最多保留的条数 */
-const MAX_RETRYABLE_RECORDS = 200;
 /** 当前标签页的标识 */
 const TAB_ID = crypto.randomUUID();
-/** 执行下载的标签页超过该时长未更新状态时，视为该标签页已崩溃或卸载 */
-const OWNER_TIMEOUT = 180_000;
-/** 刷新下载状态存活时间的心跳间隔 */
-const HEARTBEAT_INTERVAL = 15_000;
 
 const listeners = new Set<() => void>();
 const attempts = new Map<string, symbol>();
 const requests = new Map<string, { abort: () => void }>();
 /** 被用户主动中止的尝试 */
 const abortedAttempts = new Set<symbol>();
+/** 配置收紧失联超时前已观察到的远端活动心跳，在新心跳到来前沿用原失联边界 */
+const legacyTimeoutOverrides = new Map<
+  string,
+  { observedUpdatedAt: number; timeoutMs: number }
+>();
 let downloads: DownloadRecord[] | undefined;
 let heartbeat: ReturnType<typeof setInterval> | undefined;
+
+const getEffectiveOwnerTimeoutMs = (
+  record: Pick<DownloadRecord, "id" | "status" | "updatedAt">,
+  defaultTimeoutMs: number
+) => {
+  if (record.status !== "downloading") {
+    legacyTimeoutOverrides.delete(record.id);
+    return defaultTimeoutMs;
+  }
+  const override = legacyTimeoutOverrides.get(record.id);
+  if (!override) return defaultTimeoutMs;
+  if (record.updatedAt === override.observedUpdatedAt) {
+    return override.timeoutMs;
+  }
+  legacyTimeoutOverrides.delete(record.id);
+  return defaultTimeoutMs;
+};
 
 /** 清除记录上的下载归属信息 */
 const releaseOwnership = (record: DownloadRecord) => {
@@ -51,6 +66,7 @@ const readStoredDownloads = (): DownloadRecord[] => {
   const saved: unknown = GM_getValue(STORAGE_KEY, []);
   if (!Array.isArray(saved)) return [];
   const now = Date.now();
+  const defaultTimeoutMs = getSettings().downloadOwnerTimeoutMs;
   return saved
     .filter(
       (item): item is DownloadRecord =>
@@ -90,11 +106,15 @@ const readStoredDownloads = (): DownloadRecord[] => {
         record.status === "downloading" &&
         (!record.owner ||
           record.updatedAt === undefined ||
-          now - record.updatedAt > OWNER_TIMEOUT)
+          now - record.updatedAt >
+            getEffectiveOwnerTimeoutMs(record, defaultTimeoutMs))
       ) {
         // 执行下载的标签页已关闭，保留记录以便重试
         record.status = "interrupted";
         releaseOwnership(record);
+        legacyTimeoutOverrides.delete(record.id);
+      } else if (record.status !== "downloading") {
+        legacyTimeoutOverrides.delete(record.id);
       }
       return record;
     });
@@ -148,6 +168,8 @@ const syncFromStorage = (allowDelete = false) => {
 /** 记录数超出上限时，移除最早的已完成记录和最早的待重试记录 */
 const trimDownloads = () => {
   if (!downloads) return;
+  const { completedDownloadsMaxEntries, retryableDownloadsMaxEntries } =
+    getSettings();
   // 按创建时间倒序排列，保证被移除的是最早的记录
   downloads = [...downloads].sort((a, b) => b.createdAt - a.createdAt);
   const counts = { completed: 0, retryable: 0 };
@@ -160,7 +182,9 @@ const trimDownloads = () => {
           : undefined;
     if (!type) return true;
     const limit =
-      type === "completed" ? MAX_COMPLETED_RECORDS : MAX_RETRYABLE_RECORDS;
+      type === "completed"
+        ? completedDownloadsMaxEntries
+        : retryableDownloadsMaxEntries;
     if (counts[type] < limit) {
       counts[type] += 1;
       return true;
@@ -212,18 +236,28 @@ const publish = (persist = true) => {
 /** 刷新本标签页下载的存活时间，并将已关闭标签页遗留的下载标记为中断 */
 const tick = () => {
   const now = Date.now();
+  const defaultTimeoutMs = getSettings().downloadOwnerTimeoutMs;
   let changed = false;
   for (const record of downloads ?? []) {
-    if (record.status !== "downloading") continue;
+    if (record.status !== "downloading") {
+      legacyTimeoutOverrides.delete(record.id);
+      continue;
+    }
     if (attempts.has(record.id)) {
       record.updatedAt = now;
+      legacyTimeoutOverrides.delete(record.id);
       changed = true;
       continue;
     }
-    if (now - (record.updatedAt ?? 0) <= OWNER_TIMEOUT) continue;
+    const effectiveTimeoutMs = getEffectiveOwnerTimeoutMs(
+      record,
+      defaultTimeoutMs
+    );
+    if (now - (record.updatedAt ?? 0) <= effectiveTimeoutMs) continue;
     iLog.w(`下载所在标签页已关闭，标记为中断：${record.filename}`);
     record.status = "interrupted";
     releaseOwnership(record);
+    legacyTimeoutOverrides.delete(record.id);
     changed = true;
   }
   if (changed) publish();
@@ -236,8 +270,56 @@ const tick = () => {
 const ensureHeartbeat = () => {
   if (heartbeat !== undefined) return;
   if (!downloads?.some((record) => record.status === "downloading")) return;
-  heartbeat = setInterval(tick, HEARTBEAT_INTERVAL);
+  heartbeat = setInterval(tick, getSettings().downloadHeartbeatMs);
 };
+
+subscribeSettings((next, prev) => {
+  if (next.downloadOwnerTimeoutMs < prev.downloadOwnerTimeoutMs) {
+    const knownRecords =
+      downloads ??
+      ((): DownloadRecord[] => {
+        const stored: unknown = GM_getValue(STORAGE_KEY, []);
+        return Array.isArray(stored) ? (stored as DownloadRecord[]) : [];
+      })();
+    for (const record of knownRecords) {
+      if (
+        !record ||
+        record.status !== "downloading" ||
+        attempts.has(record.id) ||
+        typeof record.updatedAt !== "number"
+      ) {
+        continue;
+      }
+      const effectiveTimeout = getEffectiveOwnerTimeoutMs(
+        record,
+        prev.downloadOwnerTimeoutMs
+      );
+      if (next.downloadOwnerTimeoutMs < effectiveTimeout) {
+        legacyTimeoutOverrides.set(record.id, {
+          observedUpdatedAt: record.updatedAt,
+          timeoutMs: effectiveTimeout,
+        });
+      }
+    }
+  }
+
+  if (
+    (next.downloadHeartbeatMs !== prev.downloadHeartbeatMs ||
+      next.downloadOwnerTimeoutMs !== prev.downloadOwnerTimeoutMs) &&
+    attempts.size > 0 &&
+    downloads
+  ) {
+    publish(true);
+  }
+
+  if (next.downloadHeartbeatMs !== prev.downloadHeartbeatMs) {
+    if (heartbeat !== undefined) {
+      clearInterval(heartbeat);
+      heartbeat = undefined;
+    }
+    ensureHeartbeat();
+  }
+});
 
 GM_addValueChangeListener(STORAGE_KEY, (_key, _oldValue, _newValue, remote) => {
   if (!remote) return;
@@ -364,7 +446,8 @@ const startDownload = (
           ? Math.max(0, response.total || 0)
           : 0;
         const now = Date.now();
-        const persist = now - lastProgressSave >= 1000;
+        const persist =
+          now - lastProgressSave >= getSettings().downloadProgressPersistMs;
         if (persist) lastProgressSave = now;
         publish(persist);
         onprogress?.call(this, response);

@@ -1,10 +1,5 @@
 import {
-  PAGE_LOADING_OVERLAY_DELAY_MS,
-  PREVIEW_CACHE_MAX_SIZE,
-  PREVIEW_DETAILS_MAX_STALE_TIME,
-  PREVIEW_IMAGE_CACHE_MAX_SIZE,
-  PREVIEW_ONE_HANDED_MODE_HOLD_MS,
-  PREVIEW_PRELOAD_NUM,
+  g_defaultSettings,
   PREVIEW_STYLE_ID,
   PREVIEW_WRAPPER_BORDER_RADIUS,
   PREVIEW_WRAPPER_BORDER_WIDTH,
@@ -30,10 +25,14 @@ import {
   type GetUgoiraMetaResponse,
   type GetUgoiraMetaResponseData,
 } from "../services";
-import type { GlobalSettings, IllustrationDetails } from "../types";
+import type { IllustrationDetails } from "../types";
+import {
+  applyArtworkLinkBlank,
+  getArtworkAnchor,
+  syncArtworkLinksBlank,
+} from "../utils/artwork-link";
 import debounce from "../utils/debounce";
 import { injectStyle } from "../utils/dom";
-import { stopEventPropagation } from "../utils/event";
 import {
   checkIsAiAssisted,
   checkIsAiGenerated,
@@ -45,6 +44,7 @@ import {
 } from "../utils/illustration";
 import { iLog } from "../utils/logger";
 import mouseMonitor from "../utils/mouse-monitor";
+import { getSettings, subscribeSettings } from "../utils/setting";
 import ZipImagePlayer, {
   type ZipImagePlayerOptions,
 } from "../utils/ugoira-player";
@@ -52,11 +52,10 @@ import { createLRUCache, sanitizeIllustFilename } from "../utils/utils";
 
 /**
  * 已解码预览图片的 LRU 缓存。同一个作品反复悬停时复用最近解码的位图，
- * 无需等待浏览器重新解码。数量上限刻意保守：原图预览单张解码后可达数 MB，
- * 超出上限的记录交给浏览器自身的图片缓存。
+ * 无需等待浏览器重新解码。容量按 `previewPreloadCount * 2` 自动派生。
  */
 const decodedPreviewImages = createLRUCache<HTMLImageElement>(
-  PREVIEW_IMAGE_CACHE_MAX_SIZE
+  g_defaultSettings.previewPreloadCount * 2
 );
 
 const getDecodedImageCacheKey = (illustId: string, page: number) =>
@@ -70,17 +69,10 @@ const createLoadingSpinner = () =>
   });
 
 let isInitialized = false;
-export const loadIllustPreview = (
-  options: Pick<
-    GlobalSettings,
-    "previewDelay" | "enableAnimePreview" | "linkBlank"
-  >
-) => {
+export const loadIllustPreview = () => {
   if (isInitialized) return;
 
-  const { previewDelay, enableAnimePreview, linkBlank } = options;
-  const mouseHoverDebounceWait = previewDelay / 5;
-  const mouseHoverPreviewWait = previewDelay - mouseHoverDebounceWait;
+  decodedPreviewImages.setMaxSize(getSettings().previewPreloadCount * 2);
 
   /**
    * 获取作品的元数据信息
@@ -88,13 +80,13 @@ export const loadIllustPreview = (
    * @returns 作品的元数据
    */
   const getIllustMetadata = (target: JQuery<HTMLElement>) => {
-    const imgLink = target.closest("a");
-    if (!imgLink.length) return null;
+    const imgLink = getArtworkAnchor(target);
+    if (!imgLink) return null;
 
-    const illustHref = imgLink.attr("href");
+    const $imgLink = $(imgLink);
+    const illustHref = $imgLink.attr("href");
     const illustHrefMatch = illustHref?.match(/\/artworks\/(\d+)(#(\d+))?/);
     if (!illustHrefMatch) {
-      // iLog.w("当前链接非作品链接，或当前作品不支持预览，跳过");
       return null;
     }
     const illustId = illustHrefMatch[1];
@@ -104,12 +96,12 @@ export const loadIllustPreview = (
       ? Math.max(1, Number(illustHrefMatch[3]))
       : undefined;
 
-    const ugoiraSvg = imgLink.children("div:first").find("svg:first");
-    const playIcon = imgLink
+    const ugoiraSvg = $imgLink.children("div:first").find("svg:first");
+    const playIcon = $imgLink
       .children("div:first")
       .find('pixiv-icon[name="24/Play"]');
     const illustType =
-      ugoiraSvg.length || playIcon.length || imgLink.hasClass("ugoku-illust")
+      ugoiraSvg.length || playIcon.length || $imgLink.hasClass("ugoku-illust")
         ? IllustType.UGOIRA
         : // 合并漫画类型作品 IllustType.MANGA 为 IllustType.ILLUST 统一处理
           IllustType.ILLUST;
@@ -122,7 +114,7 @@ export const loadIllustPreview = (
       /** 作品类型 */
       illustType,
       /** 作品链接 DOM */
-      illustLinkDom: imgLink,
+      illustLinkDom: $imgLink,
     };
   };
 
@@ -137,13 +129,13 @@ export const loadIllustPreview = (
     let getIllustPagesRequest: JQuery.jqXHR | null = null;
     let getUgoiraMetaRequest: JQuery.jqXHR | null = null;
 
+    const initialCacheMax = getSettings().previewCacheMaxEntries;
     const getIllustPagesCache = createLRUCache<{
       regularUrls: string[];
       originalUrls: string[];
-    }>(PREVIEW_CACHE_MAX_SIZE);
-    const getUgoiraMetadataCache = createLRUCache<GetUgoiraMetaResponseData>(
-      PREVIEW_CACHE_MAX_SIZE
-    );
+    }>(initialCacheMax);
+    const getUgoiraMetadataCache =
+      createLRUCache<GetUgoiraMetaResponseData>(initialCacheMax);
 
     /** 获取动图元数据并展示动图预览（命中缓存时直接展示） */
     const previewAsUgoira = ({
@@ -158,6 +150,10 @@ export const loadIllustPreview = (
       // 元数据就绪后展示动图预览窗口，作品详情（标签、收藏数）稍后补渲染，
       // 否则详情请求的耗时会让命中缓存的动图也要等网络
       const showUgoira = (metadata: GetUgoiraMetaResponseData) => {
+        if (!getSettings().enableAnimePreview) {
+          previewedIllust.dismissLoading(illustId);
+          return;
+        }
         // 占位窗口或预览窗口已被鼠标移出关闭时不再重新打开
         if (!previewedIllust.isActiveIllust(illustId)) return;
 
@@ -183,7 +179,11 @@ export const loadIllustPreview = (
 
       // 元数据请求期间若尚未展示内容，先开占位窗，避免窗口等到数据就绪才出现
       if (!previewedIllust.isActiveIllust(illustId)) {
-        previewedIllust.showLoading({ illustId, illustElement: target });
+        previewedIllust.showLoading({
+          illustId,
+          illustElement: target,
+          isUgoira: true,
+        });
       }
 
       // 根据动图的 ID 获取动图的元数据
@@ -259,7 +259,7 @@ export const loadIllustPreview = (
           (checkIsUgoira(illustrationDetails.type) ||
             checkIsUgoiraUsingTags(illustrationDetails.tags));
 
-        if (enableAnimePreview && isUgoira) {
+        if (getSettings().enableAnimePreview && isUgoira) {
           // 作品详情显示该作品实际为动图：
           // 先更新详情信息（显示“动图”徽章、隐藏多图与原图按钮等），保持当前预览窗口与静态图片展示，
           // 后台获取动图元数据并加载帧，等待动图就绪后切换为动图预览
@@ -276,7 +276,7 @@ export const loadIllustPreview = (
       });
     };
 
-    return ({
+    const trigger = ({
       target,
       illustId,
       previewPage,
@@ -287,6 +287,9 @@ export const loadIllustPreview = (
       previewPage?: number;
       illustType: IllustType;
     }) => {
+      const settings = getSettings();
+      if (!settings.enablePreview) return;
+
       // 鼠标在缩略图子元素间移动时，当前预览已属于该作品，无需重复触发加载或打断现有请求
       if (
         currentHoveredIllustId === illustId &&
@@ -303,7 +306,7 @@ export const loadIllustPreview = (
       currentHoveredIllustId = illustId;
 
       // 当前鼠标悬浮作品为动图，但是用户禁用了动图预览，跳过
-      if (illustType === IllustType.UGOIRA && !enableAnimePreview) {
+      if (illustType === IllustType.UGOIRA && !settings.enableAnimePreview) {
         iLog.i("动图预览已禁用，跳过");
         return;
       }
@@ -314,7 +317,7 @@ export const loadIllustPreview = (
         illustId,
         false,
         {
-          maxStale: PREVIEW_DETAILS_MAX_STALE_TIME,
+          maxStale: settings.previewDetailsMaxStaleMs,
         }
       ).catch((error) => {
         iLog.e(
@@ -411,11 +414,39 @@ export const loadIllustPreview = (
         return;
       }
     };
+
+    const cancel = () => {
+      currentHoveredIllustId = "";
+      getIllustPagesRequest?.abort();
+      getIllustPagesRequest = null;
+      getUgoiraMetaRequest?.abort();
+      getUgoiraMetaRequest = null;
+    };
+
+    const setCacheMaxEntries = (maxEntries: number) => {
+      getIllustPagesCache.setMaxSize(maxEntries);
+      getUgoiraMetadataCache.setMaxSize(maxEntries);
+    };
+
+    return { trigger, cancel, setCacheMaxEntries };
   })();
 
   //#region 绑定鼠标悬浮图片监听事件
+  let pendingHoverTimeout: ReturnType<typeof setTimeout> | null = null;
+  let pendingHoverCleanup: (() => void) | null = null;
+
+  const cancelPendingTrigger = () => {
+    if (pendingHoverTimeout !== null) {
+      clearTimeout(pendingHoverTimeout);
+      pendingHoverTimeout = null;
+    }
+    pendingHoverCleanup?.();
+    pendingHoverCleanup = null;
+  };
+
   const onMouseOverIllust = (target: JQuery<HTMLElement>) => {
-    if (previewedIllust.oneHandedMode) return;
+    const settings = getSettings();
+    if (!settings.enablePreview || previewedIllust.oneHandedMode) return;
 
     const { illustId, previewPage, illustType, illustLinkDom } =
       getIllustMetadata(target) || {};
@@ -424,67 +455,130 @@ export const loadIllustPreview = (
       return;
     }
 
-    if (linkBlank && illustLinkDom) {
-      // 设置在新标签打开作品详情页
-      illustLinkDom.attr({ target: "_blank", rel: "external" });
-      illustLinkDom.off("click", stopEventPropagation);
-      illustLinkDom.on("click", stopEventPropagation);
+    if (settings.linkBlank && illustLinkDom) {
+      applyArtworkLinkBlank(illustLinkDom.get(0)!);
     }
 
-    const previewIllustTimeout = setTimeout(() => {
-      if (previewedIllust.oneHandedMode) return;
-      previewIllust({ target, illustId, previewPage, illustType });
-    }, mouseHoverPreviewWait);
+    cancelPendingTrigger();
+
+    const hoverDelay = settings.previewDelay;
+    const mouseHoverPreviewWait = hoverDelay - hoverDelay / 5;
 
     const onMouseMove = (mouseMoveEvent: JQuery.MouseMoveEvent) => {
       if (mouseMoveEvent.ctrlKey || mouseMoveEvent.metaKey) {
         // 鼠标悬浮在作品上时若按住了 ctrl 或 meta 键，跳过显示预览
-        clearTimeout(previewIllustTimeout);
-        target.off("mousemove", onMouseMove);
+        cancelPendingTrigger();
       }
     };
-    target.on("mousemove", onMouseMove);
-
     const onMouseOut = () => {
       // 鼠标移出作品，跳过显示预览
-      clearTimeout(previewIllustTimeout);
+      cancelPendingTrigger();
+    };
+    target.on("mousemove", onMouseMove);
+    target.on("mouseout", onMouseOut);
+    pendingHoverCleanup = () => {
+      target.off("mousemove", onMouseMove);
       target.off("mouseout", onMouseOut);
     };
-    target.on("mouseout", onMouseOut);
+
+    pendingHoverTimeout = setTimeout(() => {
+      cancelPendingTrigger();
+      if (!getSettings().enablePreview || previewedIllust.oneHandedMode) return;
+      previewIllust.trigger({ target, illustId, previewPage, illustType });
+    }, mouseHoverPreviewWait);
   };
 
-  const onMouseMoveDocument = (() => {
-    const debouncedOnMouseOverIllust = debounce(
-      onMouseOverIllust,
-      mouseHoverDebounceWait
-    );
-    let prevTarget: EventTarget | null = null;
+  const debouncedOnMouseOverIllust = debounce(
+    onMouseOverIllust,
+    () => getSettings().previewDelay / 5
+  );
+  let prevTarget: EventTarget | null = null;
 
-    return (mouseMoveEvent: JQuery.MouseMoveEvent) => {
-      if (
-        previewedIllust.oneHandedMode ||
-        mouseMoveEvent.ctrlKey ||
-        mouseMoveEvent.metaKey
-      ) {
-        // 按住 Ctrl 或 Meta 键时，跳过
-        return;
-      }
+  const cancelAllHoverTimers = () => {
+    debouncedOnMouseOverIllust.cancel();
+    cancelPendingTrigger();
+  };
 
-      if (mouseMoveEvent.target === prevTarget) {
-        // 鼠标在同一个 DOM 元素上移动时，跳过
-        return;
-      }
-      prevTarget = mouseMoveEvent.target;
+  const onMouseMoveDocument = (mouseMoveEvent: JQuery.MouseMoveEvent) => {
+    const settings = getSettings();
+    if (!settings.enablePreview && !settings.linkBlank) {
+      prevTarget = null;
+      return;
+    }
 
-      const currentTarget = $(
-        mouseMoveEvent.target
-      ) as unknown as JQuery<HTMLElement>;
-      debouncedOnMouseOverIllust(currentTarget);
-    };
-  })();
+    if (
+      previewedIllust.oneHandedMode ||
+      mouseMoveEvent.ctrlKey ||
+      mouseMoveEvent.metaKey
+    ) {
+      // 按住 Ctrl 或 Meta 键时，跳过
+      return;
+    }
+
+    if (mouseMoveEvent.target === prevTarget) {
+      // 鼠标在同一个 DOM 元素上移动时，跳过
+      return;
+    }
+    prevTarget = mouseMoveEvent.target;
+
+    const currentTarget = $(
+      mouseMoveEvent.target
+    ) as unknown as JQuery<HTMLElement>;
+
+    if (settings.linkBlank) {
+      const link = getArtworkAnchor(currentTarget);
+      if (link) applyArtworkLinkBlank(link);
+    }
+
+    if (!settings.enablePreview) {
+      return;
+    }
+
+    debouncedOnMouseOverIllust(currentTarget);
+  };
 
   // 监听 MouseMove 事件而非 MouseOver 事件，以避免事件中的 ctrlKey 等值出现预期外的 false
   $(document).on("mousemove", onMouseMoveDocument);
+
+  subscribeSettings((next, prev) => {
+    if (next.previewPreloadCount !== prev.previewPreloadCount) {
+      decodedPreviewImages.setMaxSize(next.previewPreloadCount * 2);
+    }
+
+    if (next.previewCacheMaxEntries !== prev.previewCacheMaxEntries) {
+      previewIllust.setCacheMaxEntries(next.previewCacheMaxEntries);
+    }
+
+    if (next.linkBlank !== prev.linkBlank) {
+      syncArtworkLinksBlank(next.linkBlank);
+    }
+
+    if (!next.enablePreview && prev.enablePreview) {
+      cancelAllHoverTimers();
+      previewIllust.cancel();
+      previewedIllust.reset();
+      prevTarget = null;
+      return;
+    }
+
+    if (next.enablePreview && !prev.enablePreview) {
+      prevTarget = null;
+    }
+
+    if (next.previewDelay !== prev.previewDelay) {
+      cancelAllHoverTimers();
+      prevTarget = null;
+    }
+
+    if (
+      !next.enableAnimePreview &&
+      prev.enableAnimePreview &&
+      previewedIllust.isUgoiraActive()
+    ) {
+      previewIllust.cancel();
+      previewedIllust.reset();
+    }
+  });
   //#endregion
 
   //#region 取消预期外节点的鼠标事件
@@ -596,6 +690,8 @@ class PreviewedIllust {
   #currentIllustSize: [number, number] = [0, 0];
   /** 当前预览的动图播放器 */
   #currentUgoiraPlayer: ZipImagePlayer | null = null;
+  /** 当前预览是否属于动图（含等待元数据与帧缓存期间） */
+  #isUgoira = false;
   /** 预览窗口是否已由 `showLoading` 提前展示、尚未填入内容 */
   #isPlaceholder = false;
   /** 预览窗口的鼠标事件是否已绑定，避免重复绑定 */
@@ -615,6 +711,7 @@ class PreviewedIllust {
     this.illustDetails = null;
     this.illustElement = $();
     this.illustLoaded = false;
+    this.#isUgoira = false;
     this.#isPlaceholder = false;
 
     this.regularUrls = [];
@@ -754,9 +851,11 @@ class PreviewedIllust {
   showLoading({
     illustId,
     illustElement,
+    isUgoira = false,
   }: {
     illustId: string;
     illustElement: JQuery<HTMLElement>;
+    isUgoira?: boolean;
   }) {
     // 已在展示同一个作品时不做任何处理，避免打断已显示的内容
     if (this.isActiveIllust(illustId)) return;
@@ -766,6 +865,7 @@ class PreviewedIllust {
 
     this.illustId = illustId;
     this.illustElement = illustElement;
+    this.#isUgoira = isUgoira;
     this.#isPlaceholder = true;
 
     // 加载期间同样需要响应鼠标移出与长按，否则窗口无法关闭
@@ -793,6 +893,23 @@ class PreviewedIllust {
    */
   isActiveIllust(illustId: string) {
     return this.illustId === illustId;
+  }
+
+  /** 当前是否正在加载或展示动图预览 */
+  isUgoiraActive() {
+    if (!this.illustId) return false;
+    if (
+      this.#isUgoira ||
+      this.#currentUgoiraPlayer ||
+      this.previewImageElement.is("canvas")
+    ) {
+      return true;
+    }
+    return Boolean(
+      this.illustDetails &&
+      (checkIsUgoira(this.illustDetails.type) ||
+        checkIsUgoiraUsingTags(this.illustDetails.tags))
+    );
   }
 
   /**
@@ -919,7 +1036,7 @@ class PreviewedIllust {
       this.#pageLoadingOverlayTimeout = null;
       if (!this.#isPageImageLoading) return;
       this.pageLoadingOverlayElement.show();
-    }, PAGE_LOADING_OVERLAY_DELAY_MS);
+    }, getSettings().previewLoadingOverlayDelayMs);
   }
 
   #clearPageLoadingOverlayTimeout() {
@@ -1025,7 +1142,7 @@ class PreviewedIllust {
 
   preloadImages(
     from: number = this.currentPage - 1,
-    to: number = this.currentPage - 1 + PREVIEW_PRELOAD_NUM
+    to: number = this.currentPage - 1 + getSettings().previewPreloadCount
   ) {
     for (let i = from; i < to && i < this.regularUrls.length; i += 1) {
       const cacheKey = getDecodedImageCacheKey(this.illustId, i + 1);
@@ -1116,7 +1233,11 @@ class PreviewedIllust {
         ontimeout: onDownloadFailed,
         onabort: onDownloadFailed,
         onprogress: (ev) => {
-          if (this.currentPage !== downloadPage) return;
+          if (
+            this.downloadOriginalElement !== downloadElement ||
+            this.currentPage !== downloadPage
+          )
+            return;
 
           try {
             const loaded = ev.loaded ?? 0;
@@ -1135,7 +1256,11 @@ class PreviewedIllust {
           }
         },
         onload: () => {
-          if (this.currentPage !== downloadPage) return;
+          if (
+            this.downloadOriginalElement !== downloadElement ||
+            this.currentPage !== downloadPage
+          )
+            return;
 
           textSpan.text("已下载");
           this.downloadOriginalElement.css({
@@ -1147,7 +1272,7 @@ class PreviewedIllust {
           this.#downloadResetTimeout = setTimeout(() => {
             textSpan.text(originalText);
             this.#downloadResetTimeout = null;
-          }, 3000);
+          }, getSettings().previewDownloadNoticeMs);
         },
       },
     });
@@ -1184,6 +1309,7 @@ class PreviewedIllust {
     this.#prepareWrapper(illustId);
 
     this.illustId = illustId;
+    this.#isUgoira = true;
     if (illustrationDetails) {
       this.illustDetails = illustrationDetails;
     }
@@ -1229,6 +1355,10 @@ class PreviewedIllust {
     frames: { file: string; delay: number }[];
   }) {
     const cached = await getCachedUgoiraFrames(illustId).catch(() => null);
+    if (!getSettings().enableAnimePreview) {
+      this.dismissLoading(illustId);
+      return;
+    }
     // 等待缓存期间用户可能已切换到其他作品；同一个作品被重复触发时
     // （鼠标在缩略图的子元素间移动）只允许第一个调用创建播放器，
     // 否则旧播放器会被直接覆盖而不 stop()，继续下载 zip 并触发异常
@@ -1271,10 +1401,12 @@ class PreviewedIllust {
       "source" | "metadata" | "cachedFrames" | "onFrameDecoded"
     >
   ) {
+    const { ugoiraChunkBytes, ugoiraTrailerBytes } = getSettings();
     const canvas = document.createElement("canvas");
     const p = new ZipImagePlayer({
       canvas,
-      chunkSize: 300000,
+      chunkSize: ugoiraChunkBytes,
+      trailerBytes: ugoiraTrailerBytes,
       loop: true,
       autoStart: true,
       debug: false,
@@ -1480,6 +1612,7 @@ class PreviewedIllust {
     }
 
     this.cancelLongPress();
+    const holdMs = getSettings().previewHoldMs;
     this.#longPressProgress = $(
       `<svg viewBox="0 0 32 32" aria-hidden="true">
         <circle cx="16" cy="16" r="12" fill="none"
@@ -1488,7 +1621,7 @@ class PreviewedIllust {
           stroke="rgb(0, 150, 250)" stroke-width="4" stroke-linecap="round"
           pathLength="1" stroke-dasharray="1" stroke-dashoffset="1"
           transform="rotate(-90 16 16)"
-          style="animation: pp-one-handed-progress ${PREVIEW_ONE_HANDED_MODE_HOLD_MS}ms linear forwards" />
+          style="animation: pp-one-handed-progress ${holdMs}ms linear forwards" />
       </svg>`
     )
       .css({
@@ -1507,7 +1640,7 @@ class PreviewedIllust {
       this.#suppressLongPressClick = true;
       this.previewWrapperElement.css({ "pointer-events": "auto" });
       this.cancelLongPress();
-    }, PREVIEW_ONE_HANDED_MODE_HOLD_MS);
+    }, holdMs);
   };
 
   cancelLongPress = () => {

@@ -1,9 +1,5 @@
-import {
-  UGOIRA_FRAME_CACHE_MAX_BYTES,
-  UGOIRA_FRAME_CACHE_MAX_ENTRIES,
-  UGOIRA_FRAME_CACHE_TIME,
-} from "../constants";
 import { iLog } from "../utils/logger";
+import { getSettings } from "../utils/setting";
 import {
   CACHE_DATE_INDEX,
   getDatabase,
@@ -52,6 +48,7 @@ export const getCachedUgoiraFrames = async (
   id: string,
   now: number = Date.now()
 ): Promise<Omit<UgoiraFramesCache, "id" | "size" | "cacheDate"> | null> => {
+  const { ugoiraCacheTtlMs } = getSettings();
   const entry = await runRequest<UgoiraFramesCache | undefined>(
     UGOIRA_FRAMES_CACHE_TABLE_KEY,
     "readonly",
@@ -59,7 +56,7 @@ export const getCachedUgoiraFrames = async (
   );
   if (!entry?.frames?.length) return null;
 
-  if (now - toTimestamp(entry.cacheDate, 0) > UGOIRA_FRAME_CACHE_TIME) {
+  if (now - toTimestamp(entry.cacheDate, 0) > ugoiraCacheTtlMs) {
     void runTransaction(UGOIRA_FRAMES_CACHE_TABLE_KEY, (store) => {
       store.delete(id);
     });
@@ -89,7 +86,7 @@ export const cacheUgoiraFrames = async (
   data: UgoiraCachedFrame[]
 ): Promise<boolean> => {
   const size = sumFrameSize(data);
-  if (!data.length || size > UGOIRA_FRAME_CACHE_MAX_BYTES) return false;
+  if (!data.length || size > getSettings().ugoiraCacheMaxBytes) return false;
   if (!(await hasEnoughStorage(size))) return false;
 
   const cached = await runTransaction(
@@ -120,6 +117,8 @@ export const pruneUgoiraFrameCache = async (): Promise<void> => {
   const db = await getDatabase();
   if (!db) return;
 
+  const { ugoiraCacheTtlMs, ugoiraCacheMaxEntries, ugoiraCacheMaxBytes } =
+    getSettings();
   const now = Date.now();
   await new Promise<void>((resolve) => {
     try {
@@ -139,11 +138,11 @@ export const pruneUgoiraFrameCache = async (): Promise<void> => {
           // 先统计全部条目，再按时间升序删除最旧的记录
           entries.sort((a, b) => a.cacheDate - b.cacheDate);
           for (const entry of entries) {
-            const expired = now - entry.cacheDate > UGOIRA_FRAME_CACHE_TIME;
+            const expired = now - entry.cacheDate > ugoiraCacheTtlMs;
             if (
               !expired &&
-              totalCount <= UGOIRA_FRAME_CACHE_MAX_ENTRIES &&
-              totalSize <= UGOIRA_FRAME_CACHE_MAX_BYTES
+              totalCount <= ugoiraCacheMaxEntries &&
+              totalSize <= ugoiraCacheMaxBytes
             ) {
               break;
             }

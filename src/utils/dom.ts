@@ -1,4 +1,5 @@
 import { iLog } from "./logger";
+import { getSettings } from "./setting";
 
 /** DOM 尚未就绪时排到 `DOMContentLoaded`，已就绪（脚本被延迟注入）则立即执行 */
 export const onDomReady = (callback: () => void) => {
@@ -45,8 +46,8 @@ export const waitFor = <T>(
   probe: () => T | null | undefined | false,
   action: (value: T) => void,
   {
-    interval = 300,
-    maxAttempts = 10,
+    interval,
+    maxAttempts,
     onGiveUp,
   }: {
     /** 两次探测之间的间隔 */
@@ -57,6 +58,9 @@ export const waitFor = <T>(
     onGiveUp?: () => void;
   } = {}
 ) => {
+  const settings = getSettings();
+  const probeInterval = interval ?? settings.domProbeIntervalMs;
+  const probeMaxAttempts = maxAttempts ?? settings.domProbeMaxAttempts;
   let attempt = 1;
 
   const step = () => {
@@ -65,12 +69,12 @@ export const waitFor = <T>(
       action(value);
       return;
     }
-    if (attempt >= maxAttempts) {
+    if (attempt >= probeMaxAttempts) {
       onGiveUp?.();
       return;
     }
     attempt += 1;
-    setTimeout(deferredStep, interval);
+    setTimeout(deferredStep, probeInterval);
   };
 
   /**

@@ -1,15 +1,9 @@
-import {
-  LOCAL_TAG_METADATA_CACHE_TIME,
-  LOCAL_TAG_STATE_PERSIST_DELAY,
-  TAG_TRANSLATION_CACHE_TIME,
-} from "../constants";
 import type { TagDetails } from "../services/tags";
+import { getSettings, subscribeSettings } from "./setting";
 import { createReadThroughCache } from "./utils";
 
 export const LOCAL_TAGS_KEY = "PIXIV_PREVIEWER_L_LOCAL_TAGS";
 export const LOCAL_TAG_TRANSLATIONS_KEY = "PIXIV_PREVIEWER_L_TAG_TRANSLATIONS";
-/** 翻译缓存最多保留的条目数 */
-const LOCAL_TAG_TRANSLATIONS_MAX_ENTRIES = 2000;
 
 export interface LocalTag {
   /** 搜索关键字 TAG */
@@ -55,9 +49,30 @@ const tagTranslationState = createReadThroughCache<TagTranslationState>(() =>
 );
 
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
+let persistSettingsSubscribed = false;
+
+const ensurePersistSettingsListener = () => {
+  if (persistSettingsSubscribed) return;
+  persistSettingsSubscribed = true;
+  subscribeSettings((next, prev) => {
+    if (
+      next.localTagPersistDelayMs !== prev.localTagPersistDelayMs &&
+      persistTimer !== null
+    ) {
+      if (next.localTagPersistDelayMs === 0) {
+        flushLocalTagState();
+      } else {
+        clearTimeout(persistTimer);
+        persistTimer = null;
+        schedulePersist();
+      }
+    }
+  });
+};
 
 /** 延迟批量落盘，合并同一轮操作中的多次写入 */
 const schedulePersist = () => {
+  ensurePersistSettingsListener();
   if (persistTimer !== null) return;
   persistTimer = setTimeout(() => {
     persistTimer = null;
@@ -66,7 +81,7 @@ const schedulePersist = () => {
       // 写入副本，避免存储引用继续被后续修改
       structuredClone(localTagState.peek())
     );
-  }, LOCAL_TAG_STATE_PERSIST_DELAY);
+  }, getSettings().localTagPersistDelayMs);
 };
 
 /** 立即落盘 pending 的修改，用于标签页隐藏等场景 */
@@ -108,7 +123,7 @@ export const getCachedLocalTagDetails = (tag: string) => {
   const item = getLocalTag(tag);
   if (!item?.metadata) return;
   const age = Date.now() - item.metadata.cachedAt;
-  if (age >= 0 && age < LOCAL_TAG_METADATA_CACHE_TIME)
+  if (age >= 0 && age < getSettings().localTagMetadataCacheTtlMs)
     return item.metadata.details;
   delete item.metadata;
   schedulePersist();
@@ -179,27 +194,60 @@ export const recordLocalTagVisit = (tag: string) => {
 export const getCachedTagTranslation = (tag: string): string | undefined => {
   const entry = tagTranslationState.get().translations[tag];
   if (!entry) return undefined;
-  if (Date.now() - entry.cachedAt > TAG_TRANSLATION_CACHE_TIME) {
+  if (Date.now() - entry.cachedAt > getSettings().tagTranslationCacheTtlMs) {
     delete tagTranslationState.peek().translations[tag];
     return undefined;
   }
   return entry.translation;
 };
 
-/** 缓存标签中文翻译；条目数超限时淘汰最旧的一半，避免无界增长 */
+const evictOverflowTagTranslations = (
+  state: TagTranslationState,
+  maxEntries: number
+): boolean => {
+  const entries = Object.entries(state.translations);
+  if (entries.length <= maxEntries) return false;
+  const keepCount = Math.floor(maxEntries / 2);
+  const kept = entries
+    .sort((a, b) => b[1].cachedAt - a[1].cachedAt)
+    .slice(0, keepCount);
+  state.translations = Object.fromEntries(kept);
+  return true;
+};
+
+/** 缓存标签中文翻译；条目数超限时按容量一半向下取整淘汰最旧条目 */
 export const cacheTagTranslation = (tag: string, translation: string) => {
   const state = tagTranslationState.peek();
   state.translations[tag] = { translation, cachedAt: Date.now() };
+  evictOverflowTagTranslations(
+    state,
+    getSettings().tagTranslationCacheMaxEntries
+  );
+  GM_setValue(LOCAL_TAG_TRANSLATIONS_KEY, state);
+};
 
-  const entries = Object.entries(state.translations);
-  if (entries.length > LOCAL_TAG_TRANSLATIONS_MAX_ENTRIES) {
-    const kept = entries
-      .sort((a, b) => b[1].cachedAt - a[1].cachedAt)
-      .slice(0, LOCAL_TAG_TRANSLATIONS_MAX_ENTRIES / 2);
-    state.translations = Object.fromEntries(kept);
+/** 按当前有效期与容量清理已保存的标签翻译缓存 */
+export const pruneTagTranslationCache = () => {
+  const { tagTranslationCacheTtlMs, tagTranslationCacheMaxEntries } =
+    getSettings();
+  const state = tagTranslationState.get();
+  const now = Date.now();
+  let changed = false;
+
+  for (const [tag, entry] of Object.entries(state.translations)) {
+    if (now - entry.cachedAt > tagTranslationCacheTtlMs) {
+      delete state.translations[tag];
+      changed = true;
+    }
   }
 
-  GM_setValue(LOCAL_TAG_TRANSLATIONS_KEY, state);
+  if (evictOverflowTagTranslations(state, tagTranslationCacheMaxEntries)) {
+    changed = true;
+  }
+
+  if (changed) {
+    GM_setValue(LOCAL_TAG_TRANSLATIONS_KEY, state);
+  }
 };
 
 export const getTagFromPath = (pathname: string): string | null => {

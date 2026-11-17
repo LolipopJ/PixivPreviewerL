@@ -1,5 +1,4 @@
 import {
-  g_defaultSettings,
   g_version,
   HIDE_FAVORITES_BUTTON_ID,
   SORT_BUTTON_ID,
@@ -9,14 +8,16 @@ import {
   TOOLBAR_ID,
 } from "./constants";
 import { deleteCachedIllustrationDetails } from "./databases";
-import { IllustSortOrder, LogLevel, PageType } from "./enums";
+import { LogLevel, PageType } from "./enums";
 import { loadDownloadPanel } from "./features/downloads";
 import { hideFavorites } from "./features/hide-favorites";
 import {
   interceptTagSearchRequests,
   loadLocalTags,
+  unloadLocalTags,
 } from "./features/local-tags";
 import { loadIllustPreview } from "./features/preview";
+import { openSettingsPanel } from "./features/settings-panel";
 import { loadIllustSort } from "./features/sort";
 import Texts from "./i18n";
 import hideFavoritesIcon from "./icons/hide-favorites.svg";
@@ -27,6 +28,7 @@ import {
   formatCacheBytes,
   getCacheUsage,
   pruneCachesOnStartup,
+  scheduleCachePrune,
   warmUpCacheDatabase,
 } from "./services/cache";
 import type { GlobalSettings } from "./types";
@@ -34,10 +36,8 @@ import { onDomReady, waitFor } from "./utils/dom";
 import { DoLog, iLog } from "./utils/logger";
 import {
   getSettings,
-  resetSettings,
-  setSettingStringValue,
-  setSettingValue,
-  toggleSettingBooleanValue,
+  subscribeSettings,
+  updateInternalVersion,
 } from "./utils/setting";
 
 // 当前页面类型
@@ -228,158 +228,37 @@ function showSearchLinksForDeletedArtworks() {
 //#endregion
 
 //#region 设置
-let menuIds: number[] = [];
-
 const registerSettingsMenu = () => {
   const settings = getSettings();
 
-  for (const menuId of menuIds) {
-    GM_unregisterMenuCommand(menuId);
-  }
-  menuIds = [];
-
-  menuIds.push(
-    GM_registerMenuCommand(
-      `🖼️ 插画作品预览 ${settings.enablePreview ? "✅" : "❌"}`,
-      () => {
-        toggleSettingBooleanValue("enablePreview");
-        registerSettingsMenu();
-      }
-    ),
-    GM_registerMenuCommand(
-      `🎦 动图作品预览 ${settings.enableAnimePreview ? "✅" : "❌"}`,
-      () => {
-        toggleSettingBooleanValue("enableAnimePreview");
-        registerSettingsMenu();
-      }
-    ),
-    GM_registerMenuCommand(
-      `🕗 延迟 ${settings.previewDelay} 毫秒显示预览图`,
-      () => {
-        setSettingStringValue("previewDelay", "延迟显示预览图时间（毫秒）", {
-          parseValue: (newValue) =>
-            Number(newValue) || g_defaultSettings.previewDelay,
-          onSet: () => registerSettingsMenu(),
-        });
-      }
-    ),
-    GM_registerMenuCommand(
-      `🏷️ 本地标签管理 ${settings.enableLocalTags ? "✅" : "❌"}`,
-      () => {
-        toggleSettingBooleanValue("enableLocalTags");
-        location.reload();
-      }
-    ),
-    GM_registerMenuCommand(`📚️ 每次排序 ${settings.pageCount} 页`, () => {
-      setSettingStringValue("pageCount", "每次排序的页数", {
-        parseValue: (newValue) =>
-          Number(newValue) || g_defaultSettings.pageCount,
-        onSet: () => registerSettingsMenu(),
-      });
-    }),
-    GM_registerMenuCommand(
-      `👨‍👩‍👧 排序隐藏收藏数少于 ${settings.favFilter} 的作品`,
-      () => {
-        setSettingStringValue("favFilter", "排序隐藏少于设定收藏数的作品", {
-          parseValue: (newValue) =>
-            Number(newValue) || g_defaultSettings.favFilter,
-          onSet: () => registerSettingsMenu(),
-        });
-      }
-    ),
-    GM_registerMenuCommand(
-      `🎨 按照 ${settings.orderType === IllustSortOrder.BY_BOOKMARK_COUNT ? "作品收藏数" : "作品发布时间"} 排序作品`,
-      () => {
-        setSettingValue(
-          "orderType",
-          settings.orderType === IllustSortOrder.BY_BOOKMARK_COUNT
-            ? IllustSortOrder.BY_DATE
-            : IllustSortOrder.BY_BOOKMARK_COUNT
-        );
-        registerSettingsMenu();
-      }
-    ),
-    GM_registerMenuCommand(
-      `🤖 排序过滤 AI 生成作品 ${settings.aiFilter ? "✅" : "❌"}`,
-      () => {
-        toggleSettingBooleanValue("aiFilter");
-        registerSettingsMenu();
-      }
-    ),
-    GM_registerMenuCommand(
-      `🦾 排序过滤 AI 辅助（加笔）作品 ${settings.aiAssistedFilter ? "✅" : "❌"}`,
-      () => {
-        toggleSettingBooleanValue("aiAssistedFilter");
-        registerSettingsMenu();
-      }
-    ),
-    GM_registerMenuCommand(
-      `❤️ 排序过滤已收藏作品 ${settings.hideFavorite ? "✅" : "❌"}`,
-      () => {
-        toggleSettingBooleanValue("hideFavorite");
-        registerSettingsMenu();
-      }
-    ),
-    GM_registerMenuCommand(
-      `🔖 排序过滤包含指定标签的作品 ${settings.hideByTag ? "✅" : "❌"}`,
-      () => {
-        toggleSettingBooleanValue("hideByTag");
-        registerSettingsMenu();
-      }
-    ),
-    GM_registerMenuCommand(
-      `🔖 排序过滤的标签：${settings.hideByTagList}`,
-      () => {
-        setSettingStringValue(
-          "hideByTagList",
-          "过滤的标签列表，使用`,`分隔不同标签",
-          {
-            onSet: () => registerSettingsMenu(),
-          }
-        );
-      }
-    ),
-    GM_registerMenuCommand(
-      `📑 在新标签页打开作品 ${settings.linkBlank ? "✅" : "❌"}`,
-      () => {
-        toggleSettingBooleanValue("linkBlank");
-        registerSettingsMenu();
-      }
-    ),
-    GM_registerMenuCommand(`🔁 重置设置`, () => {
-      if (confirm("您确定要重置所有设置到脚本的默认值吗？")) {
-        resetSettings();
-        location.reload();
-      }
-    }),
-    GM_registerMenuCommand(`🧹 ${Texts.setting_clearFollowingCache}`, () => {
-      if (
-        !confirm(`${Texts.setting_clearFollowingCacheHelp}\n\n确定要清除吗？`)
-      )
+  GM_registerMenuCommand(`⚙️ ${Texts.settings_menu}`, () => {
+    openSettingsPanel();
+  });
+  GM_registerMenuCommand(`🧹 ${Texts.setting_clearFollowingCache}`, () => {
+    if (!confirm(`${Texts.setting_clearFollowingCacheHelp}\n\n确定要清除吗？`))
+      return;
+    void clearAllLocalCaches().then((cleared) => {
+      if (!cleared) {
+        // 清空失败时不能提示成功并刷新，否则用户会以为缓存已被清除
+        alert(Texts.setting_clearCacheFailed);
         return;
-      void clearAllLocalCaches().then((cleared) => {
-        if (!cleared) {
-          // 清空失败时不能提示成功并刷新，否则用户会以为缓存已被清除
-          alert(Texts.setting_clearCacheFailed);
-          return;
-        }
-        alert(Texts.setting_followingCacheCleared);
-        location.reload();
-      });
-    }),
-    GM_registerMenuCommand(`📊 ${Texts.cache_usage}`, () => {
-      void getCacheUsage().then((usage) => {
-        alert(
-          Texts.cache_usageHelp
-            .replace("%1", String(usage.illustrationDetails))
-            .replace("%2", String(usage.illustPages))
-            .replace("%3", String(usage.ugoiraFrames))
-            .replace("%4", formatCacheBytes(usage.ugoiraBytes))
-            .replace("%5", String(usage.tagTranslations))
-        );
-      });
-    })
-  );
+      }
+      alert(Texts.setting_followingCacheCleared);
+      location.reload();
+    });
+  });
+  GM_registerMenuCommand(`📊 ${Texts.cache_usage}`, () => {
+    void getCacheUsage().then((usage) => {
+      alert(
+        Texts.cache_usageHelp
+          .replace("%1", String(usage.illustrationDetails))
+          .replace("%2", String(usage.illustPages))
+          .replace("%3", String(usage.ugoiraFrames))
+          .replace("%4", formatCacheBytes(usage.ugoiraBytes))
+          .replace("%5", String(usage.tagTranslations))
+      );
+    });
+  });
 
   return settings;
 };
@@ -403,7 +282,7 @@ const ShowUpgradeMessage = () => {
     "</div>";
 
   $("#pps-close").on("click", () => {
-    setSettingValue("version", g_version);
+    updateInternalVersion(g_version);
     $("#pp-bg").remove();
   });
 };
@@ -495,6 +374,23 @@ const initializeEarly = () => {
     // 清理过期的持久化缓存。提前打开数据库，后续读取缓存时无需再等待连接
     warmUpCacheDatabase();
     void pruneCachesOnStartup();
+    subscribeSettings((next, prev, source) => {
+      if (source !== "local") return;
+      if (
+        next.illustrationCacheMaxEntries < prev.illustrationCacheMaxEntries ||
+        next.illustPagesCacheMaxEntries < prev.illustPagesCacheMaxEntries ||
+        next.ugoiraCacheMaxEntries < prev.ugoiraCacheMaxEntries ||
+        next.ugoiraCacheMaxBytes < prev.ugoiraCacheMaxBytes ||
+        next.tagTranslationCacheMaxEntries <
+          prev.tagTranslationCacheMaxEntries ||
+        next.illustrationStaticCacheTtlMs < prev.illustrationStaticCacheTtlMs ||
+        next.illustPagesCacheTtlMs < prev.illustPagesCacheTtlMs ||
+        next.ugoiraCacheTtlMs < prev.ugoiraCacheTtlMs ||
+        next.tagTranslationCacheTtlMs < prev.tagTranslationCacheTtlMs
+      ) {
+        void scheduleCachePrune();
+      }
+    });
 
     g_pageType = matchPageType();
     if (g_pageType === undefined) {
@@ -514,13 +410,11 @@ const initializeEarly = () => {
       }
     }
 
-    // 初始化作品预览功能。仅绑定事件委托，悬停时才创建预览容器
-    if (g_settings.enablePreview) {
-      loadIllustPreview(g_settings);
-    }
+    // 初始化作品预览功能。仅绑定一次事件委托，内部按当前配置决定是否触发
+    loadIllustPreview();
 
     // 初始化作品排序功能。按钮稍后创建，事件监听先就位，避免点击无响应
-    loadIllustSort(g_settings);
+    loadIllustSort();
   } catch (e) {
     DoLog(LogLevel.Error, "An error occurred while initializing:", e);
   }
@@ -535,9 +429,17 @@ const initializeDom = () => {
     // 设置读取失败时 `initializeEarly` 已记录错误，此处不再重复执行
     if (!g_settings) return;
 
-    if (g_settings.enableLocalTags) {
+    if (getSettings().enableLocalTags) {
       loadLocalTags();
     }
+    subscribeSettings((next, prev) => {
+      if (next.enableLocalTags === prev.enableLocalTags) return;
+      if (next.enableLocalTags) {
+        loadLocalTags();
+      } else {
+        unloadLocalTags();
+      }
+    });
 
     // 显示更新信息窗口
     if (g_settings.version !== g_version) {
@@ -562,9 +464,10 @@ const initializeDom = () => {
     if ("CreateToolBar" in page) {
       mountToolbar(page.CreateToolBar());
     } else {
+      const { toolbarProbeIntervalMs, toolbarProbeMaxAttempts } = getSettings();
       waitFor(page.FindToolBar, mountToolbar, {
-        interval: 200,
-        maxAttempts: 25,
+        interval: toolbarProbeIntervalMs,
+        maxAttempts: toolbarProbeMaxAttempts,
         onGiveUp: () => DoLog(LogLevel.Warning, "Get toolbar failed."),
       });
     }
@@ -573,8 +476,8 @@ const initializeDom = () => {
   }
 };
 
-// 必须在 `document-start` 劫持页面自身的标签搜索请求，否则会漏掉最早的一批请求
-if (getSettings().enableLocalTags) interceptTagSearchRequests();
+// 必须在 `document-start` 劫持页面自身的标签搜索请求（仅安装一次，按当前开关决定是否统计）
+interceptTagSearchRequests();
 
 // 预览、排序、缓存清理与页面识别不依赖 DOM，尽早启动
 initializeEarly();

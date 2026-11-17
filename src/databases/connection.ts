@@ -1,4 +1,5 @@
 import { iLog } from "../utils/logger";
+import { getSettings } from "../utils/setting";
 
 const INDEX_DB_NAME = "PIXIV_PREVIEWER_L";
 /** 2：拆分静态/可变字段的缓存时间，并新增动图帧缓存表 */
@@ -22,9 +23,6 @@ export type CacheTableKey = (typeof CACHE_TABLE_KEYS)[number];
 let dbPromise: Promise<IDBDatabase> | null = null;
 let hasLoggedOpenError = false;
 
-/** 等待打开数据库的超时时间：升级被其他标签页阻塞时不能无限挂起 */
-const OPEN_DATABASE_TIMEOUT = 10_000;
-
 const openDatabase = (): Promise<IDBDatabase> =>
   new Promise((resolve, reject) => {
     if (typeof indexedDB === "undefined") {
@@ -43,7 +41,7 @@ const openDatabase = (): Promise<IDBDatabase> =>
     // 兜底：`onblocked` 之后浏览器可能永远不再回调，不能让调用方一直等待
     const timeout = setTimeout(() => {
       settle(() => reject(new Error("Opening IndexedDB timed out")));
-    }, OPEN_DATABASE_TIMEOUT);
+    }, getSettings().databaseOpenTimeoutMs);
 
     const request = indexedDB.open(INDEX_DB_NAME, INDEX_DB_VERSION);
 

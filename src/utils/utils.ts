@@ -33,7 +33,17 @@ export const sanitizeIllustFilename = (filename: string) => {
 };
 
 export const createLRUCache = <V>(maxSize: number) => {
+  let limit = Math.max(0, Math.floor(maxSize));
   const map = new Map<string, V>();
+
+  const evictOverflow = () => {
+    while (map.size > limit) {
+      const oldestKey = map.keys().next().value;
+      if (oldestKey === undefined) break;
+      map.delete(oldestKey);
+    }
+  };
+
   return {
     get(key: string): V | undefined {
       if (!map.has(key)) return undefined;
@@ -43,12 +53,22 @@ export const createLRUCache = <V>(maxSize: number) => {
       return val;
     },
     set(key: string, val: V): void {
+      if (limit <= 0) return;
       if (map.has(key)) {
         map.delete(key);
-      } else if (map.size >= maxSize) {
-        map.delete(map.keys().next().value!);
       }
       map.set(key, val);
+      evictOverflow();
+    },
+    setMaxSize(nextMaxSize: number): void {
+      limit = Math.max(0, Math.floor(nextMaxSize));
+      evictOverflow();
+    },
+    size(): number {
+      return map.size;
+    },
+    maxSize(): number {
+      return limit;
     },
   };
 };

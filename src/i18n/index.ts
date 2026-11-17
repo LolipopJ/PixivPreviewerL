@@ -64,6 +64,204 @@ const Texts = {
   label_sorting: "排序中",
   label_nextPage: "下一页",
   label_hideFav: "过滤收藏",
+
+  settings_menu: "设置",
+  settings_panelTitle: "设置",
+  settings_close: "关闭",
+  settings_save: "保存",
+  settings_restoreDefault: "恢复默认",
+  settings_revertToPrevious: "恢复到修改前",
+  settings_restoreAll: "全部恢复默认",
+  settings_confirmDiscard:
+    "存在未保存的修改，关闭将放弃这些修改，确定要关闭吗？",
+  settings_saveSuccess: "设置已保存并生效。",
+  settings_saveFailed: "保存失败：%1",
+  settings_saveStorageError: "写入本地存储失败，配置未更改。",
+  settings_validationFailed: "存在无效配置，请修正：%1",
+
+  settings_group_preview: "作品预览",
+  settings_group_sort: "作品排序",
+  settings_group_localTags: "本地标签",
+  settings_advancedToggle: "高级设置",
+  settings_group_cache: "缓存",
+  settings_group_download: "下载管理",
+  settings_group_network: "网络",
+  settings_group_scheduling: "内部调度",
+
+  settings_unit_ms: "毫秒",
+  settings_unit_s: "秒",
+  settings_unit_hour: "小时",
+  settings_unit_day: "天",
+  settings_unit_pages: "页",
+  settings_unit_bookmarks: "收藏",
+  settings_unit_images: "张",
+  settings_unit_entries: "条",
+  settings_unit_works: "个作品",
+  settings_unit_mib: "MiB",
+  settings_unit_bytes: "字节",
+  settings_unit_times: "次",
+
+  settings_field_enablePreview_label: "启用作品预览",
+  settings_field_enablePreview_desc: "关闭后停止弹出作品与动图预览",
+  settings_field_enableAnimePreview_label: "预览动图",
+  settings_field_enableAnimePreview_desc: "受作品预览总开关约束",
+  settings_field_previewDelay_label: "悬停延迟",
+  settings_field_previewDelay_desc: "鼠标悬停在图片上到显示预览窗口的等待时长",
+  settings_field_linkBlank_label: "在新标签页打开作品",
+  settings_field_linkBlank_desc: "仅作用于作品链接，不影响作者与标签链接",
+  settings_field_previewHoldMs_label: "长按固定预览时间",
+  settings_field_previewHoldMs_desc: "在预览时鼠标长按进入单手固定模式的时长",
+  settings_field_previewLoadingOverlayDelayMs_label: "翻页加载遮罩延迟",
+  settings_field_previewLoadingOverlayDelayMs_desc:
+    "翻页图片未就绪时显示毛玻璃遮罩的等待时长",
+  settings_field_previewDownloadNoticeMs_label: "下载成功提示保留时间",
+  settings_field_previewDownloadNoticeMs_desc:
+    "预览内点击原图下载成功后恢复按钮文字的等待时长",
+
+  settings_field_pageCount_label: "每次排序页数",
+  settings_field_pageCount_desc: "仅作用于脚本排序",
+  settings_field_favFilter_label: "最低收藏数",
+  settings_field_favFilter_desc: "仅作用于脚本排序",
+  settings_field_orderType_label: "排序依据",
+  settings_field_orderType_desc: "仅作用于脚本排序",
+  settings_option_orderByBookmark: "按收藏数",
+  settings_option_orderByDate: "按发布时间",
+  settings_field_aiFilter_label: "排序过滤 AI 生成",
+  settings_field_aiFilter_desc: "独立过滤开关，仅作用于脚本排序",
+  settings_field_aiAssistedFilter_label: "排序过滤 AI 辅助",
+  settings_field_aiAssistedFilter_desc:
+    "独立过滤标签中的 AI 辅助作品，仅作用于脚本排序",
+  settings_field_hideFavorite_label: "排序过滤已收藏",
+  settings_field_hideFavorite_desc:
+    "仅作用于脚本排序，不改变工具栏“过滤收藏”按钮语义",
+  settings_field_hideByTag_label: "启用排序标签过滤",
+  settings_field_hideByTag_desc:
+    "关闭时保留排除标签列表，但下次排序不启用该过滤",
+  settings_field_hideByTagList_label: "排序排除标签列表",
+  settings_field_hideByTagList_placeholder: "多个标签用英文逗号 , 分隔",
+  settings_field_hideByTagList_desc:
+    "仅在启用标签过滤时作用于脚本排序，忽略首尾空白且不区分大小写",
+
+  settings_field_enableLocalTags_label: "启用本地标签管理",
+  settings_field_enableLocalTags_desc:
+    "停用会移除界面并停止统计，保留已有本地标签数据",
+  settings_field_localTagPopoverShowDelayMs_label: "浮层显示延迟",
+  settings_field_localTagPopoverShowDelayMs_desc:
+    "悬浮或聚焦标签后弹出详情浮层的延迟，保存后取消旧计时",
+  settings_field_localTagPopoverHideDelayMs_label: "浮层关闭延迟",
+  settings_field_localTagPopoverHideDelayMs_desc:
+    "离开标签或浮层后延迟关闭的时间，保存后取消旧计时",
+
+  settings_field_previewPreloadCount_label: "预览预加载窗口",
+  settings_field_previewPreloadCount_desc:
+    "包含当前页在内的预加载张数；解码缓存上限按其两倍自动计算，缩小后立即淘汰内存缓存",
+  settings_field_previewCacheMaxEntries_label: "预览内部缓存容量",
+  settings_field_previewCacheMaxEntries_desc:
+    "预览分页地址与动图元数据内存 LRU 缓存各自的容量上限，缩小后立即淘汰",
+  settings_field_previewDetailsMaxStaleMs_label: "预览详情额外陈旧容忍",
+  settings_field_previewDetailsMaxStaleMs_desc:
+    "叠加在“作品详情可变信息有效期”之上使用，预览读取时生效",
+  settings_field_illustrationMutableCacheTtlMs_label: "作品详情可变信息有效期",
+  settings_field_illustrationMutableCacheTtlMs_desc:
+    "控制收藏数、收藏状态等可变信息的新鲜度",
+  settings_field_illustrationStaticCacheTtlMs_label: "作品详情静态信息有效期",
+  settings_field_illustrationStaticCacheTtlMs_desc:
+    "控制标题、标签、页数等静态信息的持久化有效期",
+  settings_field_illustrationCacheMaxEntries_label: "作品详情缓存容量",
+  settings_field_illustrationCacheMaxEntries_desc:
+    "IndexedDB 作品详情表最大条数，缩小后安排异步清理",
+  settings_field_newIllustrationNoCacheMs_label: "新作品免缓存窗口",
+  settings_field_newIllustrationNoCacheMs_desc:
+    "发布未满该时长的作品不写入详情缓存",
+  settings_field_illustPagesCacheTtlMs_label: "作品分页缓存有效期",
+  settings_field_illustPagesCacheTtlMs_desc: "IndexedDB 作品分页链接缓存有效期",
+  settings_field_illustPagesCacheMaxEntries_label: "作品分页缓存容量",
+  settings_field_illustPagesCacheMaxEntries_desc:
+    "IndexedDB 作品分页表最大条数，缩小后安排异步清理",
+  settings_field_userIllustrationsCacheTtlMs_label: "用户作品列表有效期",
+  settings_field_userIllustrationsCacheTtlMs_desc:
+    "Session Storage 用户作品列表缓存有效期",
+  settings_field_ugoiraCacheTtlMs_label: "动图帧缓存有效期",
+  settings_field_ugoiraCacheTtlMs_desc: "IndexedDB 动图帧缓存有效期",
+  settings_field_ugoiraCacheMaxEntries_label: "动图帧缓存作品数上限",
+  settings_field_ugoiraCacheMaxEntries_desc:
+    "IndexedDB 动图帧表最多保留的作品数，缩小后安排异步清理",
+  settings_field_ugoiraCacheMaxBytes_label: "动图帧缓存空间上限",
+  settings_field_ugoiraCacheMaxBytes_desc:
+    "IndexedDB 动图帧总占用上限（换算为字节需为正整数），缩小后安排异步清理",
+  settings_field_localTagMetadataCacheTtlMs_label: "本地标签详情有效期",
+  settings_field_localTagMetadataCacheTtlMs_desc:
+    "本地标签摘要与缩略图缓存有效期",
+  settings_field_tagTranslationCacheTtlMs_label: "标签翻译缓存有效期",
+  settings_field_tagTranslationCacheTtlMs_desc: "标签中文翻译缓存有效期",
+  settings_field_tagTranslationCacheMaxEntries_label: "标签翻译缓存容量",
+  settings_field_tagTranslationCacheMaxEntries_desc:
+    "至少 2 条；超限时按容量一半向下取整淘汰最旧条目",
+
+  settings_field_completedDownloadsMaxEntries_label: "已完成下载记录上限",
+  settings_field_completedDownloadsMaxEntries_desc:
+    "后续记录写入或更新时淘汰超出上限的旧已完成记录，不影响活动下载",
+  settings_field_retryableDownloadsMaxEntries_label: "可重试下载记录上限",
+  settings_field_retryableDownloadsMaxEntries_desc:
+    "后续记录写入或更新时淘汰超出上限的旧失败/中断记录，不影响活动下载",
+  settings_field_downloadProgressPersistMs_label: "进度持久化间隔",
+  settings_field_downloadProgressPersistMs_desc:
+    "下载进度写入共享存储的最小间隔（不能大于心跳间隔）",
+  settings_field_downloadHeartbeatMs_label: "下载心跳间隔",
+  settings_field_downloadHeartbeatMs_desc:
+    "刷新活动下载存活时间与检查失联的间隔（必须小于失联判定时间）",
+  settings_field_downloadOwnerTimeoutMs_label: "下载失联判定时间",
+  settings_field_downloadOwnerTimeoutMs_desc:
+    "超过该时长未更新状态的活动下载视为已中断（必须大于心跳间隔）",
+
+  settings_field_requestRetryIntervalMs_label: "请求重试间隔",
+  settings_field_requestRetryIntervalMs_desc: "每次重试等待时间（最短 1 秒）",
+  settings_field_requestMaxAttempts_label: "最大尝试次数",
+  settings_field_requestMaxAttempts_desc:
+    "包含首次请求；留空或填“不限”表示持续重试",
+  settings_field_requestMaxAttempts_placeholder: "留空表示不限",
+  settings_field_tagRequestTimeoutMs_label: "标签请求超时",
+  settings_field_tagRequestTimeoutMs_desc:
+    "标签详情与翻译接口单次请求的超时时间",
+  settings_field_ugoiraChunkBytes_label: "动图下载分块大小",
+  settings_field_ugoiraChunkBytes_desc:
+    "未命中帧缓存时分段下载动图压缩包的分块大小（至少 65536 字节）",
+  settings_field_ugoiraTrailerBytes_label: "动图尾部探测大小",
+  settings_field_ugoiraTrailerBytes_desc:
+    "读取动图 ZIP 中央目录的尾部探测长度（至少 22 字节）",
+
+  settings_field_databaseOpenTimeoutMs_label: "数据库打开超时",
+  settings_field_databaseOpenTimeoutMs_desc:
+    "等待 IndexedDB 连接打开的最大时长",
+  settings_field_domProbeIntervalMs_label: "通用 DOM 探测间隔",
+  settings_field_domProbeIntervalMs_desc: "等待页面异步节点渲染的探测间隔",
+  settings_field_domProbeMaxAttempts_label: "通用 DOM 探测次数",
+  settings_field_domProbeMaxAttempts_desc: "包含首次探测在内的最大尝试次数",
+  settings_field_toolbarProbeIntervalMs_label: "工具栏探测间隔",
+  settings_field_toolbarProbeIntervalMs_desc:
+    "等待页面自带工具栏渲染的探测间隔",
+  settings_field_toolbarProbeMaxAttempts_label: "工具栏探测次数",
+  settings_field_toolbarProbeMaxAttempts_desc:
+    "等待页面自带工具栏的最大尝试次数",
+  settings_field_localTagRenderDebounceMs_label: "标签界面更新防抖",
+  settings_field_localTagRenderDebounceMs_desc:
+    "DOM 变动后刷新本地标签入口的防抖延迟",
+  settings_field_localTagPersistDelayMs_label: "本地标签延迟保存",
+  settings_field_localTagPersistDelayMs_desc:
+    "合并标签编辑写入存储的延迟，调整时不丢失待保存数据",
+  settings_field_cacheCleanupIdleTimeoutMs_label: "空闲缓存清理最长等待",
+  settings_field_cacheCleanupIdleTimeoutMs_desc:
+    "浏览器空闲回调清理持久化缓存的最大等待时长",
+
+  settings_err_required: "请输入数值，不能为空",
+  settings_err_number: "请输入有效的有限数值",
+  settings_err_integer: "必须为整数",
+  settings_err_positive: "必须大于 0",
+  settings_err_nonNegative: "不能小于 0",
+  settings_err_min: "不能小于 %1",
+  settings_err_option: "请选择有效的选项",
+  settings_err_progressExceedsHeartbeat: "不能大于下载心跳间隔",
+  settings_err_timeoutNotGreaterThanHeartbeat: "必须大于下载心跳间隔",
 };
 
 export default Texts;

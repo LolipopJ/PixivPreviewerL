@@ -1,13 +1,6 @@
-import {
-  ILLUST_PAGES_CACHE_MAX_ENTRIES,
-  ILLUST_PAGES_CACHE_TIME,
-  ILLUSTRATION_DETAILS_CACHE_MAX_ENTRIES,
-  ILLUSTRATION_DETAILS_CACHE_TIME,
-  ILLUSTRATION_STATIC_CACHE_TIME,
-  NEW_ILLUSTRATION_NOT_CACHE_TIME,
-} from "../constants";
 import type { IllustrationDetails } from "../types";
 import { iLog } from "../utils/logger";
+import { getSettings } from "../utils/setting";
 import {
   CACHE_DATE_INDEX,
   ILLUST_PAGES_CACHE_TABLE_KEY,
@@ -39,15 +32,15 @@ export interface IllustPagesCache {
   cacheDate: number;
 }
 
-/** 缓存作品详情；发布不足 1 小时的作品跳过缓存 */
+/** 缓存作品详情；发布不足免缓存窗口的作品跳过缓存 */
 export const cacheIllustrationDetails = (
   illustrations: IllustrationDetails[],
   now: number = Date.now()
 ): Promise<boolean> => {
+  const { newIllustrationNoCacheMs } = getSettings();
   const cacheable = illustrations.filter(
     (illustration) =>
-      now - illustration.uploadTimestamp * 1000 >
-      NEW_ILLUSTRATION_NOT_CACHE_TIME
+      now - illustration.uploadTimestamp * 1000 > newIllustrationNoCacheMs
   );
   if (!cacheable.length) return Promise.resolve(true);
 
@@ -84,9 +77,10 @@ export const cacheIllustrationDetails = (
 export const getCachedIllustrationDetails = async (
   id: string,
   now: number = Date.now(),
-  /** 可变字段的有效期，默认为 6 小时 */
-  mutableMaxAge: number = ILLUSTRATION_DETAILS_CACHE_TIME
+  /** 可变字段的有效期，默认读取当前配置 */
+  mutableMaxAge: number = getSettings().illustrationMutableCacheTtlMs
 ): Promise<CachedIllustrationDetails | null> => {
+  const { illustrationStaticCacheTtlMs } = getSettings();
   const entry = await runRequest<IllustrationDetailsCache | undefined>(
     ILLUSTRATION_DETAILS_CACHE_TABLE_KEY,
     "readonly",
@@ -97,7 +91,7 @@ export const getCachedIllustrationDetails = async (
   const cacheDate = toTimestamp(entry.cacheDate, 0);
   const staticDate = toTimestamp(entry.staticDate, cacheDate);
 
-  if (now - staticDate > ILLUSTRATION_STATIC_CACHE_TIME) {
+  if (now - staticDate > illustrationStaticCacheTtlMs) {
     void deleteCachedIllustrationDetails([id]);
     return null;
   }
@@ -162,6 +156,7 @@ export const getCachedIllustPages = async (
   id: string,
   now: number = Date.now()
 ): Promise<Omit<IllustPagesCache, "id" | "cacheDate"> | null> => {
+  const { illustPagesCacheTtlMs } = getSettings();
   const entry = await runRequest<IllustPagesCache | undefined>(
     ILLUST_PAGES_CACHE_TABLE_KEY,
     "readonly",
@@ -169,7 +164,7 @@ export const getCachedIllustPages = async (
   );
   if (!entry) return null;
 
-  if (now - toTimestamp(entry.cacheDate, 0) > ILLUST_PAGES_CACHE_TIME) {
+  if (now - toTimestamp(entry.cacheDate, 0) > illustPagesCacheTtlMs) {
     void runTransaction(ILLUST_PAGES_CACHE_TABLE_KEY, (store) => {
       store.delete(id);
     });
@@ -184,16 +179,22 @@ export const getCachedIllustPages = async (
 
 /** 清理过期的作品详情与分页缓存 */
 export const pruneIllustrationCaches = async (): Promise<void> => {
+  const {
+    illustrationStaticCacheTtlMs,
+    illustrationCacheMaxEntries,
+    illustPagesCacheTtlMs,
+    illustPagesCacheMaxEntries,
+  } = getSettings();
   await pruneCacheTable(
     ILLUSTRATION_DETAILS_CACHE_TABLE_KEY,
     STATIC_DATE_INDEX,
-    ILLUSTRATION_STATIC_CACHE_TIME,
-    ILLUSTRATION_DETAILS_CACHE_MAX_ENTRIES
+    illustrationStaticCacheTtlMs,
+    illustrationCacheMaxEntries
   );
   await pruneCacheTable(
     ILLUST_PAGES_CACHE_TABLE_KEY,
     CACHE_DATE_INDEX,
-    ILLUST_PAGES_CACHE_TIME,
-    ILLUST_PAGES_CACHE_MAX_ENTRIES
+    illustPagesCacheTtlMs,
+    illustPagesCacheMaxEntries
   );
 };

@@ -11,7 +11,12 @@ import {
   UGOIRA_FRAMES_CACHE_TABLE_KEY,
 } from "../databases";
 import { iLog } from "../utils/logger";
-import { clearLocalTagCaches, LOCAL_TAG_TRANSLATIONS_KEY } from "../utils/tags";
+import { getSettings } from "../utils/setting";
+import {
+  clearLocalTagCaches,
+  LOCAL_TAG_TRANSLATIONS_KEY,
+  pruneTagTranslationCache,
+} from "../utils/tags";
 import { clearUserIllustrationsCache } from "./illustration";
 
 export interface CacheUsage {
@@ -28,14 +33,44 @@ export interface CacheUsage {
 }
 
 let hasPruned = false;
+let activePrunePromise: Promise<void> | null = null;
+let rerunPruneRequested = false;
 
 /** 页面解析期间不抢占主线程，空闲时再执行重型清理 */
 const whenIdle = (task: () => void) => {
-  if (typeof requestIdleCallback === "function") {
-    requestIdleCallback(task, { timeout: 3000 });
-  } else {
-    setTimeout(task, 1000);
+  requestIdleCallback(task, {
+    timeout: getSettings().cacheCleanupIdleTimeoutMs,
+  });
+};
+
+const runCachePrune = (): Promise<void> => {
+  if (activePrunePromise) {
+    rerunPruneRequested = true;
+    return activePrunePromise;
   }
+
+  activePrunePromise = (async () => {
+    try {
+      do {
+        rerunPruneRequested = false;
+        await new Promise<void>((resolve) => whenIdle(resolve));
+        try {
+          pruneTagTranslationCache();
+          await Promise.all([
+            pruneIllustrationCaches(),
+            pruneUgoiraFrameCache(),
+          ]);
+        } catch (error) {
+          // 各清理函数内部已把失败降级为日志，此处仅防御未来改动抛出的异常
+          iLog.w("Failed to prune caches:", error);
+        }
+      } while (rerunPruneRequested);
+    } finally {
+      activePrunePromise = null;
+    }
+  })();
+
+  return activePrunePromise;
 };
 
 /**
@@ -55,14 +90,13 @@ export const warmUpCacheDatabase = () => {
 export const pruneCachesOnStartup = async () => {
   if (hasPruned) return;
   hasPruned = true;
-  await new Promise<void>((resolve) => whenIdle(resolve));
-  try {
-    await Promise.all([pruneIllustrationCaches(), pruneUgoiraFrameCache()]);
-  } catch (error) {
-    // 各清理函数内部已把失败降级为日志，此处仅防御未来改动抛出的异常
-    iLog.w("Failed to prune caches on startup:", error);
-  }
+  await runCachePrune();
 };
+
+/**
+ * 在配置缩小缓存上限或有效期后安排一次持久化缓存清理，不受启动单次标记阻止。
+ */
+export const scheduleCachePrune = () => runCachePrune();
 
 const countTagTranslations = () => {
   const state = GM_getValue<{ translations?: Record<string, unknown> }>(

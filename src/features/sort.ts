@@ -1,12 +1,10 @@
 import {
-  AI_ASSISTED_TAGS,
-  g_defaultSettings,
   g_loadingImage,
   SORT_BUTTON_ID,
   SORT_EVENT_NAME,
   SORT_NEXT_PAGE_EVENT_NAME,
 } from "../constants";
-import { AiType, IllustSortOrder, IllustSortType } from "../enums";
+import { IllustSortOrder, IllustSortType } from "../enums";
 import heartIcon from "../icons/heart.svg";
 import heartFilledIcon from "../icons/heart-filled.svg";
 import pageIcon from "../icons/page.svg";
@@ -18,6 +16,7 @@ import {
   requestWithRetry,
 } from "../services";
 import type { GlobalSettings, IllustrationListItem } from "../types";
+import { markSortedArtworkLink } from "../utils/artwork-link";
 import {
   checkIsAiAssisted,
   checkIsAiGenerated,
@@ -27,8 +26,9 @@ import {
 } from "../utils/illustration";
 import { iLog } from "../utils/logger";
 import { execLimitConcurrentPromises } from "../utils/promise";
+import { getSettings } from "../utils/setting";
 
-type LoadIllustSortOptions = Pick<
+type SortRuntimeSettings = Pick<
   GlobalSettings,
   | "pageCount"
   | "favFilter"
@@ -44,39 +44,15 @@ const BOOKMARK_USER_PAGE_ILLUSTRATION_LIST_SELECTOR = "ul.sc-e967f3f1-1.cEOodl";
 
 const USER_TYPE_ARTWORKS_PER_PAGE = 48;
 
-let isInitialized = false;
-export const loadIllustSort = (options: LoadIllustSortOptions) => {
-  if (isInitialized) return;
-
-  const {
-    pageCount: optionPageCount,
-    favFilter: optionFavFilter,
-    orderType = IllustSortOrder.BY_BOOKMARK_COUNT,
-    hideFavorite = false,
-    hideByTag = false,
-    hideByTagList: hideByTagListString,
-    aiFilter = false,
-    aiAssistedFilter = false,
-  } = options;
-
-  // 修正不符合实际的参数
-  let pageCount = Number(optionPageCount),
-    favFilter = Number(optionFavFilter);
-  if (pageCount <= 0) {
-    pageCount = g_defaultSettings.pageCount;
-  }
-  if (favFilter < 0) {
-    favFilter = g_defaultSettings.favFilter;
-  }
-
-  // 添加过滤标签列表
-  const hideByTagList = hideByTagListString
+const parseExcludedTags = (raw: string) =>
+  raw
     .split(",")
     .map((tag) => tag.trim().toLowerCase())
-    .filter((tag) => !!tag);
-  if (aiAssistedFilter) {
-    hideByTagList.push(...AI_ASSISTED_TAGS);
-  }
+    .filter(Boolean);
+
+let isInitialized = false;
+export const loadIllustSort = () => {
+  if (isInitialized) return;
 
   class IllustSorter {
     type: IllustSortType | undefined;
@@ -154,13 +130,27 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
       type,
       api,
       searchParams,
+      settings,
     }: {
       type: IllustSortType;
       api: string;
       searchParams: URLSearchParams;
+      settings: SortRuntimeSettings;
     }) {
       this.sorting = true;
       iLog.i("Start to sort illustrations.");
+
+      const {
+        pageCount,
+        favFilter,
+        orderType,
+        hideFavorite,
+        hideByTag,
+        hideByTagList,
+        aiFilter,
+        aiAssistedFilter,
+      } = settings;
+      const excludedTags = hideByTag ? parseExcludedTags(hideByTagList) : [];
 
       this.sortButtonElement.attr({
         title: "正在排序作品",
@@ -286,16 +276,21 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
               return false;
             }
 
-            if (aiFilter && illustration.aiType === AiType.AI) {
+            if (aiFilter && checkIsAiGenerated(illustration.aiType)) {
               return false;
             }
 
-            if ((hideByTag || aiAssistedFilter) && hideByTagList.length) {
-              for (const tag of illustration.tags) {
-                if (hideByTagList.includes(tag.toLowerCase())) {
-                  return false;
-                }
-              }
+            if (aiAssistedFilter && checkIsAiAssisted(illustration.tags)) {
+              return false;
+            }
+
+            if (
+              excludedTags.length > 0 &&
+              illustration.tags.some((tag) =>
+                excludedTags.includes(tag.toLowerCase())
+              )
+            ) {
+              return false;
             }
 
             return illustration.bookmarkUserTotal >= favFilter;
@@ -373,8 +368,7 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
         illustrationAnchor.setAttribute("data-gtm-value", id);
         illustrationAnchor.setAttribute("data-gtm-user-id", userId);
         illustrationAnchor.href = `/artworks/${id}`;
-        illustrationAnchor.target = "_blank";
-        illustrationAnchor.rel = "external";
+        markSortedArtworkLink(illustrationAnchor, getSettings().linkBlank);
         illustrationAnchor.style =
           "display: block; position: relative; width: 184px;";
 
@@ -507,6 +501,7 @@ export const loadIllustSort = (options: LoadIllustSortOptions) => {
       type,
       api,
       searchParams: mergedSearchParams,
+      settings: getSettings(),
     });
   });
 

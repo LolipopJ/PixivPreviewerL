@@ -1,4 +1,5 @@
 import { createPendingPromiseCache } from "../utils/promise";
+import { getSettings } from "../utils/setting";
 import {
   cacheLocalTagDetails,
   cacheTagTranslation,
@@ -39,8 +40,9 @@ const getIllustMangaTotal = (body: unknown): number | undefined => {
   return undefined;
 };
 
-/** 如果标签在本地列表中，记录其插画漫画作品总数 */
+/** 如果标签在本地列表中且功能已启用，记录其插画漫画作品总数 */
 export const recordTagTotal = (tag: string, body: unknown) => {
+  if (!getSettings().enableLocalTags) return;
   if (!hasLocalTag(tag)) return;
   const total = getIllustMangaTotal(body);
   if (total !== undefined) recordLocalTagTotal(tag, total);
@@ -50,7 +52,7 @@ const requestTagTopBody = async (tag: string) => {
   const response = await request({
     method: "GET",
     url: `/ajax/search/top/${encodeURIComponent(tag)}?lang=zh`,
-    timeout: 10000,
+    timeout: getSettings().tagRequestTimeoutMs,
   });
   const data = response.response as PixivStandardResponse<TagSearchBody>;
   if (response.status !== 200 || data.error || !data.body) {
@@ -94,7 +96,7 @@ export const getTagDetails = (tag: string): Promise<TagDetails> => {
     request({
       method: "GET",
       url: `/ajax/tag/info?tag=${encodeURIComponent(tag)}&lang=zh`,
-      timeout: 10000,
+      timeout: getSettings().tagRequestTimeoutMs,
     }).then((response) => {
       const data = response.response as PixivStandardResponse<TagDetails>;
       if (response.status !== 200 || data.error || !data.body) {

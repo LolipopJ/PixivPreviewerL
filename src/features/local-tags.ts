@@ -10,6 +10,7 @@ import {
 import debounce from "../utils/debounce";
 import { injectStyle } from "../utils/dom";
 import { iLog } from "../utils/logger";
+import { getSettings, subscribeSettings } from "../utils/setting";
 import { getLocalTagColor } from "../utils/tag-colors";
 import {
   addLocalTag,
@@ -79,13 +80,19 @@ const getTagFromSearchUrl = (url: string) => {
 };
 
 const recordTagSearchTotal = (tag: string, data: unknown) => {
+  if (!getSettings().enableLocalTags) return;
   const response = data as { error?: boolean; body?: unknown } | null;
   if (!response || response.error) return;
   recordTagTotal(tag, response.body);
 };
 
-/** 拦截页面自身的标签 top 搜索请求，记录访问标签页时的作品总数 */
+let isSearchIntercepted = false;
+
+/** 拦截页面自身的标签 top 搜索请求，记录访问标签页时的作品总数（仅安装一次） */
 export const interceptTagSearchRequests = () => {
+  if (isSearchIntercepted) return;
+  isSearchIntercepted = true;
+
   try {
     const pageFetch = unsafeWindow.fetch.bind(unsafeWindow);
     unsafeWindow.fetch = function (input, init) {
@@ -98,10 +105,10 @@ export const interceptTagSearchRequests = () => {
       const response = pageFetch(input, init);
 
       const tag = getTagFromSearchUrl(url);
-      if (tag) {
+      if (tag && getSettings().enableLocalTags) {
         response
           .then((result) => {
-            if (!result.ok) return undefined;
+            if (!result.ok || !getSettings().enableLocalTags) return undefined;
             return result.clone().json();
           })
           .then((data) => {
@@ -143,8 +150,9 @@ export const interceptTagSearchRequests = () => {
       body?: Document | XMLHttpRequestBodyInit | null
     ) {
       const tag = getTagFromSearchUrl(requestUrls.get(this) ?? "");
-      if (tag) {
+      if (tag && getSettings().enableLocalTags) {
         this.addEventListener("load", () => {
+          if (!getSettings().enableLocalTags) return;
           if (this.status < 200 || this.status >= 300) return;
           try {
             recordTagSearchTotal(
@@ -174,8 +182,66 @@ const getTagLink = (target: EventTarget | null) => {
   return getTagFromPath(url.pathname) ? link : null;
 };
 
+let activeLocalTagsTeardown: (() => void) | null = null;
+let gmTagListenerRegistered = false;
+let onRemoteLocalTagsUpdate: (() => void) | null = null;
+let visitUrlWatcherRegistered = false;
+let lastRecordedVisitTag: string | null = null;
+
+/** 仅按路径变更重置已记录的访问标签，避免在同一标签页重复启停功能时重复计数 */
+export const resetLocalTagVisitTrackingOnPath = (pathname: string) => {
+  if (getTagFromPath(pathname) !== lastRecordedVisitTag) {
+    lastRecordedVisitTag = null;
+  }
+};
+
+/** 同一路径下仅记录一次本地标签访问计数 */
+export const syncLocalTagVisitForPath = (pathname: string): boolean => {
+  const tag = getTagFromPath(pathname);
+  if (tag && tag !== lastRecordedVisitTag) {
+    lastRecordedVisitTag = tag;
+    recordLocalTagVisit(tag);
+    return true;
+  }
+  if (!tag) {
+    lastRecordedVisitTag = null;
+  }
+  return false;
+};
+
+const ensureLocalTagGmListener = () => {
+  if (gmTagListenerRegistered) return;
+  gmTagListenerRegistered = true;
+  GM_addValueChangeListener(
+    LOCAL_TAGS_KEY,
+    (_key, _oldValue, _newValue, remote) => {
+      if (!remote) return;
+      invalidateLocalTagState();
+      onRemoteLocalTagsUpdate?.();
+    }
+  );
+};
+
+const ensureLocalTagVisitUrlWatcher = () => {
+  if (visitUrlWatcherRegistered) return;
+  visitUrlWatcherRegistered = true;
+  $(window).on("urlchange.ppLocalTagsVisit", () => {
+    resetLocalTagVisitTrackingOnPath(location.pathname);
+  });
+};
+
+export const unloadLocalTags = () => {
+  if (!activeLocalTagsTeardown) return;
+  activeLocalTagsTeardown();
+  activeLocalTagsTeardown = null;
+};
+
 export const loadLocalTags = () => {
-  if ($(`#${POPOVER_ID}`).length) return;
+  if (activeLocalTagsTeardown || $(`#${POPOVER_ID}`).length) return;
+
+  ensureLocalTagVisitUrlWatcher();
+  ensureLocalTagGmListener();
+  let disposed = false;
 
   injectStyle(
     `
@@ -300,8 +366,8 @@ export const loadLocalTags = () => {
   let activeLink: HTMLAnchorElement | null = null;
   let activeTag: string | null = null;
   let addingTag: string | null = null;
-  let showTimer: ReturnType<typeof setTimeout>;
-  let hideTimer: ReturnType<typeof setTimeout>;
+  let showTimer: ReturnType<typeof setTimeout> | undefined;
+  let hideTimer: ReturnType<typeof setTimeout> | undefined;
   let scrollParents = $<HTMLElement>();
 
   const addTagFromApi = (tag: string, button?: JQuery<HTMLElement>) => {
@@ -312,15 +378,18 @@ export const loadLocalTags = () => {
     updateAction();
     void getTagTranslation(tag)
       .then((label) => {
+        if (disposed || !getSettings().enableLocalTags) return;
         addLocalTag(tag, label);
         refresh();
       })
       .finally(() => {
         addingTag = null;
+        if (disposed) return;
         button?.prop("disabled", false);
         updateAction();
       })
       .catch((error) => {
+        if (disposed) return;
         if (button !== action || activeTag === tag)
           button?.text("添加失败，点击重试");
         iLog.w("Failed to add local tag:", error);
@@ -345,6 +414,8 @@ export const loadLocalTags = () => {
   const hidePopover = () => {
     clearTimeout(showTimer);
     clearTimeout(hideTimer);
+    showTimer = undefined;
+    hideTimer = undefined;
     popover.prop("hidden", true);
     scrollParents.off("scroll.ppLocalTags");
     scrollParents = $<HTMLElement>();
@@ -392,7 +463,12 @@ export const loadLocalTags = () => {
 
     try {
       const total = await getTagCurrentTotal(tag);
-      if (total === undefined || activeLink !== link || activeTag !== tag)
+      if (
+        disposed ||
+        total === undefined ||
+        activeLink !== link ||
+        activeTag !== tag
+      )
         return;
       if (lastTotal === undefined) {
         stats.text(`插画漫画作品总数：${total} 件`);
@@ -411,6 +487,7 @@ export const loadLocalTags = () => {
   };
 
   const showPopover = async (link: HTMLAnchorElement) => {
+    if (disposed) return;
     const tag = getTagFromPath(new URL($(link).prop("href")).pathname);
     if (!tag || !$.contains($("html").get(0)!, link) || manager.prop("open"))
       return;
@@ -431,8 +508,8 @@ export const loadLocalTags = () => {
     void updateStats(tag, link);
     try {
       const details = await getTagDetails(tag);
-      // 旧请求完成时，不能覆盖正在悬浮的另一个标签。
-      if (activeLink !== link || activeTag !== tag) return;
+      // 旧请求完成或功能已停用时，不能覆盖或恢复展示
+      if (disposed || activeLink !== link || activeTag !== tag) return;
       title.text(details.tag || tag);
       abstract.text(details.abstract || "暂无标签简介");
       if (details.thumbnail) {
@@ -449,10 +526,10 @@ export const loadLocalTags = () => {
           .prop("hidden", false);
       }
     } catch {
-      if (activeLink !== link || activeTag !== tag) return;
+      if (disposed || activeLink !== link || activeTag !== tag) return;
       abstract.text("标签详情加载失败，请稍后重新悬浮重试。");
     }
-    positionPopover();
+    if (!disposed) positionPopover();
   };
 
   const renderManager = () => {
@@ -658,6 +735,7 @@ export const loadLocalTags = () => {
   };
 
   function refresh() {
+    if (disposed) return;
     $(`.${STRIP_CLASS}`).each((_, strip) => renderStrip($(strip)));
     updateAction();
     positionPopover();
@@ -714,14 +792,19 @@ export const loadLocalTags = () => {
     const target = event.target;
     if ($(target).closest(popover).length) {
       clearTimeout(hideTimer);
+      hideTimer = undefined;
       return;
     }
     const link = getTagLink(target);
     if (!link || $(link).closest(manager).length) return;
     clearTimeout(hideTimer);
+    hideTimer = undefined;
     if (link === activeLink) return;
     clearTimeout(showTimer);
-    showTimer = setTimeout(() => void showPopover(link), 200);
+    showTimer = setTimeout(
+      () => void showPopover(link),
+      getSettings().localTagPopoverShowDelayMs
+    );
   };
 
   const leave = (event: JQuery.MouseOutEvent | JQuery.FocusOutEvent) => {
@@ -736,54 +819,95 @@ export const loadLocalTags = () => {
     )
       return;
     clearTimeout(showTimer);
+    showTimer = undefined;
     clearTimeout(hideTimer);
-    hideTimer = setTimeout(hidePopover, 180);
+    hideTimer = setTimeout(
+      hidePopover,
+      getSettings().localTagPopoverHideDelayMs
+    );
   };
   $(document)
-    .on("mouseover", enter)
-    .on("focusin", enter)
-    .on("mouseout", leave)
-    .on("focusout", leave)
-    .on("keydown", (event) => {
+    .on("mouseover.ppLocalTags", enter)
+    .on("focusin.ppLocalTags", enter)
+    .on("mouseout.ppLocalTags", leave)
+    .on("focusout.ppLocalTags", leave)
+    .on("keydown.ppLocalTags", (event) => {
       if (event.key === "Escape") hidePopover();
     })
-    .on("scroll", hidePopover);
-  $(window).on("resize", positionPopover);
+    .on("scroll.ppLocalTags", hidePopover);
+  $(window).on("resize.ppLocalTags", positionPopover);
 
-  let previousTag: string | null = null;
   const visitPage = () => {
-    const tag = getTagFromPath(location.pathname);
-    if (tag && tag !== previousTag) {
-      recordLocalTagVisit(tag);
+    if (disposed) return;
+    if (syncLocalTagVisitForPath(location.pathname)) {
       refresh();
     }
-    previousTag = tag;
   };
-  $(window).on("urlchange", () => {
+  $(window).on("urlchange.ppLocalTags", () => {
+    if (disposed) return;
     hidePopover();
     if (manager.prop("open")) manager.get(0)!.close();
     $(`.${STRIP_CLASS}`).remove();
     visitPage();
     mountEntries();
   });
-  GM_addValueChangeListener(
-    LOCAL_TAGS_KEY,
-    (_key, _oldValue, _newValue, remote) => {
-      if (!remote) return;
-      invalidateLocalTagState();
-      refresh();
-    }
-  );
+  onRemoteLocalTagsUpdate = refresh;
+  const onPageHide = () => flushLocalTagState();
   // 标签页隐藏时立即落盘，避免未提交的批量写入丢失
-  window.addEventListener("pagehide", flushLocalTagState);
-  const observer = new MutationObserver(
-    debounce(() => {
+  window.addEventListener("pagehide", onPageHide);
+  const debouncedObserver = debounce(
+    () => {
+      if (disposed) return;
       if (activeLink && !$.contains($("html").get(0)!, activeLink))
         hidePopover();
       mountEntries();
-    }, 100)
+    },
+    () => getSettings().localTagRenderDebounceMs
   );
+  const observer = new MutationObserver(debouncedObserver);
   observer.observe($("body").get(0)!, { childList: true, subtree: true });
+
+  const unsubscribeSettings = subscribeSettings((next, prev) => {
+    if (
+      next.localTagPopoverShowDelayMs !== prev.localTagPopoverShowDelayMs ||
+      next.localTagPopoverHideDelayMs !== prev.localTagPopoverHideDelayMs
+    ) {
+      clearTimeout(showTimer);
+      clearTimeout(hideTimer);
+      showTimer = undefined;
+      hideTimer = undefined;
+    }
+    if (
+      next.localTagRenderDebounceMs !== prev.localTagRenderDebounceMs &&
+      debouncedObserver.isPending()
+    ) {
+      debouncedObserver.cancel();
+      debouncedObserver();
+    }
+  });
+
+  activeLocalTagsTeardown = () => {
+    disposed = true;
+    unsubscribeSettings();
+    flushLocalTagState();
+    clearTimeout(showTimer);
+    clearTimeout(hideTimer);
+    showTimer = undefined;
+    hideTimer = undefined;
+    debouncedObserver.cancel();
+    observer.disconnect();
+    scrollParents.off("scroll.ppLocalTags");
+    scrollParents = $<HTMLElement>();
+    $(document).off(".ppLocalTags");
+    $(window).off(".ppLocalTags");
+    window.removeEventListener("pagehide", onPageHide);
+    onRemoteLocalTagsUpdate = null;
+    if (manager.prop("open")) manager.get(0)!.close();
+    popover.remove();
+    manager.remove();
+    $(`.${STRIP_CLASS}`).remove();
+  };
+
   visitPage();
   mountEntries();
 };

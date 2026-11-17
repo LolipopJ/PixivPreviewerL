@@ -38,7 +38,6 @@ export default defineConfig({
 // @grant               GM_addValueChangeListener
 // @grant               window.onurlchange
 // @grant               GM_registerMenuCommand
-// @grant               GM_unregisterMenuCommand
 // @grant               GM.xmlHttpRequest
 // @grant               GM_download
 // @grant               unsafeWindow
