@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             1.9.0-20261119
+// @version             1.10.0-20261119
 // @description         Pixiv userscript to preview illustrations, manga, and Ugoira on hover. Supports sorting by bookmarks, original image downloads with progress tracking, hiding bookmarked artworks, and local tag management.
 // @description:zh-CN   Pixiv 油猴脚本。鼠标悬停即可预览插画、漫画和动图。支持按收藏数排序、原图下载与进度追踪、隐藏已收藏作品和本地标签管理。
 // @description:ja      pixiv ユーザースクリプト。ホバーでイラスト・マンガ・うごイラをプレビュー。ブックマーク数順の並べ替え、原寸画像のダウンロードと進捗管理、ブックマーク済み作品の非表示、ローカルタグ管理に対応。
@@ -29,7 +29,7 @@
 // ==/UserScript==
 // src/constants/index.ts
 /** 版本号，发生改变时将会弹窗 */
-const g_version = "1.9.0";
+const g_version = "1.10.0";
 /** 默认设置 */
 const g_defaultSettings = {
 	language: "auto",
@@ -7674,7 +7674,7 @@ const initializeDom = () => {
 			if (next.enableLocalTags) loadLocalTags();
 			else unloadLocalTags();
 		});
-		if (g_settings.version !== "1.9.0") ShowUpgradeMessage();
+		if (g_settings.version !== "1.10.0") ShowUpgradeMessage();
 		if (g_pageType === void 0) return;
 		if (g_pageType === 3) waitFor(() => matchPageType() === 3 && document.querySelector("span[to]"), () => showSearchLinksForDeletedArtworks());
 		const page = Pages[g_pageType];
