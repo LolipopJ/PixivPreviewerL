@@ -5,6 +5,7 @@ import {
   SORT_NEXT_PAGE_EVENT_NAME,
 } from "../constants";
 import { IllustSortOrder, IllustSortType } from "../enums";
+import Texts, { formatText } from "../i18n";
 import heartIcon from "../icons/heart.svg";
 import heartFilledIcon from "../icons/heart-filled.svg";
 import pageIcon from "../icons/page.svg";
@@ -114,8 +115,8 @@ export const loadIllustSort = () => {
           })
           .appendTo(this.progressElement);
         this.sortButtonElement.attr({
-          title: "排序作品",
-          "aria-label": "排序作品",
+          title: Texts.label_sort,
+          "aria-label": Texts.label_sort,
           "aria-busy": "false",
         });
       } catch (error) {
@@ -153,8 +154,8 @@ export const loadIllustSort = () => {
       const excludedTags = hideByTag ? parseExcludedTags(hideByTagList) : [];
 
       this.sortButtonElement.attr({
-        title: "正在排序作品",
-        "aria-label": "正在排序作品",
+        title: Texts.label_sorting,
+        "aria-label": Texts.label_sorting,
         "aria-busy": "true",
       });
 
@@ -181,8 +182,7 @@ export const loadIllustSort = () => {
             const userIllustrations = await getUserIllustrationsWithCache(
               userId,
               {
-                onRequesting: () =>
-                  this.setProgress(`Getting illustrations of current user...`),
+                onRequesting: () => this.setProgress(Texts.sort_getUserWorks),
               }
             );
             const fromIndex = (page - 1) * USER_TYPE_ARTWORKS_PER_PAGE;
@@ -211,7 +211,7 @@ export const loadIllustSort = () => {
             );
           }
 
-          this.setProgress(`Getting illustration list of page ${page} ...`);
+          this.setProgress(formatText(Texts.sort_getWorks, page));
           const requestUrl = `${api}?${searchParams}`;
           const getIllustRes = await requestWithRetry({
             url: requestUrl,
@@ -222,7 +222,7 @@ export const loadIllustSort = () => {
                 `${retryTimes} times retrying...`
               );
               this.setProgress(
-                `Retry to get illustration list of page ${page} (${retryTimes} times)...`
+                formatText(Texts.sort_retryWorks, page, retryTimes)
               );
             },
           });
@@ -250,7 +250,7 @@ export const loadIllustSort = () => {
 
           getDetailedIllustrationPromises.push(async () => {
             this.setProgress(
-              `Getting details of ${i + 1}/${illustrations.length} illustration...`
+              formatText(Texts.sort_getDetails, i + 1, illustrations.length)
             );
             const illustrationDetails = await getIllustrationDetailsWithCache(
               illustrationId,
@@ -269,7 +269,7 @@ export const loadIllustSort = () => {
         //#endregion
 
         //#region 过滤作品
-        this.setProgress("Filtering illustrations...");
+        this.setProgress(Texts.sort_filtering);
         const filteredIllustrations = detailedIllustrations.filter(
           (illustration) => {
             if (hideFavorite && illustration.bookmarkData) {
@@ -299,7 +299,7 @@ export const loadIllustSort = () => {
         //#endregion
 
         //#region 排序作品
-        this.setProgress("Sorting filtered illustrations...");
+        this.setProgress(Texts.sort_sorting);
         const sortedIllustrations =
           orderType === IllustSortOrder.BY_BOOKMARK_COUNT
             ? filteredIllustrations.sort(
@@ -319,8 +319,8 @@ export const loadIllustSort = () => {
       this.hideProgress();
       this.sorting = false;
       this.sortButtonElement.attr({
-        title: "排序作品",
-        "aria-label": "排序作品",
+        title: Texts.label_sort,
+        "aria-label": Texts.label_sort,
         "aria-busy": "false",
       });
     }
@@ -399,9 +399,9 @@ export const loadIllustSort = () => {
           }
           ${
             isAi
-              ? '<div style="padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: rgb(162, 28, 175); font-weight: bold; line-height: 16px; user-select: none;">AI 生成</div>'
+              ? `<div style="padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: rgb(162, 28, 175); font-weight: bold; line-height: 16px; user-select: none;">${Texts.artwork_aiGenerated}</div>`
               : isAiAssisted
-                ? '<div style="padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: rgb(109, 40, 217); font-weight: bold; line-height: 16px; user-select: none;">AI 辅助</div>'
+                ? `<div style="padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: rgb(109, 40, 217); font-weight: bold; line-height: 16px; user-select: none;">${Texts.artwork_aiAssisted}</div>`
                 : ""
           }
           ${

@@ -8,7 +8,7 @@ import {
   SETTING_GROUPS,
   type SettingFieldDescriptor,
 } from "../constants/settings";
-import Texts from "../i18n";
+import Texts, { formatText } from "../i18n";
 import restoreDefaultIcon from "../icons/restore-default.svg";
 import undoIcon from "../icons/undo.svg";
 import type { GlobalSettings, UserSettingKey, UserSettings } from "../types";
@@ -476,10 +476,11 @@ const createFieldRow = (
   });
 
   const mainRow = $("<div>").addClass("pp-settings-row");
+  const fieldLabel = Texts[`settings_field_${descriptor.key}_label`];
   const label = $("<label>")
     .addClass("pp-settings-label")
     .attr("for", inputId)
-    .text(descriptor.label);
+    .text(fieldLabel);
   const controlWrap = $("<div>").addClass("pp-settings-control");
 
   let input: JQuery<HTMLElement>;
@@ -505,7 +506,7 @@ const createFieldRow = (
     for (const option of descriptor.options ?? []) {
       $("<option>")
         .val(String(option.value))
-        .text(option.label)
+        .text("label" in option ? option.label : Texts[option.labelKey])
         .appendTo(select);
     }
     select.val(String(initialValue)).on("change", () => {
@@ -524,7 +525,9 @@ const createFieldRow = (
             ? "numeric"
             : "decimal"
           : "text",
-        placeholder: descriptor.placeholder ?? "",
+        placeholder: descriptor.placeholderKey
+          ? Texts[descriptor.placeholderKey]
+          : "",
         "aria-describedby": descId,
       })
       .val(String(initialValue))
@@ -538,7 +541,7 @@ const createFieldRow = (
     .attr({
       type: "button",
       title: Texts.settings_restoreDefault,
-      "aria-label": `${Texts.settings_restoreDefault}：${descriptor.label}`,
+      "aria-label": formatText(Texts.settings_restoreField, fieldLabel),
     })
     .addClass("pp-settings-icon-btn pp-settings-reset-one")
     .html(restoreDefaultIcon)
@@ -557,7 +560,7 @@ const createFieldRow = (
     .attr({
       type: "button",
       title: Texts.settings_revertToPrevious,
-      "aria-label": `${Texts.settings_revertToPrevious}：${descriptor.label}`,
+      "aria-label": formatText(Texts.settings_revertField, fieldLabel),
     })
     .addClass("pp-settings-icon-btn pp-settings-revert-one")
     .html(undoIcon)
@@ -573,25 +576,54 @@ const createFieldRow = (
     });
 
   controlWrap.append(restoreOneButton, revertOneButton, input);
-  if (descriptor.unit) {
-    $("<span>")
-      .addClass("pp-settings-unit")
-      .text(descriptor.unit)
-      .appendTo(controlWrap);
-  }
+  const unitEl = descriptor.unitKey
+    ? $("<span>")
+        .addClass("pp-settings-unit")
+        .text(Texts[descriptor.unitKey])
+        .appendTo(controlWrap)
+    : null;
 
   mainRow.append(label, controlWrap);
 
   const desc = $("<div>")
     .addClass("pp-settings-desc")
     .attr("id", descId)
-    .text(descriptor.description);
+    .text(Texts[`settings_field_${descriptor.key}_desc`]);
   const errorEl = $("<div>")
     .addClass("pp-settings-error")
     .attr("id", errorId)
     .prop("hidden", true);
 
   row.append(mainRow, desc, errorEl);
+
+  const refreshText = () => {
+    const nextLabel = Texts[`settings_field_${descriptor.key}_label`];
+    label.text(nextLabel);
+    desc.text(Texts[`settings_field_${descriptor.key}_desc`]);
+    if (unitEl && descriptor.unitKey) {
+      unitEl.text(Texts[descriptor.unitKey]);
+    }
+    if (descriptor.placeholderKey) {
+      input.attr("placeholder", Texts[descriptor.placeholderKey]);
+    }
+    if (descriptor.control === "select") {
+      const options = descriptor.options ?? [];
+      input.children("option").each((index, el) => {
+        const option = options[index];
+        if (option) {
+          $(el).text("label" in option ? option.label : Texts[option.labelKey]);
+        }
+      });
+    }
+    restoreOneButton.attr({
+      title: Texts.settings_restoreDefault,
+      "aria-label": formatText(Texts.settings_restoreField, nextLabel),
+    });
+    revertOneButton.attr({
+      title: Texts.settings_revertToPrevious,
+      "aria-label": formatText(Texts.settings_revertField, nextLabel),
+    });
+  };
 
   return {
     row,
@@ -601,6 +633,7 @@ const createFieldRow = (
     errorEl,
     descId,
     errorId,
+    refreshText,
   };
 };
 
@@ -627,6 +660,7 @@ let fieldControls = new Map<
     errorEl: JQuery<HTMLElement>;
     descId: string;
     errorId: string;
+    refreshText: () => void;
   }
 >();
 
@@ -690,16 +724,12 @@ export const openSettingsPanel = () => {
   const closeButton = $("<button>")
     .attr({
       type: "button",
-      "aria-label": Texts.settings_close,
+      "aria-label": Texts.close,
     })
-    .text(Texts.settings_close);
+    .text(Texts.close);
 
-  $("<header>")
-    .append(
-      $("<h2>").attr("id", HEADING_ID).text(Texts.settings_panelTitle),
-      closeButton
-    )
-    .appendTo(panel);
+  const heading = $("<h2>").attr("id", HEADING_ID).text(Texts.settings_title);
+  $("<header>").append(heading, closeButton).appendTo(panel);
 
   const body = $("<div>").addClass("pp-settings-body").appendTo(panel);
   const statusBanner = $("<div>")
@@ -752,13 +782,21 @@ export const openSettingsPanel = () => {
     syncAdvancedModifiedState();
   };
 
+  const groupHeadings = new Map<
+    (typeof SETTING_GROUPS)[number]["id"],
+    JQuery<HTMLElement>
+  >();
+
   const renderGroupSection = (group: (typeof SETTING_GROUPS)[number]) => {
     const fields = SETTING_FIELDS.filter((field) => field.group === group.id);
     if (fields.length === 0) return null;
     const section = $("<section>")
       .addClass("pp-settings-group")
       .attr("data-setting-group", group.id);
-    $("<h3>").text(group.title).appendTo(section);
+    const groupHeading = $("<h3>")
+      .text(Texts[`settings_group_${group.id}`])
+      .appendTo(section);
+    groupHeadings.set(group.id, groupHeading);
     for (const descriptor of fields) {
       const created = createFieldRow(descriptor, session, (key) => {
         clearFieldError(key);
@@ -780,6 +818,7 @@ export const openSettingsPanel = () => {
         errorEl: created.errorEl,
         descId: created.descId,
         errorId: created.errorId,
+        refreshText: created.refreshText,
       });
       section.append(created.row);
     }
@@ -806,6 +845,7 @@ export const openSettingsPanel = () => {
   }
 
   let advancedExpanded = false;
+  const advancedLabel = $("<span>").text(Texts.settings_advancedToggle);
   const advancedArrow = $("<span>").attr("aria-hidden", "true").text("▸");
   advancedToggle = $("<button>")
     .attr({
@@ -814,7 +854,7 @@ export const openSettingsPanel = () => {
       "aria-controls": advancedBodyId,
     })
     .addClass("pp-settings-advanced-toggle")
-    .append($("<span>").text(Texts.settings_advancedToggle), advancedArrow);
+    .append(advancedLabel, advancedArrow);
 
   const setAdvancedExpanded = (expanded: boolean) => {
     advancedExpanded = expanded;
@@ -838,6 +878,20 @@ export const openSettingsPanel = () => {
       clearAllErrors();
     });
 
+  const refreshPanelTexts = () => {
+    heading.text(Texts.settings_title);
+    closeButton.attr("aria-label", Texts.close).text(Texts.close);
+    for (const [groupId, groupHeading] of groupHeadings) {
+      groupHeading.text(Texts[`settings_group_${groupId}`]);
+    }
+    for (const control of fieldControls.values()) {
+      control.refreshText();
+    }
+    advancedLabel.text(Texts.settings_advancedToggle);
+    restoreAllButton.text(Texts.settings_restoreAll);
+    saveButton.text(Texts.settings_save);
+  };
+
   const saveButton = $("<button>")
     .attr("type", "button")
     .addClass("pp-settings-primary")
@@ -846,6 +900,7 @@ export const openSettingsPanel = () => {
       clearAllErrors();
       const result = session.save();
       if (result.ok) {
+        refreshPanelTexts();
         for (const [key, control] of fieldControls) {
           syncControlValue(
             control.descriptor,
@@ -880,13 +935,14 @@ export const openSettingsPanel = () => {
       }
       if (firstError?.key) {
         const control = fieldControls.get(firstError.key);
-        const label = control?.descriptor.label ?? firstError.key;
+        const label = Texts[`settings_field_${firstError.key}_label`];
         statusBanner
           .attr("data-state", "error")
           .text(
-            Texts.settings_validationFailed.replace(
-              "%1",
-              `${label}（${firstError.message}）`
+            formatText(
+              Texts.settings_validationFailed,
+              label,
+              firstError.message
             )
           )
           .prop("hidden", false);
@@ -897,8 +953,8 @@ export const openSettingsPanel = () => {
         statusBanner
           .attr("data-state", "error")
           .text(
-            Texts.settings_saveFailed.replace(
-              "%1",
+            formatText(
+              Texts.settings_saveFailed,
               firstError?.message ?? Texts.settings_saveStorageError
             )
           )
@@ -915,22 +971,27 @@ export const openSettingsPanel = () => {
     )
     .appendTo(panel);
 
-  const unsubscribe = subscribeSettings((nextSettings, _prev, source) => {
-    if (source !== "remote") return;
-    const updatedKeys = session.applyRemoteUpdate(nextSettings);
-    for (const key of updatedKeys) {
-      const control = fieldControls.get(key);
-      if (control) {
-        clearFieldError(key);
-        syncControlValue(
-          control.descriptor,
-          control.input,
-          session.getDraftValue(key)
-        );
+  const unsubscribe = subscribeSettings(
+    (nextSettings, prevSettings, source) => {
+      if (source !== "remote") return;
+      if (nextSettings.language !== prevSettings.language) {
+        refreshPanelTexts();
       }
+      const updatedKeys = session.applyRemoteUpdate(nextSettings);
+      for (const key of updatedKeys) {
+        const control = fieldControls.get(key);
+        if (control) {
+          clearFieldError(key);
+          syncControlValue(
+            control.descriptor,
+            control.input,
+            session.getDraftValue(key)
+          );
+        }
+      }
+      syncAllVisualStates();
     }
-    syncAllVisualStates();
-  });
+  );
 
   const closePanel = (restoreFocus = false) => {
     unsubscribe();

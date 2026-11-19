@@ -486,12 +486,12 @@ const startDownload = (
       },
       onerror: function (this, response) {
         if (!isActive()) return;
-        fail(response.error || "网络错误");
+        fail(response.error || "network-error");
         onerror?.call(this, response);
       },
       ontimeout: function (this) {
         if (!isActive()) return;
-        fail("下载超时");
+        fail("timeout");
         ontimeout?.call(this);
       },
       onabort: function (this) {
@@ -501,7 +501,7 @@ const startDownload = (
           return;
         }
         if (!isActive()) return;
-        fail("下载已取消");
+        fail("canceled");
         onabort?.call(this);
       },
     });

@@ -20,7 +20,7 @@ import {
 import { loadIllustPreview } from "./features/preview";
 import { openSettingsPanel } from "./features/settings-panel";
 import { loadIllustSort } from "./features/sort";
-import Texts from "./i18n";
+import Texts, { formatText, setLocale } from "./i18n";
 import hideFavoritesIcon from "./icons/hide-favorites.svg";
 import nextPageIcon from "./icons/next-page.svg";
 import sortIcon from "./icons/sort.svg";
@@ -230,14 +230,11 @@ function showSearchLinksForDeletedArtworks() {
 
 //#region 设置
 const registerSettingsMenu = () => {
-  const settings = getSettings();
-
-  GM_registerMenuCommand(`⚙️ ${Texts.settings_menu}`, () => {
+  GM_registerMenuCommand(`⚙️ ${Texts.settings_title}`, () => {
     openSettingsPanel();
   });
   GM_registerMenuCommand(`🧹 ${Texts.setting_clearFollowingCache}`, () => {
-    if (!confirm(`${Texts.setting_clearFollowingCacheHelp}\n\n确定要清除吗？`))
-      return;
+    if (!confirm(Texts.setting_clearFollowingCacheHelp)) return;
     void clearAllLocalCaches().then((cleared) => {
       if (!cleared) {
         // 清空失败时不能提示成功并刷新，否则用户会以为缓存已被清除
@@ -251,17 +248,17 @@ const registerSettingsMenu = () => {
   GM_registerMenuCommand(`📊 ${Texts.cache_usage}`, () => {
     void getCacheUsage().then((usage) => {
       alert(
-        Texts.cache_usageHelp
-          .replace("%1", String(usage.illustrationDetails))
-          .replace("%2", String(usage.illustPages))
-          .replace("%3", String(usage.ugoiraFrames))
-          .replace("%4", formatCacheBytes(usage.ugoiraBytes))
-          .replace("%5", String(usage.tagTranslations))
+        formatText(
+          Texts.cache_usageHelp,
+          usage.illustrationDetails,
+          usage.illustPages,
+          usage.ugoiraFrames,
+          formatCacheBytes(usage.ugoiraBytes),
+          usage.tagTranslations
+        )
       );
     });
   });
-
-  return settings;
 };
 
 const ShowUpgradeMessage = () => {
@@ -367,11 +364,32 @@ const ShowUpgradeMessage = () => {
   const closeButton = $("<button>")
     .attr({
       type: "button",
-      "aria-label": Texts.settings_close,
+      "aria-label": Texts.close,
     })
-    .text(Texts.settings_close)
+    .text(Texts.close)
     .on("click", close);
 
+  const link = (url: string, label: string) =>
+    `<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+  const body = formatText(
+    Texts.upgrade_body,
+    link(
+      "https://greasyfork.org/scripts/30766-pixiv-previewer",
+      "Pixiv Previewer"
+    ),
+    link(
+      "https://greasyfork.org/scripts/30766-pixiv-previewer/feedback",
+      Texts.upgrade_feedback
+    ),
+    link(
+      "https://github.com/Ocrosoft/PixivPreviewer/issues",
+      Texts.upgrade_issue
+    ),
+    link(
+      "https://greasyfork.org/scripts/533844-pixiv-previewer-l/versions",
+      Texts.upgrade_versions
+    )
+  );
   const panel = $("<div>")
     .attr({
       id: panelId,
@@ -383,10 +401,10 @@ const ShowUpgradeMessage = () => {
       $("<header>").append(
         $("<h2>")
           .attr("id", headingId)
-          .text(`${Texts.install_title}${g_version}`),
+          .text(formatText(Texts.install_title, g_version)),
         closeButton
       ),
-      $("<div>").addClass("pp-upgrade-body").html(Texts.upgrade_body)
+      $("<div>").addClass("pp-upgrade-body").html(body)
     )
     .on("keydown", (event) => {
       if (event.key === "Escape") {
@@ -433,24 +451,31 @@ const appendToolbarButton = (
   toolBar.appendChild(newListItem);
 };
 
+const setToolbarButtonTitle = (id: string, title: string) => {
+  const button = $(`#${id}`);
+  if (!button.length) return;
+  button.attr({ title, "aria-label": title });
+  button.parent().attr("title", title);
+};
+
 const mountToolbar = (toolBar: HTMLElement) => {
   DoLog(LogLevel.Elements, toolBar);
 
   appendToolbarButton(toolBar, {
     id: SORT_BUTTON_ID,
-    title: "排序作品",
+    title: Texts.label_sort,
     icon: sortIcon,
     onClick: () => window.dispatchEvent(new Event(SORT_EVENT_NAME)),
   });
   appendToolbarButton(toolBar, {
     id: SORT_NEXT_PAGE_BUTTON_ID,
-    title: "前往下一页",
+    title: Texts.label_nextPage,
     icon: nextPageIcon,
     onClick: () => window.dispatchEvent(new Event(SORT_NEXT_PAGE_EVENT_NAME)),
   });
   appendToolbarButton(toolBar, {
     id: HIDE_FAVORITES_BUTTON_ID,
-    title: "隐藏已收藏作品",
+    title: Texts.label_hideFav,
     icon: hideFavoritesIcon,
     onClick: hideFavorites,
   });
@@ -476,7 +501,7 @@ const matchPageType = () => {
  */
 const initializeEarly = () => {
   try {
-    g_settings = registerSettingsMenu();
+    g_settings = getSettings();
     iLog.i(
       "Start to initialize Pixiv Previewer with global settings:",
       g_settings
@@ -540,10 +565,27 @@ const initializeDom = () => {
     // 设置读取失败时 `initializeEarly` 已记录错误，此处不再重复执行
     if (!g_settings) return;
 
+    // document-start 执行时 <html lang> 可能还未就绪。
+    setLocale(getSettings().language);
+    registerSettingsMenu();
+
     if (getSettings().enableLocalTags) {
       loadLocalTags();
     }
     subscribeSettings((next, prev) => {
+      if (next.language !== prev.language) {
+        if ($(`#${SORT_BUTTON_ID}`).attr("aria-busy") === "true") {
+          setToolbarButtonTitle(SORT_BUTTON_ID, Texts.label_sorting);
+        } else {
+          setToolbarButtonTitle(SORT_BUTTON_ID, Texts.label_sort);
+        }
+        setToolbarButtonTitle(SORT_NEXT_PAGE_BUTTON_ID, Texts.label_nextPage);
+        setToolbarButtonTitle(HIDE_FAVORITES_BUTTON_ID, Texts.label_hideFav);
+        if (next.enableLocalTags) {
+          unloadLocalTags();
+          loadLocalTags();
+        }
+      }
       if (next.enableLocalTags === prev.enableLocalTags) return;
       if (next.enableLocalTags) {
         loadLocalTags();

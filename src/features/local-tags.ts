@@ -1,4 +1,5 @@
 import { LOCAL_TAGS_STYLE_ID } from "../constants";
+import Texts, { formatText } from "../i18n";
 import settingsIcon from "../icons/settings.svg";
 import trashIcon from "../icons/trash.svg";
 import {
@@ -32,6 +33,13 @@ import {
 
 const TAG_LINK_SELECTOR =
   'a[href*="/tags/"]:not(nav > a, .gtm-new-work-tag-event-click, .gtm-new-work-translate-tag-event-click, .gtm-new-work-tag-thumbnail-event-click, [data-ga4-label="tab_link"], [data-ga4-label="suggest_chip"], [data-ga4-label="delete_button"], [data-ga4-label="submit_button"])';
+// Pixiv 的收藏标签按钮按网页语言显示文案。
+const PIXIV_FAVORITE_TAG_BUTTON_LABELS = [
+  /^(?:编辑|編輯|(?:添加|新增)(?:进|到|至))(?:喜欢|喜爱|喜歡|喜愛)的(?:标签|標籤)$/,
+  /^(?:Add to (?:your )?(?:favorites|favorite tags)|Edit (?:your )?favorite tags)$/i,
+  /^お気に入り(?:に登録|タグを編集)$/,
+  /^즐겨찾기(?:에 등록| 태그를 편집)$/,
+];
 const POPOVER_ID = "pp-local-tag-popover";
 const MANAGER_ID = "pp-local-tags-manager";
 const STRIP_CLASS = "pp-local-tags";
@@ -343,13 +351,13 @@ export const loadLocalTags = () => {
   );
 
   const popover = $("<div>")
-    .attr({ id: POPOVER_ID, role: "dialog", "aria-label": "标签详情" })
+    .attr({ id: POPOVER_ID, role: "dialog", "aria-label": Texts.tag_details })
     .prop("hidden", true);
   const preview = $("<a>").attr({
     class: "pp-tag-preview",
     target: "_blank",
     rel: "noopener noreferrer",
-    "aria-label": "在新窗口打开预览作品",
+    "aria-label": Texts.tag_openPreview,
   });
   const thumbnail = $("<img>").appendTo(preview);
   const content = $("<div>").addClass("pp-tag-content");
@@ -374,7 +382,7 @@ export const loadLocalTags = () => {
     if (addingTag) return;
     addingTag = tag;
     button?.prop("disabled", true);
-    button?.text("正在添加…");
+    button?.text(Texts.tag_adding);
     updateAction();
     void getTagTranslation(tag)
       .then((label) => {
@@ -391,12 +399,12 @@ export const loadLocalTags = () => {
       .catch((error) => {
         if (disposed) return;
         if (button !== action || activeTag === tag)
-          button?.text("添加失败，点击重试");
+          button?.text(Texts.tag_addFailed);
         iLog.w("Failed to add local tag:", error);
       });
   };
 
-  const action = createButton("添加到本地标签", () => {
+  const action = createButton(Texts.tag_add, () => {
     if (activeTag) addTagFromApi(activeTag, action);
   });
   content.append(title, abstract, stats, action);
@@ -428,7 +436,7 @@ export const loadLocalTags = () => {
     action
       .prop("hidden", !activeTag || hasLocalTag(activeTag))
       .prop("disabled", pending)
-      .text(pending ? "正在添加…" : "添加到本地标签");
+      .text(pending ? Texts.tag_adding : Texts.tag_add);
   };
 
   const positionPopover = () => {
@@ -458,7 +466,7 @@ export const loadLocalTags = () => {
 
     // 请求本身会更新 lastTotal，先保存旧值用于计算新增作品数。
     const lastTotal = getLocalTag(tag)?.lastTotal;
-    stats.text(`插画漫画作品总数：${lastTotal ?? "-"} 件`);
+    stats.text(formatText(Texts.tag_total, lastTotal ?? "-"));
     stats.prop("hidden", false);
 
     try {
@@ -471,13 +479,13 @@ export const loadLocalTags = () => {
       )
         return;
       if (lastTotal === undefined) {
-        stats.text(`插画漫画作品总数：${total} 件`);
+        stats.text(formatText(Texts.tag_total, total));
       } else {
         const added = total - lastTotal;
         stats.text(
           added >= 0
-            ? `插画漫画作品总数：${total} 件（新增 ${added} 件）`
-            : `插画漫画作品总数：${total} 件（减少 ${-added} 件）`
+            ? formatText(Texts.tag_totalAdded, total, added)
+            : formatText(Texts.tag_totalRemoved, total, -added)
         );
       }
       positionPopover();
@@ -494,7 +502,7 @@ export const loadLocalTags = () => {
     activeLink = link;
     activeTag = tag;
     title.text(tag);
-    abstract.text("正在加载标签详情…");
+    abstract.text(Texts.tag_loadingDetails);
     stats.prop("hidden", true).text("");
     thumbnail.prop("hidden", true).removeAttr("src");
     preview.removeAttr("href");
@@ -511,7 +519,7 @@ export const loadLocalTags = () => {
       // 旧请求完成或功能已停用时，不能覆盖或恢复展示
       if (disposed || activeLink !== link || activeTag !== tag) return;
       title.text(details.tag || tag);
-      abstract.text(details.abstract || "暂无标签简介");
+      abstract.text(details.abstract || Texts.tag_noDescription);
       if (details.thumbnail) {
         const artworkId = details.thumbnail.match(
           /\/(\d+)(?:-[\da-zA-Z]+)?_p\d+/
@@ -520,14 +528,14 @@ export const loadLocalTags = () => {
           preview.attr("href", `https://www.pixiv.net/artworks/${artworkId}`);
         thumbnail
           .attr({
-            alt: `${details.tag || tag}的缩略图`,
+            alt: formatText(Texts.tag_thumbnail, details.tag || tag),
             src: details.thumbnail,
           })
           .prop("hidden", false);
       }
     } catch {
       if (disposed || activeLink !== link || activeTag !== tag) return;
-      abstract.text("标签详情加载失败，请稍后重新悬浮重试。");
+      abstract.text(Texts.tag_loadFailed);
     }
     if (!disposed) positionPopover();
   };
@@ -548,10 +556,10 @@ export const loadLocalTags = () => {
     const header = $("<header>");
     const heading = $("<h2>")
       .attr("id", "pp-local-tags-heading")
-      .text("本地标签管理");
+      .text(Texts.tag_manage);
     header.append(
       heading,
-      createButton("关闭", () => manager.get(0)!.close())
+      createButton(Texts.close, () => manager.get(0)!.close())
     );
     const sortLabel = $("<label>");
     const autoSort = $("<input>")
@@ -561,13 +569,11 @@ export const loadLocalTags = () => {
       setLocalTagAutoSort(autoSort.prop("checked"));
       refresh();
     });
-    sortLabel.append(autoSort, "自动排序（访问次数越多越靠前）");
+    sortLabel.append(autoSort, Texts.tag_autoSort);
     manager.append(header, sortLabel);
     const tags = getSortedLocalTags();
     if (!tags.length) {
-      manager.append(
-        $("<p>").text("暂无本地标签。悬浮任意标签，点击“添加到本地标签”。")
-      );
+      manager.append($("<p>").text(Texts.tag_empty));
     }
     const list = $("<ul>");
     let draggedRow: JQuery<HTMLLIElement> | null = null;
@@ -593,7 +599,7 @@ export const loadLocalTags = () => {
               rel: "noopener noreferrer",
             })
             .text(item.tag),
-          $("<small>").text(` · 访问 ${item.visits} 次`)
+          $("<small>").text(` · ${formatText(Texts.tag_visits, item.visits)}`)
         );
       const rowHeading = $("<div>").addClass("pp-tag-heading");
       if (!autoSort.prop("checked")) {
@@ -601,8 +607,8 @@ export const loadLocalTags = () => {
           .attr({
             type: "button",
             draggable: "true",
-            title: "拖拽排序",
-            "aria-label": `排序 ${item.label || item.tag}`,
+            title: Texts.tag_dragSort,
+            "aria-label": formatText(Texts.tag_reorder, item.label || item.tag),
             "data-focus-key": `sort:${item.tag}`,
           })
           .addClass("pp-tag-drag")
@@ -644,15 +650,15 @@ export const loadLocalTags = () => {
       const input = $("<input>")
         .attr({
           type: "text",
-          placeholder: "填一个好记的备注名吧",
-          "aria-label": `${item.tag}的显示名称`,
+          placeholder: Texts.tag_labelPlaceholder,
+          "aria-label": formatText(Texts.tag_label, item.tag),
           "data-focus-key": `label:${item.tag}`,
         })
         .prop("defaultValue", item.label)
         .val(drafts.get(`label:${item.tag}`) ?? item.label);
       const save = $("<button>")
         .attr({ type: "submit", "data-focus-key": `save:${item.tag}` })
-        .text("保存备注名");
+        .text(Texts.tag_saveLabel);
       form.on("submit", (event) => {
         event.preventDefault();
         const label = (input.val() as string).trim();
@@ -660,29 +666,32 @@ export const loadLocalTags = () => {
         input.val(label).prop("defaultValue", label);
         refresh();
       });
-      const up = createButton("上移", () => {
+      const up = createButton(Texts.tag_moveUp, () => {
         moveLocalTag(item.tag, index - 1);
         refresh();
       });
-      const down = createButton("下移", () => {
+      const down = createButton(Texts.tag_moveDown, () => {
         moveLocalTag(item.tag, index + 1);
         refresh();
       });
       up.attr({
         "data-focus-key": `up:${item.tag}`,
-        "aria-label": `上移 ${item.label || item.tag}`,
+        "aria-label": formatText(Texts.tag_moveUpNamed, item.label || item.tag),
       }).prop({ hidden: autoSort.prop("checked"), disabled: index === 0 });
       down
         .attr({
           "data-focus-key": `down:${item.tag}`,
-          "aria-label": `下移 ${item.label || item.tag}`,
+          "aria-label": formatText(
+            Texts.tag_moveDownNamed,
+            item.label || item.tag
+          ),
         })
         .prop({
           hidden: autoSort.prop("checked"),
           disabled: index === tags.length - 1,
         });
       const remove = createIconButton(
-        `删除 ${item.label || item.tag}`,
+        formatText(Texts.tag_remove, item.label || item.tag),
         trashIcon,
         () => {
           removeLocalTag(item.tag);
@@ -714,9 +723,9 @@ export const loadLocalTags = () => {
     const tag = getTagFromPath(location.pathname);
     if (tag) {
       if (hasLocalTag(tag)) {
-        strip.append(createButton("本地标签管理", openManager));
+        strip.append(createButton(Texts.tag_manage, openManager));
       } else {
-        const addButton = createButton("添加到本地标签", () =>
+        const addButton = createButton(Texts.tag_add, () =>
           addTagFromApi(tag, addButton)
         );
         strip.append(addButton);
@@ -726,8 +735,8 @@ export const loadLocalTags = () => {
     const tags = getSortedLocalTags();
     strip.append(
       tags.length >= 10
-        ? createIconButton("本地标签管理", settingsIcon, openManager)
-        : createButton("本地标签管理", openManager)
+        ? createIconButton(Texts.tag_manage, settingsIcon, openManager)
+        : createButton(Texts.tag_manage, openManager)
     );
     const links = $("<span>").attr("data-tag-links", "");
     links.append(...tags.map(createTagLink));
@@ -750,12 +759,16 @@ export const loadLocalTags = () => {
   };
 
   const mountEntries = () => {
+    if ($(`.${STRIP_CLASS}`).length) return;
     const pathname = location.pathname.replace(/^\/en(?=\/|$)/, "") || "/";
     if (getTagFromPath(pathname)) {
       const edit = $("button")
-        .filter((_, button) =>
-          /(?:编辑|添加(?:进|到))(喜欢|喜爱)的标签/.test($(button).text())
-        )
+        .filter((_, button) => {
+          const label = $(button).text().trim();
+          return PIXIV_FAVORITE_TAG_BUTTON_LABELS.some((pattern) =>
+            pattern.test(label)
+          );
+        })
         .first();
       if (edit.length) mountStrip(edit.parent(), edit);
     } else if (

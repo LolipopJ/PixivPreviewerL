@@ -2,7 +2,7 @@
   "name": "pixiv-previewer-l",
   "version": "1.9.0",
   "type": "module",
-  "description": "Pixiv 油猴脚本。鼠标悬停即可预览插画、漫画和动图。支持按收藏数排序、原图下载与进度追踪、隐藏已收藏作品和本地标签管理。",
+  "description": "Pixiv userscript to preview illustrations, manga, and Ugoira on hover. Supports sorting by bookmarks, original image downloads with progress tracking, hiding bookmarked artworks, and local tag management.",
   "private": true,
   "main": "dist/index.js",
   "scripts": {

@@ -1,6 +1,6 @@
 # AGENTS.md
 
-PixivPreviewerL is a Tampermonkey userscript for `www.pixiv.net` (artwork preview, sorting, original-image downloads, local tags). It is a personal fork of Ocrosoft/PixivPreviewer; scope and non-goals (no novels, few settings, no multi-language, Chrome ≥ 107 only) are defined in [README.md](README.md). Do not add features that contradict them.
+PixivPreviewerL is a Tampermonkey userscript for `www.pixiv.net` (artwork preview, sorting, original-image downloads, local tags). It is a personal fork of Ocrosoft/PixivPreviewer; scope and non-goals (no novels, few settings, Chrome ≥ 107 only) are defined in [README.md](README.md). Do not add features that contradict them.
 
 ## Repository layout
 
@@ -13,7 +13,7 @@ src/
   services/       Pixiv API requests, cache, downloads, bookmarks, tags
   databases/      IndexedDB connection and cache tables (illustration, ugoira)
   utils/          DOM, logger, settings (GM storage), throttle/debounce, ugoira player
-  i18n/           Chinese UI text (`Texts`)
+  i18n/           Userscript UI strings by locale (`Texts`)
   icons/          SVG sources, inlined at build time (`rollup-plugin-svg`)
   types/          Shared types; `svg.d.ts` for SVG imports
 tsdown.config.ts  Build config and the userscript metadata block (`banner`)
@@ -52,7 +52,7 @@ There are no automated tests. Verify behavior by building and loading `dist/pixi
 - **Settings:** add defaults to `g_defaultSettings` and the `GlobalSettings` type together; settings persist with `GM_setValue`, so keep stored keys backward compatible.
 - **Multi-tab state** (download records, local tags) is shared through GM storage and `GM_addValueChangeListener`; keep writes idempotent.
 - Pixiv markup and internal APIs change without notice. Prefer stable selectors, tolerate missing elements, and log through `iLog` (`utils/logger.ts`) rather than `console` directly.
-- All user-visible text is Chinese and lives in `src/i18n/index.ts`. Do not add language switching. Code comments and JSDoc are mostly Chinese; follow the language of the surrounding file.
+- Keep userscript UI strings in `src/i18n`. Follow the Pixiv page language by default (configurable via the `language` setting) and fall back to English for unsupported locales. Match the surrounding language in comments and JSDoc.
 - Keep `//#region` blocks and `g_` global naming in `src/index.ts` as they are; do not reorder unrelated code.
 - Comments explain non-obvious behavior or Pixiv quirks, not control flow.
 - Commit messages use Conventional Commits (`feat(scope):`, `fix:`, `perf:`, `chore:`, `docs:`) plus `release x.y.z`. Split unrelated changes.

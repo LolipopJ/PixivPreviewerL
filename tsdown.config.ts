@@ -1,3 +1,4 @@
+// @ts-expect-error: no type define
 import svg from "rollup-plugin-svg";
 import { defineConfig } from "tsdown";
 
@@ -31,6 +32,9 @@ export default defineConfig({
       })
       .replace(/\//g, "")}
 // @description         ${packageJson.description}
+// @description:zh-CN   Pixiv 油猴脚本。鼠标悬停即可预览插画、漫画和动图。支持按收藏数排序、原图下载与进度追踪、隐藏已收藏作品和本地标签管理。
+// @description:ja      pixiv ユーザースクリプト。ホバーでイラスト・マンガ・うごイラをプレビュー。ブックマーク数順の並べ替え、原寸画像のダウンロードと進捗管理、ブックマーク済み作品の非表示、ローカルタグ管理に対応。
+// @description:ko      픽시브 유저스크립트. 마우스 오버로 일러스트·만화·우고이라를 미리보기. 북마크 수순 정렬, 원본 이미지 다운로드 및 진행률 추적, 북마크한 작품 숨기기, 로컬 태그 관리 지원.
 // @author              ${packageJson.author}
 // @license             ${packageJson.license}
 // @homepageURL         ${packageJson.homepage}

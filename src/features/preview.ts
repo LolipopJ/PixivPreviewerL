@@ -13,6 +13,7 @@ import {
   type UgoiraCachedFrame,
 } from "../databases";
 import { IllustType } from "../enums";
+import Texts, { setLocale } from "../i18n";
 import downloadIcon from "../icons/download.svg";
 import loadingIcon from "../icons/loading.svg";
 import pageIcon from "../icons/page.svg";
@@ -578,6 +579,11 @@ export const loadIllustPreview = () => {
       previewIllust.cancel();
       previewedIllust.reset();
     }
+
+    if (next.language !== prev.language) {
+      previewedIllust.resetDownloadButton();
+      previewedIllust.renderIllustrationDetails(previewedIllust.illustDetails);
+    }
   });
   //#endregion
 
@@ -762,6 +768,7 @@ class PreviewedIllust {
    */
   #ensureWrapperDom() {
     if (this.previewWrapperElement.length) return;
+    setLocale(getSettings().language);
 
     this.previewWrapperElement = $(document.createElement("div"))
       .attr({ id: "pp-wrapper" })
@@ -808,7 +815,7 @@ class PreviewedIllust {
       .appendTo(this.previewWrapperHeader);
     this.downloadOriginalElement = $(document.createElement("a"))
       .css(INTERACTIVE_BADGE_CSS)
-      .append(`${downloadIcon}<span>原图</span>`)
+      .append(downloadIcon, $("<span>").text(Texts.preview_original))
       .appendTo(this.previewWrapperHeader);
     this.previewLoadingElement = createLoadingSpinner().appendTo(
       this.previewWrapperElement
@@ -1123,7 +1130,7 @@ class PreviewedIllust {
       this.#downloadResetTimeout = null;
     }
     const textSpan = this.downloadOriginalElement.find("span");
-    textSpan.text("原图");
+    textSpan.text(Texts.preview_original);
     this.downloadOriginalElement.css({
       pointerEvents: "",
       backgroundImage: "",
@@ -1222,7 +1229,7 @@ class PreviewedIllust {
       backgroundSize: "0% 100%",
       backgroundRepeat: "no-repeat",
     });
-    textSpan.text("下载中");
+    textSpan.text(Texts.download_downloading);
 
     downloadIllust({
       url: currentImageOriginalUrl,
@@ -1262,7 +1269,7 @@ class PreviewedIllust {
           )
             return;
 
-          textSpan.text("已下载");
+          textSpan.text(Texts.download_completed);
           this.downloadOriginalElement.css({
             backgroundImage: "",
             backgroundSize: "",
@@ -1508,7 +1515,7 @@ class PreviewedIllust {
               ...DETAIL_BADGE_CSS,
               background: "rgb(14, 116, 144)",
             })
-            .text("动图")
+            .text(Texts.preview_ugoira)
         );
       }
 
@@ -1519,7 +1526,7 @@ class PreviewedIllust {
               ...DETAIL_BADGE_CSS,
               background: "rgb(162, 28, 175)",
             })
-            .text("AI 生成")
+            .text(Texts.artwork_aiGenerated)
         );
       } else if (isAiAssisted) {
         illustrationDetailsElements.push(
@@ -1528,7 +1535,7 @@ class PreviewedIllust {
               ...DETAIL_BADGE_CSS,
               background: "rgb(109, 40, 217)",
             })
-            .text("AI 辅助")
+            .text(Texts.artwork_aiAssisted)
         );
       }
 

@@ -1,4 +1,5 @@
 import { DOWNLOADS_STYLE_ID } from "../constants";
+import Texts, { formatText, locale } from "../i18n";
 import downloadIcon from "../icons/download.svg";
 import retryIcon from "../icons/retry.svg";
 import stopIcon from "../icons/stop.svg";
@@ -15,6 +16,7 @@ import {
   subscribeDownloads,
 } from "../services/download";
 import { injectStyle } from "../utils/dom";
+import { subscribeSettings } from "../utils/setting";
 
 const BUTTON_ID = "pp-downloads-button";
 const PANEL_ID = "pp-downloads-panel";
@@ -24,10 +26,25 @@ const formatBytes = (bytes: number) =>
     ? `${(bytes / (1024 * 1024)).toFixed(1)} MB`
     : `${Math.ceil(bytes / 1024)} KB`;
 
-const formatTime = (timestamp: number) => {
-  const date = new Date(timestamp);
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+const formatTime = (timestamp: number) =>
+  new Date(timestamp).toLocaleString(locale, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+const formatDownloadError = (error?: string) => {
+  switch (error) {
+    case "network-error":
+      return Texts.download_errorNetwork;
+    case "timeout":
+      return Texts.download_errorTimeout;
+    case "canceled":
+      return Texts.download_errorCanceled;
+    default:
+      return error || Texts.download_errorNetwork;
+  }
 };
 
 const createIconButton = (
@@ -146,8 +163,8 @@ export const loadDownloadPanel = (toolbar: HTMLElement) => {
     .attr({
       id: BUTTON_ID,
       type: "button",
-      title: "下载记录",
-      "aria-label": "下载记录",
+      title: Texts.download_title,
+      "aria-label": Texts.download_title,
       "aria-expanded": "false",
       "aria-controls": PANEL_ID,
       "aria-haspopup": "dialog",
@@ -174,26 +191,24 @@ export const loadDownloadPanel = (toolbar: HTMLElement) => {
   const closeButton = $("<button>")
     .attr({
       type: "button",
-      title: "关闭下载记录",
-      "aria-label": "关闭下载记录",
+      title: Texts.download_close,
+      "aria-label": Texts.download_close,
     })
-    .text("关闭");
-  $("<header>")
-    .append(
-      $("<h2>").attr("id", "pp-downloads-heading").text("下载记录"),
-      closeButton
-    )
-    .appendTo(panel);
+    .text(Texts.close);
+  const heading = $("<h2>")
+    .attr("id", "pp-downloads-heading")
+    .text(Texts.download_title);
+  $("<header>").append(heading, closeButton).appendTo(panel);
   const summary = $("<p>").addClass("pp-download-summary").appendTo(panel);
   const actions = $("<div>").addClass("pp-download-actions").appendTo(panel);
   const clearCompletedButton = $("<button>")
-    .attr({ type: "button", title: "清空已完成的下载记录" })
-    .text("清空已完成记录")
+    .attr({ type: "button", title: Texts.download_clearCompletedHelp })
+    .text(Texts.download_clearCompleted)
     .on("click", clearCompletedDownloads)
     .appendTo(actions);
   const retryFailedButton = $("<button>")
-    .attr({ type: "button", title: "重新下载所有失败的记录" })
-    .text("重试所有失败记录")
+    .attr({ type: "button", title: Texts.download_retryFailed })
+    .text(Texts.download_retryFailed)
     .on("click", () => {
       for (const record of getDownloads()) {
         if (record.status === "failed") retryDownload(record.id);
@@ -204,21 +219,26 @@ export const loadDownloadPanel = (toolbar: HTMLElement) => {
     .addClass("pp-download-menu")
     .appendTo(actions);
   const moreActionsSummary = $("<summary>")
-    .attr({ title: "更多操作", "aria-label": "更多操作" })
+    .attr({
+      title: Texts.download_moreActions,
+      "aria-label": Texts.download_moreActions,
+    })
     .text("⋯")
     .appendTo(moreActions);
   const moreActionsContent = $("<div>")
     .addClass("pp-download-menu-content")
     .appendTo(moreActions);
   const ignoreRetryableButton = $("<button>")
-    .attr({ type: "button", title: "移除所有失败和中断的下载记录" })
-    .text("忽略所有待重试记录")
+    .attr({ type: "button", title: Texts.download_ignoreRetryableHelp })
+    .text(Texts.download_ignoreRetryable)
     .on("click", () => {
       ignoreRetryableDownloads();
       moreActions.prop("open", false);
     })
     .appendTo(moreActionsContent);
-  const list = $("<ul>").attr("aria-label", "图片下载列表").appendTo(panel);
+  const list = $("<ul>")
+    .attr("aria-label", Texts.download_list)
+    .appendTo(panel);
   const rows = new Map<
     string,
     {
@@ -276,18 +296,16 @@ export const loadDownloadPanel = (toolbar: HTMLElement) => {
         rows.delete(id);
       }
     }
-    const title = `下载记录`;
     countBadge.text(String(active)).prop("hidden", active === 0);
     button.attr({
       "data-active": String(active > 0),
       "data-attention": String(attention > 0),
       "aria-busy": String(active > 0),
-      title,
     });
     summary.text(
       records.length
-        ? `${active} 项下载中 · ${completed} 项已完成 · ${attention} 项待重试`
-        : "暂无下载记录，点击预览中的“原图”开始下载。"
+        ? formatText(Texts.download_summary, active, completed, attention)
+        : Texts.download_empty
     );
     for (const record of [...records].reverse()) {
       let row = rows.get(record.id);
@@ -312,22 +330,25 @@ export const loadDownloadPanel = (toolbar: HTMLElement) => {
           .appendTo(info);
         const status = $("<small>").appendTo(info);
         const progress = $("<progress>")
-          .attr({ max: 100, "aria-label": `${record.filename} 下载进度` })
+          .attr({
+            max: 100,
+            "aria-label": formatText(Texts.download_progress, record.filename),
+          })
           .appendTo(info) as JQuery<HTMLProgressElement>;
         const abort = createIconButton(
-          `中止下载 ${record.filename}`,
+          formatText(Texts.download_abort, record.filename),
           stopIcon,
           "pp-download-abort",
           () => abortDownload(record.id)
         ).appendTo(item);
         const retry = createIconButton(
-          `重试下载 ${record.filename}`,
+          formatText(Texts.download_retry, record.filename),
           retryIcon,
           "pp-download-retry",
           () => retryDownload(record.id)
         ).appendTo(item);
         const remove = createIconButton(
-          `删除记录 ${record.filename}`,
+          formatText(Texts.download_remove, record.filename),
           trashIcon,
           "pp-download-remove",
           () => removeDownload(record.id)
@@ -344,14 +365,20 @@ export const loadDownloadPanel = (toolbar: HTMLElement) => {
         record.total > 0
           ? Math.min(100, Math.floor((record.loaded / record.total) * 100))
           : undefined;
-      const progressText = `${percent === undefined ? formatBytes(record.loaded) : `${percent}% · ${formatBytes(record.loaded)} / ${formatBytes(record.total)}`}`;
+      const progressText =
+        percent === undefined
+          ? formatBytes(record.loaded)
+          : `${percent}% · ${formatBytes(record.loaded)} / ${formatBytes(record.total)}`;
       const labels: Record<DownloadRecord["status"], string> = {
         downloading: local
-          ? `下载中 ${progressText}`
-          : `其他标签页下载中 ${progressText}`,
-        completed: `已下载 · ${formatBytes(record.loaded)}${record.completedAt === undefined ? "" : ` · ${formatTime(record.completedAt)}`}`,
-        interrupted: "下载已中断，点击重试重新下载",
-        failed: `下载失败：${record.error || "网络错误"}`,
+          ? formatText(Texts.download_downloadingHere, progressText)
+          : formatText(Texts.download_downloadingElsewhere, progressText),
+        completed: `${Texts.download_completed} · ${formatBytes(record.loaded)}${record.completedAt === undefined ? "" : ` · ${formatTime(record.completedAt)}`}`,
+        interrupted: Texts.download_interrupted,
+        failed: formatText(
+          Texts.download_failed,
+          formatDownloadError(record.error)
+        ),
       };
       row.status.text(labels[record.status]);
       row.abort.prop("hidden", !local);
@@ -408,5 +435,35 @@ export const loadDownloadPanel = (toolbar: HTMLElement) => {
   });
   window.addEventListener("resize", positionPanel);
   subscribeDownloads(update);
+  subscribeSettings((next, prev) => {
+    if (next.language === prev.language) return;
+    button.attr({
+      title: Texts.download_title,
+      "aria-label": Texts.download_title,
+    });
+    heading.text(Texts.download_title);
+    closeButton
+      .attr({
+        title: Texts.download_close,
+        "aria-label": Texts.download_close,
+      })
+      .text(Texts.close);
+    clearCompletedButton
+      .attr("title", Texts.download_clearCompletedHelp)
+      .text(Texts.download_clearCompleted);
+    retryFailedButton
+      .attr("title", Texts.download_retryFailed)
+      .text(Texts.download_retryFailed);
+    moreActionsSummary.attr({
+      title: Texts.download_moreActions,
+      "aria-label": Texts.download_moreActions,
+    });
+    ignoreRetryableButton
+      .attr("title", Texts.download_ignoreRetryableHelp)
+      .text(Texts.download_ignoreRetryable);
+    list.attr("aria-label", Texts.download_list).empty();
+    rows.clear();
+    update();
+  });
   update();
 };

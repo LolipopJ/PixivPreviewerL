@@ -2,7 +2,10 @@
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
 // @version             1.9.0-20261119
-// @description         Pixiv 油猴脚本。鼠标悬停即可预览插画、漫画和动图。支持按收藏数排序、原图下载与进度追踪、隐藏已收藏作品和本地标签管理。
+// @description         Pixiv userscript to preview illustrations, manga, and Ugoira on hover. Supports sorting by bookmarks, original image downloads with progress tracking, hiding bookmarked artworks, and local tag management.
+// @description:zh-CN   Pixiv 油猴脚本。鼠标悬停即可预览插画、漫画和动图。支持按收藏数排序、原图下载与进度追踪、隐藏已收藏作品和本地标签管理。
+// @description:ja      pixiv ユーザースクリプト。ホバーでイラスト・マンガ・うごイラをプレビュー。ブックマーク数順の並べ替え、原寸画像のダウンロードと進捗管理、ブックマーク済み作品の非表示、ローカルタグ管理に対応。
+// @description:ko      픽시브 유저스크립트. 마우스 오버로 일러스트·만화·우고이라를 미리보기. 북마크 수순 정렬, 원본 이미지 다운로드 및 진행률 추적, 북마크한 작품 숨기기, 로컬 태그 관리 지원.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0-only
 // @homepageURL         https://github.com/LolipopJ/PixivPreviewer
@@ -29,6 +32,7 @@
 const g_version = "1.9.0";
 /** 默认设置 */
 const g_defaultSettings = {
+	language: "auto",
 	enablePreview: true,
 	enableAnimePreview: true,
 	previewDelay: 300,
@@ -168,77 +172,799 @@ function DoLog(level = 3, ...msgOrElement) {
 	}
 }
 
-// src/i18n/index.ts
-const Texts = {
-	install_title: "欢迎使用 Pixiv Previewer L v",
-	upgrade_body: `<p>
-  本脚本基于
-  <a href="https://greasyfork.org/scripts/30766-pixiv-previewer" target="_blank" rel="noopener noreferrer">Pixiv Previewer</a>
-  二次开发，旨在满足开发者自己需要的能力。如果您有不错的想法或建议，请前往原脚本的
-  <a href="https://greasyfork.org/scripts/30766-pixiv-previewer/feedback" target="_blank" rel="noopener noreferrer">Greasy Fork 反馈页面</a>或开启一个新的
-  <a href="https://github.com/Ocrosoft/PixivPreviewer/issues" target="_blank" rel="noopener noreferrer">Github 议题</a>！
-</p>
-<p>
-  如需查看功能更新记录，可前往此脚本的
-  <a href="https://greasyfork.org/scripts/533844-pixiv-previewer-l/versions" target="_blank" rel="noopener noreferrer">版本历史页面</a>。
-</p>`,
-	setting_language: "语言",
-	setting_preview: "预览",
-	setting_animePreview: "动图预览",
-	setting_sort: "搜索页自动排序",
-	setting_anime: "动图下载（动图预览及详情页生效）",
-	setting_origin: "预览时优先显示原图（慢）",
-	setting_previewDelay: "延迟显示预览图（毫秒）",
-	setting_previewByKey: "使用按键控制预览图展示（Ctrl）",
-	setting_previewByKeyHelp: "开启后鼠标移动到图片上不再展示预览图，按下Ctrl键才展示，同时“延迟显示预览”设置项不生效。",
-	setting_maxPage: "每次排序时统计的最大页数",
-	setting_hideWork: "隐藏收藏数少于设定值的作品",
-	setting_sortOrderByBookmark: "按照收藏数排序作品",
-	setting_hideAiWork: "排序时隐藏 AI 生成作品",
-	setting_hideAiAssistedWork: "排序时隐藏 AI 辅助作品",
-	setting_hideFav: "排序时隐藏已收藏的作品",
-	setting_hideFollowed: "排序时隐藏已关注画师作品",
-	setting_hideByTag: "排序时隐藏指定标签的作品",
-	setting_hideByTagPlaceholder: "输入标签名，多个标签用','分隔",
+// src/i18n/en.ts
+var en_default = {
+	install_title: "Welcome to Pixiv Previewer L v%1",
+	upgrade_body: "<p>This script is based on %1 and adapted to the developer's needs. Share suggestions for the original script on its %2 or by opening a %3.</p><p>See what changed in this script's %4.</p>",
+	upgrade_feedback: "Greasy Fork feedback page",
+	upgrade_issue: "GitHub issue",
+	upgrade_versions: "version history",
+	close: "Close",
+	setting_clearFollowingCache: "Clear cache",
+	setting_clearFollowingCacheHelp: "Artwork details, image pages, Ugoira frames, and tag information are cached locally. Clearing the cache will fetch them again when needed.\n\nClear the cache?",
+	setting_followingCacheCleared: "Cache cleared. Please reload the page.",
+	setting_clearCacheFailed: "Some cached data could not be cleared. Try again later.",
+	cache_usage: "Cache usage",
+	cache_usageHelp: "Artwork details: %1 · Image page entries: %2 · Ugoira frame entries: %3 (%4) · Tag translations: %5",
+	label_sort: "Sort artworks",
+	label_sorting: "Sorting artworks",
+	label_nextPage: "Go to the next page",
+	label_hideFav: "Hide bookmarked artworks",
+	sort_getUserWorks: "Loading this user's artworks…",
+	sort_getWorks: "Loading artworks on page %1…",
+	sort_retryWorks: "Retrying page %1 (retry %2)…",
+	sort_getDetails: "Loading artwork details (%1/%2)…",
+	sort_filtering: "Filtering artworks…",
+	sort_sorting: "Sorting results…",
+	preview_original: "Original",
+	preview_ugoira: "Ugoira",
+	artwork_aiGenerated: "AI-generated",
+	artwork_aiAssisted: "AI-assisted",
+	download_title: "Download history",
+	download_close: "Close download history",
+	download_clearCompleted: "Clear completed downloads",
+	download_clearCompletedHelp: "Clear completed download records",
+	download_retryFailed: "Retry all failed downloads",
+	download_moreActions: "More actions",
+	download_ignoreRetryable: "Dismiss all pending retries",
+	download_ignoreRetryableHelp: "Remove all failed and interrupted download records",
+	download_list: "Image downloads",
+	download_empty: "No downloads yet. Select “Original” in the preview to start a download.",
+	download_summary: "%1 downloading · %2 completed · %3 awaiting retry",
+	download_progress: "Download progress for %1",
+	download_abort: "Stop downloading %1",
+	download_retry: "Retry downloading %1",
+	download_remove: "Remove the record for %1",
+	download_downloading: "Downloading",
+	download_downloadingHere: "Downloading %1",
+	download_downloadingElsewhere: "Downloading in another tab %1",
+	download_completed: "Downloaded",
+	download_interrupted: "Download interrupted. Select Retry to download again.",
+	download_failed: "Download failed: %1",
+	download_errorNetwork: "Network error",
+	download_errorTimeout: "Download timed out",
+	download_errorCanceled: "Download canceled",
+	tag_details: "Tag details",
+	tag_openPreview: "Open the previewed artwork in a new tab",
+	tag_adding: "Adding…",
+	tag_addFailed: "Could not add tag. Select to retry.",
+	tag_add: "Add to local tags",
+	tag_total: "Total illustrations and manga: %1",
+	tag_totalAdded: "Total illustrations and manga: %1 (%2 added)",
+	tag_totalRemoved: "Total illustrations and manga: %1 (%2 fewer)",
+	tag_loadingDetails: "Loading tag details…",
+	tag_noDescription: "No tag description",
+	tag_thumbnail: "Thumbnail for %1",
+	tag_loadFailed: "Could not load tag details. Hover over the tag again to retry.",
+	tag_manage: "Manage local tags",
+	tag_autoSort: "Sort automatically (most visited first)",
+	tag_empty: "No local tags yet. Hover over any tag and select “Add to local tags”.",
+	tag_visits: "Visits: %1",
+	tag_dragSort: "Drag to reorder",
+	tag_reorder: "Reorder %1",
+	tag_labelPlaceholder: "Enter a nickname",
+	tag_label: "Display name for %1",
+	tag_saveLabel: "Save nickname",
+	tag_moveUp: "Move up",
+	tag_moveDown: "Move down",
+	tag_moveUpNamed: "Move %1 up",
+	tag_moveDownNamed: "Move %1 down",
+	tag_remove: "Remove %1",
+	settings_title: "Settings",
+	settings_save: "Save",
+	settings_restoreDefault: "Restore default",
+	settings_revertToPrevious: "Revert change",
+	settings_restoreField: "Restore the default for %1",
+	settings_revertField: "Revert changes to %1",
+	settings_restoreAll: "Restore all defaults",
+	settings_confirmDiscard: "You have unsaved changes. Close and discard them?",
+	settings_saveSuccess: "Settings saved and applied.",
+	settings_saveFailed: "Could not save settings (%1)",
+	settings_saveStorageError: "Could not write to local storage. Your settings are unchanged.",
+	settings_validationFailed: "Check the value for %1 (%2)",
+	settings_group_general: "General",
+	settings_group_preview: "Artwork preview",
+	settings_group_sort: "Artwork sorting",
+	settings_group_localTags: "Local tags",
+	settings_advancedToggle: "Advanced settings",
+	settings_group_cache: "Cache",
+	settings_group_download: "Downloads",
+	settings_group_network: "Network",
+	settings_group_scheduling: "Scheduling",
+	settings_unit_ms: "ms",
+	settings_unit_s: "s",
+	settings_unit_hour: "h",
+	settings_unit_day: "days",
+	settings_unit_pages: "pages",
+	settings_unit_bookmarks: "bookmarks",
+	settings_unit_images: "images",
+	settings_unit_entries: "entries",
+	settings_unit_works: "artworks",
+	settings_unit_mib: "MiB",
+	settings_unit_bytes: "bytes",
+	settings_unit_times: "attempts",
+	settings_field_language_label: "Language",
+	settings_field_language_desc: "Display language for the script UI. Follows the page language by default and falls back to English.",
+	settings_option_languageAuto: "Follow page language",
+	settings_field_enablePreview_label: "Enable artwork previews",
+	settings_field_enablePreview_desc: "When off, artwork and Ugoira previews stop appearing.",
+	settings_field_enableAnimePreview_label: "Preview Ugoira",
+	settings_field_enableAnimePreview_desc: "Requires artwork previews to be enabled.",
+	settings_field_previewDelay_label: "Hover delay",
+	settings_field_previewDelay_desc: "Wait this long after hovering over an image before showing the preview.",
+	settings_field_linkBlank_label: "Open artworks in a new tab",
+	settings_field_linkBlank_desc: "Applies to artwork links. Artist and tag links are unaffected.",
+	settings_field_previewHoldMs_label: "Press duration for one-handed preview",
+	settings_field_previewHoldMs_desc: "Hold the mouse button this long to enter one-handed preview mode.",
+	settings_field_previewLoadingOverlayDelayMs_label: "Page loading overlay delay",
+	settings_field_previewLoadingOverlayDelayMs_desc: "Wait this long before showing a blurred overlay if the next image is still loading.",
+	settings_field_previewDownloadNoticeMs_label: "Download confirmation duration",
+	settings_field_previewDownloadNoticeMs_desc: "How long the preview button shows the download confirmation before its label resets.",
+	settings_field_pageCount_label: "Pages per sort",
+	settings_field_pageCount_desc: "Use fewer pages to reduce the chance of hitting Pixiv's request limits.",
+	settings_field_favFilter_label: "Minimum bookmarks",
+	settings_field_favFilter_desc: "Only show artworks with at least this many bookmarks in sorted results.",
+	settings_field_orderType_label: "Sort by",
+	settings_field_orderType_desc: "Controls the order of artworks in the sorted results.",
+	settings_option_orderByBookmark: "Bookmark count",
+	settings_option_orderByDate: "Publication date",
+	settings_field_aiFilter_label: "Hide AI-generated artworks",
+	settings_field_aiFilter_desc: "Exclude AI-generated artworks from sorted results.",
+	settings_field_aiAssistedFilter_label: "Hide AI-assisted artworks",
+	settings_field_aiAssistedFilter_desc: "Exclude AI-assisted artworks from sorted results.",
+	settings_field_hideFavorite_label: "Hide bookmarked artworks",
+	settings_field_hideFavorite_desc: "Exclude bookmarked artworks from sorted results.",
+	settings_field_hideByTag_label: "Enable tag filtering",
+	settings_field_hideByTag_desc: "Exclude artworks with the specified tags from sorted results.",
+	settings_field_hideByTagList_label: "Excluded tags",
+	settings_field_hideByTagList_placeholder: "Enter tags separated by commas (,)",
+	settings_field_hideByTagList_desc: "Applies when tag filtering is enabled. Capitalization and surrounding spaces are ignored.",
+	settings_field_enableLocalTags_label: "Enable local tags",
+	settings_field_enableLocalTags_desc: "Turning this off hides the local tag controls and pauses tracking. Your saved tags are kept.",
+	settings_field_localTagPopoverShowDelayMs_label: "Tag details opening delay",
+	settings_field_localTagPopoverShowDelayMs_desc: "Wait this long after hovering over or focusing a tag before showing its details.",
+	settings_field_localTagPopoverHideDelayMs_label: "Tag details closing delay",
+	settings_field_localTagPopoverHideDelayMs_desc: "Wait this long after leaving the tag or its details before closing the popup.",
+	settings_field_previewPreloadCount_label: "Preview preload window",
+	settings_field_previewPreloadCount_desc: "Number of images to preload, including the current page. The decoded image cache holds up to twice this count.",
+	settings_field_previewCacheMaxEntries_label: "In-memory preview cache capacity",
+	settings_field_previewCacheMaxEntries_desc: "Maximum entries each for cached preview page URLs and Ugoira metadata in memory.",
+	settings_field_previewDetailsMaxStaleMs_label: "Extra time to reuse cached preview details",
+	settings_field_previewDetailsMaxStaleMs_desc: "Additional time beyond the cache lifetime for changing artwork details.",
+	settings_field_illustrationMutableCacheTtlMs_label: "Cache lifetime for changing artwork details",
+	settings_field_illustrationMutableCacheTtlMs_desc: "How long to cache changing details such as bookmark count and status.",
+	settings_field_illustrationStaticCacheTtlMs_label: "Cache lifetime for static artwork details",
+	settings_field_illustrationStaticCacheTtlMs_desc: "How long to cache details such as titles, tags, and page counts.",
+	settings_field_illustrationCacheMaxEntries_label: "Artwork details cache capacity",
+	settings_field_illustrationCacheMaxEntries_desc: "Maximum artwork detail entries in IndexedDB.",
+	settings_field_newIllustrationNoCacheMs_label: "Delay before caching new artworks",
+	settings_field_newIllustrationNoCacheMs_desc: "Skip caching details for artworks published within this time window.",
+	settings_field_illustPagesCacheTtlMs_label: "Image page cache lifetime",
+	settings_field_illustPagesCacheTtlMs_desc: "How long to cache image page URLs in IndexedDB.",
+	settings_field_illustPagesCacheMaxEntries_label: "Image page cache capacity",
+	settings_field_illustPagesCacheMaxEntries_desc: "Maximum image page entries in IndexedDB.",
+	settings_field_userIllustrationsCacheTtlMs_label: "User artwork list cache lifetime",
+	settings_field_userIllustrationsCacheTtlMs_desc: "How long to cache users' artwork lists in session storage.",
+	settings_field_ugoiraCacheTtlMs_label: "Ugoira frame cache lifetime",
+	settings_field_ugoiraCacheTtlMs_desc: "How long to cache Ugoira frames in IndexedDB.",
+	settings_field_ugoiraCacheMaxEntries_label: "Ugoira frame cache capacity",
+	settings_field_ugoiraCacheMaxEntries_desc: "Maximum artworks whose frames are cached in IndexedDB.",
+	settings_field_ugoiraCacheMaxBytes_label: "Ugoira frame cache size limit",
+	settings_field_ugoiraCacheMaxBytes_desc: "Maximum space for Ugoira frames in IndexedDB. Must convert to a positive whole number of bytes.",
+	settings_field_localTagMetadataCacheTtlMs_label: "Local tag details cache lifetime",
+	settings_field_localTagMetadataCacheTtlMs_desc: "How long to cache local tag descriptions and thumbnails.",
+	settings_field_tagTranslationCacheTtlMs_label: "Tag translation cache lifetime",
+	settings_field_tagTranslationCacheTtlMs_desc: "How long to cache Chinese tag translations.",
+	settings_field_tagTranslationCacheMaxEntries_label: "Tag translation cache capacity",
+	settings_field_tagTranslationCacheMaxEntries_desc: "At least 2 entries. When full, evict the oldest entries up to half the capacity, rounded down.",
+	settings_field_completedDownloadsMaxEntries_label: "Completed download record limit",
+	settings_field_completedDownloadsMaxEntries_desc: "When records are written or updated, drop older completed records above this limit.",
+	settings_field_retryableDownloadsMaxEntries_label: "Retryable download record limit",
+	settings_field_retryableDownloadsMaxEntries_desc: "When records are written or updated, drop older failed or interrupted records above this limit.",
+	settings_field_downloadProgressPersistMs_label: "Download progress save interval",
+	settings_field_downloadProgressPersistMs_desc: "Minimum interval between progress saves to shared storage. It must be at most the heartbeat interval.",
+	settings_field_downloadHeartbeatMs_label: "Download heartbeat interval",
+	settings_field_downloadHeartbeatMs_desc: "How often to signal active downloads and check for interruptions. It must be shorter than the interruption timeout.",
+	settings_field_downloadOwnerTimeoutMs_label: "Download interruption timeout",
+	settings_field_downloadOwnerTimeoutMs_desc: "Mark a download as interrupted if it has not updated for this long. It must exceed the heartbeat interval.",
+	settings_field_requestRetryIntervalMs_label: "Request retry interval",
+	settings_field_requestRetryIntervalMs_desc: "Wait between attempts (at least 1 second).",
+	settings_field_requestMaxAttempts_label: "Maximum request attempts",
+	settings_field_requestMaxAttempts_desc: "Includes the first attempt. Leave blank or enter “Unlimited” to keep retrying.",
+	settings_field_requestMaxAttempts_placeholder: "Leave blank for unlimited retries",
+	settings_unlimited: "Unlimited",
+	settings_field_tagRequestTimeoutMs_label: "Tag request timeout",
+	settings_field_tagRequestTimeoutMs_desc: "Timeout for each tag details or translation request.",
+	settings_field_ugoiraChunkBytes_label: "Ugoira download chunk size",
+	settings_field_ugoiraChunkBytes_desc: "Chunk size when downloading an Ugoira archive whose frames are not cached (at least 65,536 bytes).",
+	settings_field_ugoiraTrailerBytes_label: "Ugoira ZIP end scan size",
+	settings_field_ugoiraTrailerBytes_desc: "Amount to read from the end of an Ugoira ZIP to find its central directory (at least 22 bytes).",
+	settings_field_databaseOpenTimeoutMs_label: "Database open timeout",
+	settings_field_databaseOpenTimeoutMs_desc: "Maximum wait for an IndexedDB connection to open.",
+	settings_field_domProbeIntervalMs_label: "DOM check interval",
+	settings_field_domProbeIntervalMs_desc: "Time between checks for page elements that load asynchronously.",
+	settings_field_domProbeMaxAttempts_label: "Maximum DOM checks",
+	settings_field_domProbeMaxAttempts_desc: "Maximum number of checks, including the first one.",
+	settings_field_toolbarProbeIntervalMs_label: "Toolbar check interval",
+	settings_field_toolbarProbeIntervalMs_desc: "Time between checks for Pixiv's toolbar to appear.",
+	settings_field_toolbarProbeMaxAttempts_label: "Maximum toolbar checks",
+	settings_field_toolbarProbeMaxAttempts_desc: "Maximum number of checks for Pixiv's toolbar.",
+	settings_field_localTagRenderDebounceMs_label: "Local tag UI refresh delay",
+	settings_field_localTagRenderDebounceMs_desc: "Wait for DOM changes to settle before refreshing local tag controls.",
+	settings_field_localTagPersistDelayMs_label: "Local tag save delay",
+	settings_field_localTagPersistDelayMs_desc: "Wait before saving tag edits together. Changing this setting keeps unsaved edits queued.",
+	settings_field_cacheCleanupIdleTimeoutMs_label: "Maximum wait for idle cache cleanup",
+	settings_field_cacheCleanupIdleTimeoutMs_desc: "Maximum wait for an idle browser callback to clean up persistent caches.",
+	settings_err_required: "Enter a value.",
+	settings_err_number: "Enter a valid, finite number.",
+	settings_err_integer: "Enter a whole number.",
+	settings_err_positive: "Must be greater than 0.",
+	settings_err_nonNegative: "Must be 0 or greater.",
+	settings_err_min: "Must be at least %1.",
+	settings_err_option: "Choose a valid option.",
+	settings_err_progressExceedsHeartbeat: "Must be at most the download heartbeat interval.",
+	settings_err_timeoutNotGreaterThanHeartbeat: "Must be longer than the download heartbeat interval."
+};
+
+// src/i18n/ja.ts
+var ja_default = {
+	install_title: "Pixiv Previewer L v%1 へようこそ",
+	upgrade_body: "<p>このスクリプトは、開発者自身の使い方に合わせて %1 を改変したものです。元のスクリプトへのご意見やご提案は %2 または %3 からお寄せください。</p><p>このスクリプトの更新内容は %4 をご覧ください。</p>",
+	upgrade_feedback: "Greasy Fork のフィードバックページ",
+	upgrade_issue: "GitHub の Issue",
+	upgrade_versions: "バージョン履歴",
+	close: "閉じる",
+	setting_clearFollowingCache: "キャッシュを削除",
+	setting_clearFollowingCacheHelp: "作品詳細、各ページの画像情報、うごイラのフレーム、タグ情報をキャッシュしています。削除すると、次回のアクセス時に再取得します。\n\nキャッシュを削除しますか？",
+	setting_followingCacheCleared: "キャッシュを削除しました。ページを再読み込みしてください。",
+	setting_clearCacheFailed: "一部のキャッシュを削除できませんでした。しばらくしてから再試行してください。",
+	cache_usage: "キャッシュ使用状況",
+	cache_usageHelp: "作品詳細 %1 件 · ページ画像情報 %2 件 · うごイラフレーム %3 件（%4）· タグ翻訳 %5 件",
+	label_sort: "作品を並べ替え",
+	label_sorting: "作品を並べ替え中",
+	label_nextPage: "次のページへ",
+	label_hideFav: "ブックマーク済みの作品を非表示",
+	sort_getUserWorks: "このユーザーの作品を取得中…",
+	sort_getWorks: "%1 ページ目の作品を取得中…",
+	sort_retryWorks: "%1 ページ目の作品を再取得中（%2 回目）…",
+	sort_getDetails: "作品詳細を取得中（%1/%2）…",
+	sort_filtering: "作品を絞り込み中…",
+	sort_sorting: "絞り込んだ作品を並べ替え中…",
+	preview_original: "原寸画像",
+	preview_ugoira: "うごイラ",
+	artwork_aiGenerated: "AI生成",
+	artwork_aiAssisted: "AI補助",
+	download_title: "ダウンロード履歴",
+	download_close: "ダウンロード履歴を閉じる",
+	download_clearCompleted: "完了した履歴を消去",
+	download_clearCompletedHelp: "完了したダウンロードの履歴を消去",
+	download_retryFailed: "失敗したダウンロードをすべて再試行",
+	download_moreActions: "その他の操作",
+	download_ignoreRetryable: "再試行待ちの履歴をすべて消去",
+	download_ignoreRetryableHelp: "失敗・中断したダウンロードの履歴をすべて消去",
+	download_list: "画像ダウンロード一覧",
+	download_empty: "ダウンロード履歴はありません。プレビューの「原寸画像」からダウンロードできます。",
+	download_summary: "ダウンロード中 %1 件 · 完了 %2 件 · 再試行待ち %3 件",
+	download_progress: "%1 のダウンロード進捗",
+	download_abort: "%1 のダウンロードを中止",
+	download_retry: "%1 のダウンロードを再試行",
+	download_remove: "%1 の履歴を削除",
+	download_downloading: "ダウンロード中",
+	download_downloadingHere: "ダウンロード中 %1",
+	download_downloadingElsewhere: "別のタブでダウンロード中 %1",
+	download_completed: "ダウンロード済み",
+	download_interrupted: "ダウンロードが中断されました。再試行ボタンでもう一度ダウンロードできます。",
+	download_failed: "ダウンロードに失敗しました（%1）",
+	download_errorNetwork: "ネットワークエラー",
+	download_errorTimeout: "ダウンロードがタイムアウトしました",
+	download_errorCanceled: "ダウンロードがキャンセルされました",
+	tag_details: "タグ詳細",
+	tag_openPreview: "プレビュー中の作品を新しいタブで開く",
+	tag_adding: "追加中…",
+	tag_addFailed: "タグを追加できませんでした。クリックして再試行してください。",
+	tag_add: "ローカルタグに追加",
+	tag_total: "イラスト・マンガの合計 %1 件",
+	tag_totalAdded: "イラスト・マンガの合計 %1 件（%2 件増加）",
+	tag_totalRemoved: "イラスト・マンガの合計 %1 件（%2 件減少）",
+	tag_loadingDetails: "タグ詳細を読み込み中…",
+	tag_noDescription: "タグの説明はありません",
+	tag_thumbnail: "%1 のサムネイル",
+	tag_loadFailed: "タグ詳細を読み込めませんでした。しばらくしてから、タグにもう一度カーソルを合わせてください。",
+	tag_manage: "ローカルタグの管理",
+	tag_autoSort: "自動で並べ替え（アクセス回数が多い順）",
+	tag_empty: "ローカルタグはまだありません。タグにカーソルを合わせて「ローカルタグに追加」を選んでください。",
+	tag_visits: "アクセス %1 回",
+	tag_dragSort: "ドラッグして並べ替え",
+	tag_reorder: "%1 の順序を変更",
+	tag_labelPlaceholder: "覚えやすい名前を入力",
+	tag_label: "%1 の表示名",
+	tag_saveLabel: "表示名を保存",
+	tag_moveUp: "上に移動",
+	tag_moveDown: "下に移動",
+	tag_moveUpNamed: "%1 を上に移動",
+	tag_moveDownNamed: "%1 を下に移動",
+	tag_remove: "%1 を削除",
+	settings_title: "設定",
+	settings_save: "保存",
+	settings_restoreDefault: "初期値に戻す",
+	settings_revertToPrevious: "変更前に戻す",
+	settings_restoreField: "%1 を初期値に戻す",
+	settings_revertField: "%1 を変更前に戻す",
+	settings_restoreAll: "すべて初期値に戻す",
+	settings_confirmDiscard: "未保存の変更があります。変更を破棄して閉じますか？",
+	settings_saveSuccess: "設定を保存して反映しました。",
+	settings_saveFailed: "設定を保存できませんでした（%1）",
+	settings_saveStorageError: "ローカルストレージに書き込めなかったため、設定は変更されていません。",
+	settings_validationFailed: "%1 の値を確認してください（%2）",
+	settings_group_general: "一般設定",
+	settings_group_preview: "作品プレビュー",
+	settings_group_sort: "作品の並べ替え",
+	settings_group_localTags: "ローカルタグ",
+	settings_advancedToggle: "詳細設定",
+	settings_group_cache: "キャッシュ",
+	settings_group_download: "ダウンロード管理",
+	settings_group_network: "ネットワーク",
+	settings_group_scheduling: "内部処理のスケジュール",
+	settings_unit_ms: "ミリ秒",
+	settings_unit_s: "秒",
+	settings_unit_hour: "時間",
+	settings_unit_day: "日",
+	settings_unit_pages: "ページ",
+	settings_unit_bookmarks: "ブックマーク",
+	settings_unit_images: "枚",
+	settings_unit_entries: "件",
+	settings_unit_works: "作品",
+	settings_unit_mib: "MiB",
+	settings_unit_bytes: "バイト",
+	settings_unit_times: "回",
+	settings_field_language_label: "表示言語",
+	settings_field_language_desc: "スクリプト UI の表示言語です。初期設定ではページの言語に従い、未対応の言語では英語を使用します。",
+	settings_option_languageAuto: "ページの言語に従う",
+	settings_field_enablePreview_label: "作品プレビューを有効にする",
+	settings_field_enablePreview_desc: "オフにすると、作品とうごイラのプレビューが表示されなくなります。",
+	settings_field_enableAnimePreview_label: "うごイラをプレビュー",
+	settings_field_enableAnimePreview_desc: "作品プレビューが有効なときに使えます。",
+	settings_field_previewDelay_label: "ホバー時の待ち時間",
+	settings_field_previewDelay_desc: "画像にカーソルを合わせてからプレビューが表示されるまでの時間です。",
+	settings_field_linkBlank_label: "作品を新しいタブで開く",
+	settings_field_linkBlank_desc: "作品リンクだけに適用されます。作者とタグのリンクには影響しません。",
+	settings_field_previewHoldMs_label: "片手プレビューの長押し時間",
+	settings_field_previewHoldMs_desc: "マウスボタンを押し続けて片手プレビューモードに入るまでの時間です。",
+	settings_field_previewLoadingOverlayDelayMs_label: "ページ読み込みオーバーレイの待ち時間",
+	settings_field_previewLoadingOverlayDelayMs_desc: "ページを切り替えたとき、画像の読み込みが終わっていなければ、指定時間の後にぼかしを表示します。",
+	settings_field_previewDownloadNoticeMs_label: "ダウンロード完了表示の時間",
+	settings_field_previewDownloadNoticeMs_desc: "原寸画像をダウンロードした後、プレビューボタンに完了と表示する時間です。",
+	settings_field_pageCount_label: "並べ替えの対象ページ数",
+	settings_field_pageCount_desc: "ページ数を少なくすると、pixiv のアクセス制限にかかりにくくなります。",
+	settings_field_favFilter_label: "ブックマーク数の下限",
+	settings_field_favFilter_desc: "並べ替え後、このブックマーク数以上の作品を表示します。",
+	settings_field_orderType_label: "並べ替え順",
+	settings_field_orderType_desc: "並べ替え後に作品を表示する順序です。",
+	settings_option_orderByBookmark: "ブックマーク数順",
+	settings_option_orderByDate: "投稿日順",
+	settings_field_aiFilter_label: "AI生成作品を除外",
+	settings_field_aiFilter_desc: "並べ替えの結果から AI生成作品を除外します。",
+	settings_field_aiAssistedFilter_label: "AI補助作品を除外",
+	settings_field_aiAssistedFilter_desc: "並べ替えの結果から AI補助作品を除外します。",
+	settings_field_hideFavorite_label: "ブックマーク済みの作品を除外",
+	settings_field_hideFavorite_desc: "並べ替えの結果からブックマーク済みの作品を除外します。",
+	settings_field_hideByTag_label: "タグでの絞り込みを有効にする",
+	settings_field_hideByTag_desc: "並べ替えの結果から指定したタグの付いた作品を除外します。",
+	settings_field_hideByTagList_label: "除外するタグ",
+	settings_field_hideByTagList_placeholder: "タグを半角カンマ（,）で区切って入力",
+	settings_field_hideByTagList_desc: "タグでの絞り込みを有効にすると適用されます。タグの前後の空白と大文字・小文字の違いは無視されます。",
+	settings_field_enableLocalTags_label: "ローカルタグを有効にする",
+	settings_field_enableLocalTags_desc: "オフにするとローカルタグの操作部分が非表示になり、集計を停止します。保存済みのタグは保持されます。",
+	settings_field_localTagPopoverShowDelayMs_label: "タグ詳細を開くまでの時間",
+	settings_field_localTagPopoverShowDelayMs_desc: "タグにカーソルを合わせるかフォーカスしてから詳細が表示されるまでの時間です。",
+	settings_field_localTagPopoverHideDelayMs_label: "タグ詳細を閉じるまでの時間",
+	settings_field_localTagPopoverHideDelayMs_desc: "タグまたは詳細のポップアップからカーソルを外してから、ポップアップが閉じるまでの時間です。",
+	settings_field_previewPreloadCount_label: "プレビューの先読み枚数",
+	settings_field_previewPreloadCount_desc: "現在のページを含む先読み枚数です。デコード済み画像のキャッシュ上限はこの枚数の 2 倍です。",
+	settings_field_previewCacheMaxEntries_label: "プレビューのメモリキャッシュ容量",
+	settings_field_previewCacheMaxEntries_desc: "プレビューのページ URL と、うごイラのメタデータをメモリにキャッシュする最大件数です。それぞれに適用されます。",
+	settings_field_previewDetailsMaxStaleMs_label: "プレビュー詳細キャッシュの追加利用時間",
+	settings_field_previewDetailsMaxStaleMs_desc: "「変化する作品詳細のキャッシュ有効期間」を超えて再利用できる時間です。",
+	settings_field_illustrationMutableCacheTtlMs_label: "変化する作品詳細のキャッシュ有効期間",
+	settings_field_illustrationMutableCacheTtlMs_desc: "ブックマーク数や登録状態など、変化する情報の有効期間です。",
+	settings_field_illustrationStaticCacheTtlMs_label: "固定の作品詳細のキャッシュ有効期間",
+	settings_field_illustrationStaticCacheTtlMs_desc: "タイトル、タグ、ページ数などの情報をキャッシュする期間です。",
+	settings_field_illustrationCacheMaxEntries_label: "作品詳細のキャッシュ容量",
+	settings_field_illustrationCacheMaxEntries_desc: "IndexedDB に保存する作品詳細の最大件数です。",
+	settings_field_newIllustrationNoCacheMs_label: "新着作品をキャッシュするまでの時間",
+	settings_field_newIllustrationNoCacheMs_desc: "投稿から指定時間が経過するまで、その作品の詳細をキャッシュしません。",
+	settings_field_illustPagesCacheTtlMs_label: "ページ画像情報のキャッシュ有効期間",
+	settings_field_illustPagesCacheTtlMs_desc: "各ページの画像 URL を IndexedDB にキャッシュする期間です。",
+	settings_field_illustPagesCacheMaxEntries_label: "ページ画像情報のキャッシュ容量",
+	settings_field_illustPagesCacheMaxEntries_desc: "IndexedDB に保存するページ画像情報の最大件数です。",
+	settings_field_userIllustrationsCacheTtlMs_label: "ユーザーの作品一覧のキャッシュ有効期間",
+	settings_field_userIllustrationsCacheTtlMs_desc: "ユーザーの作品一覧をセッションストレージにキャッシュする期間です。",
+	settings_field_ugoiraCacheTtlMs_label: "うごイラフレームのキャッシュ有効期間",
+	settings_field_ugoiraCacheTtlMs_desc: "うごイラのフレームを IndexedDB にキャッシュする期間です。",
+	settings_field_ugoiraCacheMaxEntries_label: "うごイラフレームのキャッシュ作品数上限",
+	settings_field_ugoiraCacheMaxEntries_desc: "フレームを IndexedDB に保存するうごイラの最大作品数です。",
+	settings_field_ugoiraCacheMaxBytes_label: "うごイラフレームのキャッシュサイズ上限",
+	settings_field_ugoiraCacheMaxBytes_desc: "IndexedDB に保存するうごイラフレームの合計容量です。バイト換算で正の整数になる値を指定してください。",
+	settings_field_localTagMetadataCacheTtlMs_label: "ローカルタグ詳細のキャッシュ有効期間",
+	settings_field_localTagMetadataCacheTtlMs_desc: "ローカルタグの説明とサムネイルをキャッシュする期間です。",
+	settings_field_tagTranslationCacheTtlMs_label: "タグ翻訳のキャッシュ有効期間",
+	settings_field_tagTranslationCacheTtlMs_desc: "タグの中国語訳をキャッシュする期間です。",
+	settings_field_tagTranslationCacheMaxEntries_label: "タグ翻訳のキャッシュ容量",
+	settings_field_tagTranslationCacheMaxEntries_desc: "最低 2 件です。上限を超えると、容量の半分（端数切り捨て）の件数を古い順に削除します。",
+	settings_field_completedDownloadsMaxEntries_label: "完了したダウンロード履歴の上限",
+	settings_field_completedDownloadsMaxEntries_desc: "履歴を保存または更新するとき、上限を超えた分の古い完了履歴を削除します。",
+	settings_field_retryableDownloadsMaxEntries_label: "再試行できるダウンロード履歴の上限",
+	settings_field_retryableDownloadsMaxEntries_desc: "履歴を保存または更新するとき、上限を超えた分の古い失敗・中断履歴を削除します。",
+	settings_field_downloadProgressPersistMs_label: "ダウンロード進捗の保存間隔",
+	settings_field_downloadProgressPersistMs_desc: "進捗を共有ストレージに保存する最短間隔です。ハートビート間隔以下にしてください。",
+	settings_field_downloadHeartbeatMs_label: "ダウンロードのハートビート間隔",
+	settings_field_downloadHeartbeatMs_desc: "実行中のダウンロードを確認し、中断を検知する間隔です。中断判定時間より短くしてください。",
+	settings_field_downloadOwnerTimeoutMs_label: "ダウンロードの中断判定時間",
+	settings_field_downloadOwnerTimeoutMs_desc: "この時間に更新がなければ、ダウンロードを中断とみなします。ハートビート間隔より長くしてください。",
+	settings_field_requestRetryIntervalMs_label: "リクエストの再試行間隔",
+	settings_field_requestRetryIntervalMs_desc: "再試行のたびに待機する時間です（最短 1 秒）。",
+	settings_field_requestMaxAttempts_label: "リクエストの最大試行回数",
+	settings_field_requestMaxAttempts_desc: "最初のリクエストを含みます。空欄または「無制限」で、回数を制限せずに再試行します。",
+	settings_field_requestMaxAttempts_placeholder: "空欄で無制限",
+	settings_unlimited: "無制限",
+	settings_field_tagRequestTimeoutMs_label: "タグ情報リクエストのタイムアウト",
+	settings_field_tagRequestTimeoutMs_desc: "タグ詳細や翻訳を取得する各リクエストのタイムアウトです。",
+	settings_field_ugoiraChunkBytes_label: "うごイラのダウンロード分割サイズ",
+	settings_field_ugoiraChunkBytes_desc: "フレームがキャッシュされていない場合に、うごイラの ZIP を分割ダウンロードするサイズです（最小 65,536 バイト）。",
+	settings_field_ugoiraTrailerBytes_label: "うごイラ ZIP 末尾の読み取りサイズ",
+	settings_field_ugoiraTrailerBytes_desc: "うごイラ ZIP の中央ディレクトリを探す際に末尾から読み取る長さです（最小 22 バイト）。",
+	settings_field_databaseOpenTimeoutMs_label: "データベース接続のタイムアウト",
+	settings_field_databaseOpenTimeoutMs_desc: "IndexedDB への接続が開くまで待つ最大時間です。",
+	settings_field_domProbeIntervalMs_label: "DOM の確認間隔",
+	settings_field_domProbeIntervalMs_desc: "非同期で表示されるページ要素を確認する間隔です。",
+	settings_field_domProbeMaxAttempts_label: "DOM の最大確認回数",
+	settings_field_domProbeMaxAttempts_desc: "最初の確認を含めた最大回数です。",
+	settings_field_toolbarProbeIntervalMs_label: "ツールバーの確認間隔",
+	settings_field_toolbarProbeIntervalMs_desc: "pixiv のツールバーが表示されたか確認する間隔です。",
+	settings_field_toolbarProbeMaxAttempts_label: "ツールバーの最大確認回数",
+	settings_field_toolbarProbeMaxAttempts_desc: "pixiv のツールバーを確認する最大回数です。",
+	settings_field_localTagRenderDebounceMs_label: "ローカルタグ表示の更新待ち時間",
+	settings_field_localTagRenderDebounceMs_desc: "DOM の変更が落ち着いてからローカルタグの操作部分を更新するまでの待ち時間です。",
+	settings_field_localTagPersistDelayMs_label: "ローカルタグを保存するまでの時間",
+	settings_field_localTagPersistDelayMs_desc: "タグの編集をまとめて保存するまでの待ち時間です。この値を変えても保存待ちの編集は保持されます。",
+	settings_field_cacheCleanupIdleTimeoutMs_label: "アイドル時のキャッシュ整理までの最大待ち時間",
+	settings_field_cacheCleanupIdleTimeoutMs_desc: "永続キャッシュを整理するために、ブラウザーのアイドルコールバックを待つ最大時間です。",
+	settings_err_required: "値を入力してください。",
+	settings_err_number: "有限の数値を入力してください。",
+	settings_err_integer: "整数を入力してください。",
+	settings_err_positive: "0 より大きい値を入力してください。",
+	settings_err_nonNegative: "0 以上の値を入力してください。",
+	settings_err_min: "%1 以上にしてください。",
+	settings_err_option: "有効な項目を選択してください。",
+	settings_err_progressExceedsHeartbeat: "ダウンロードのハートビート間隔以下にしてください。",
+	settings_err_timeoutNotGreaterThanHeartbeat: "ダウンロードのハートビート間隔より長くしてください。"
+};
+
+// src/i18n/ko.ts
+var ko_default = {
+	install_title: "Pixiv Previewer L v%1에 오신 것을 환영합니다",
+	upgrade_body: "<p>이 스크립트는 개발자의 사용 방식에 맞춰 %1를 수정한 버전입니다. 원본 스크립트에 대한 의견이나 제안은 %2 또는 %3을 통해 보내 주세요.</p><p>이 스크립트의 변경 사항은 %4에서 확인할 수 있습니다.</p>",
+	upgrade_feedback: "Greasy Fork 피드백 페이지",
+	upgrade_issue: "GitHub 이슈",
+	upgrade_versions: "버전 기록",
+	close: "닫기",
+	setting_clearFollowingCache: "캐시 지우기",
+	setting_clearFollowingCacheHelp: "작품 상세 정보, 페이지별 이미지 정보, 우고이라 프레임, 태그 정보가 캐시되어 있습니다. 캐시를 지우면 다음에 필요할 때 다시 가져옵니다.\n\n캐시를 지울까요?",
+	setting_followingCacheCleared: "캐시를 지웠습니다. 페이지를 새로고침해 주세요.",
+	setting_clearCacheFailed: "일부 캐시를 지우지 못했습니다. 잠시 후 다시 시도해 주세요.",
+	cache_usage: "캐시 사용량",
+	cache_usageHelp: "작품 상세 정보 %1개 · 페이지별 이미지 정보 %2개 · 우고이라 프레임 %3개(%4) · 태그 번역 %5개",
+	label_sort: "작품 정렬",
+	label_sorting: "작품 정렬 중",
+	label_nextPage: "다음 페이지로 이동",
+	label_hideFav: "북마크한 작품 숨기기",
+	sort_getUserWorks: "이 사용자의 작품을 불러오는 중…",
+	sort_getWorks: "%1페이지의 작품을 불러오는 중…",
+	sort_retryWorks: "%1페이지의 작품을 다시 불러오는 중(%2번째 재시도)…",
+	sort_getDetails: "작품 상세 정보를 불러오는 중(%1/%2)…",
+	sort_filtering: "작품 필터링 중…",
+	sort_sorting: "필터링된 작품을 정렬 중…",
+	preview_original: "원본",
+	preview_ugoira: "우고이라",
+	artwork_aiGenerated: "AI 생성",
+	artwork_aiAssisted: "AI 보조",
+	download_title: "다운로드 기록",
+	download_close: "다운로드 기록 닫기",
+	download_clearCompleted: "완료된 기록 지우기",
+	download_clearCompletedHelp: "완료된 다운로드 기록 지우기",
+	download_retryFailed: "실패한 다운로드 모두 다시 시도",
+	download_moreActions: "추가 작업",
+	download_ignoreRetryable: "재시도 대기 기록 모두 지우기",
+	download_ignoreRetryableHelp: "실패하거나 중단된 다운로드 기록 모두 삭제",
+	download_list: "이미지 다운로드 목록",
+	download_empty: "다운로드 기록이 없습니다. 미리보기에서 ‘원본’을 눌러 다운로드하세요.",
+	download_summary: "다운로드 중 %1개 · 완료 %2개 · 재시도 대기 %3개",
+	download_progress: "%1 다운로드 진행률",
+	download_abort: "%1 다운로드 중지",
+	download_retry: "%1 다운로드 다시 시도",
+	download_remove: "%1 기록 삭제",
+	download_downloading: "다운로드 중",
+	download_downloadingHere: "다운로드 중 %1",
+	download_downloadingElsewhere: "다른 탭에서 다운로드 중 %1",
+	download_completed: "다운로드 완료",
+	download_interrupted: "다운로드가 중단되었습니다. 다시 시도 버튼을 눌러 다운로드하세요.",
+	download_failed: "다운로드 실패: %1",
+	download_errorNetwork: "네트워크 오류",
+	download_errorTimeout: "다운로드 시간이 초과되었습니다",
+	download_errorCanceled: "다운로드가 취소되었습니다",
+	tag_details: "태그 상세 정보",
+	tag_openPreview: "미리 본 작품을 새 탭에서 열기",
+	tag_adding: "추가 중…",
+	tag_addFailed: "태그를 추가하지 못했습니다. 눌러서 다시 시도하세요.",
+	tag_add: "로컬 태그에 추가",
+	tag_total: "일러스트·만화 작품 수 %1개",
+	tag_totalAdded: "일러스트·만화 작품 수 %1개(%2개 증가)",
+	tag_totalRemoved: "일러스트·만화 작품 수 %1개(%2개 감소)",
+	tag_loadingDetails: "태그 상세 정보를 불러오는 중…",
+	tag_noDescription: "태그 설명이 없습니다",
+	tag_thumbnail: "%1 썸네일",
+	tag_loadFailed: "태그 상세 정보를 불러오지 못했습니다. 잠시 후 태그에 마우스를 다시 올려 주세요.",
+	tag_manage: "로컬 태그 관리",
+	tag_autoSort: "자동 정렬(방문 횟수가 많은 순)",
+	tag_empty: "로컬 태그가 없습니다. 태그에 마우스를 올리고 ‘로컬 태그에 추가’를 선택하세요.",
+	tag_visits: "방문 %1회",
+	tag_dragSort: "드래그하여 순서 변경",
+	tag_reorder: "%1 순서 변경",
+	tag_labelPlaceholder: "기억하기 쉬운 이름 입력",
+	tag_label: "%1 표시 이름",
+	tag_saveLabel: "표시 이름 저장",
+	tag_moveUp: "위로 이동",
+	tag_moveDown: "아래로 이동",
+	tag_moveUpNamed: "%1 위로 이동",
+	tag_moveDownNamed: "%1 아래로 이동",
+	tag_remove: "%1 삭제",
+	settings_title: "설정",
+	settings_save: "저장",
+	settings_restoreDefault: "기본값으로 되돌리기",
+	settings_revertToPrevious: "변경 전으로 되돌리기",
+	settings_restoreField: "%1 기본값으로 되돌리기",
+	settings_revertField: "%1 변경 전으로 되돌리기",
+	settings_restoreAll: "모든 설정을 기본값으로 되돌리기",
+	settings_confirmDiscard: "저장하지 않은 변경 사항이 있습니다. 변경 사항을 버리고 닫을까요?",
+	settings_saveSuccess: "설정을 저장하고 적용했습니다.",
+	settings_saveFailed: "설정을 저장하지 못했습니다(%1)",
+	settings_saveStorageError: "로컬 저장소에 쓰지 못해 설정이 변경되지 않았습니다.",
+	settings_validationFailed: "%1 값을 확인해 주세요(%2)",
+	settings_group_general: "일반 설정",
+	settings_group_preview: "작품 미리보기",
+	settings_group_sort: "작품 정렬",
+	settings_group_localTags: "로컬 태그",
+	settings_advancedToggle: "고급 설정",
+	settings_group_cache: "캐시",
+	settings_group_download: "다운로드 관리",
+	settings_group_network: "네트워크",
+	settings_group_scheduling: "내부 작업 스케줄링",
+	settings_unit_ms: "밀리초",
+	settings_unit_s: "초",
+	settings_unit_hour: "시간",
+	settings_unit_day: "일",
+	settings_unit_pages: "페이지",
+	settings_unit_bookmarks: "북마크",
+	settings_unit_images: "장",
+	settings_unit_entries: "항목",
+	settings_unit_works: "작품",
+	settings_unit_mib: "MiB",
+	settings_unit_bytes: "바이트",
+	settings_unit_times: "회",
+	settings_field_language_label: "표시 언어",
+	settings_field_language_desc: "스크립트 인터페이스의 표시 언어입니다. 기본값은 페이지 언어를 따르며 지원하지 않는 언어는 영어로 표시됩니다.",
+	settings_option_languageAuto: "페이지 언어 따르기",
+	settings_field_enablePreview_label: "작품 미리보기 사용",
+	settings_field_enablePreview_desc: "끄면 작품과 우고이라 미리보기가 표시되지 않습니다.",
+	settings_field_enableAnimePreview_label: "우고이라 미리보기",
+	settings_field_enableAnimePreview_desc: "작품 미리보기를 켠 경우에만 사용할 수 있습니다.",
+	settings_field_previewDelay_label: "마우스 오버 대기 시간",
+	settings_field_previewDelay_desc: "이미지에 마우스를 올린 후 미리보기가 표시되기까지 기다리는 시간입니다.",
+	settings_field_linkBlank_label: "작품을 새 탭에서 열기",
+	settings_field_linkBlank_desc: "작품 링크에만 적용되며 작가와 태그 링크에는 영향을 주지 않습니다.",
+	settings_field_previewHoldMs_label: "한 손 미리보기 길게 누르기 시간",
+	settings_field_previewHoldMs_desc: "마우스 버튼을 이 시간 동안 누르면 한 손 미리보기 모드가 켜집니다.",
+	settings_field_previewLoadingOverlayDelayMs_label: "페이지 로딩 오버레이 대기 시간",
+	settings_field_previewLoadingOverlayDelayMs_desc: "페이지를 바꿀 때 이미지 로딩이 끝나지 않았다면 이 시간 후에 흐림 효과를 표시합니다.",
+	settings_field_previewDownloadNoticeMs_label: "다운로드 완료 알림 표시 시간",
+	settings_field_previewDownloadNoticeMs_desc: "원본 다운로드 후 미리보기 버튼에 완료 상태를 표시하는 시간입니다.",
+	settings_field_pageCount_label: "한 번에 정렬할 페이지 수",
+	settings_field_pageCount_desc: "페이지 수를 줄이면 픽시브 요청 제한에 걸릴 가능성이 낮아집니다.",
+	settings_field_favFilter_label: "최소 북마크 수",
+	settings_field_favFilter_desc: "정렬 결과에서 북마크 수가 이 값 이상인 작품만 표시합니다.",
+	settings_field_orderType_label: "정렬 기준",
+	settings_field_orderType_desc: "정렬 결과에 작품을 표시할 순서입니다.",
+	settings_option_orderByBookmark: "북마크 수순",
+	settings_option_orderByDate: "게시일순",
+	settings_field_aiFilter_label: "AI 생성 작품 숨기기",
+	settings_field_aiFilter_desc: "정렬 결과에서 AI 생성 작품을 제외합니다.",
+	settings_field_aiAssistedFilter_label: "AI 보조 작품 숨기기",
+	settings_field_aiAssistedFilter_desc: "정렬 결과에서 AI 보조 작품을 제외합니다.",
+	settings_field_hideFavorite_label: "북마크한 작품 숨기기",
+	settings_field_hideFavorite_desc: "정렬 결과에서 북마크한 작품을 제외합니다.",
+	settings_field_hideByTag_label: "태그 필터 사용",
+	settings_field_hideByTag_desc: "정렬 결과에서 지정한 태그가 있는 작품을 제외합니다.",
+	settings_field_hideByTagList_label: "제외할 태그",
+	settings_field_hideByTagList_placeholder: "태그를 쉼표(,)로 구분해 입력",
+	settings_field_hideByTagList_desc: "태그 필터를 켰을 때 적용됩니다. 대소문자와 태그 앞뒤의 공백은 무시합니다.",
+	settings_field_enableLocalTags_label: "로컬 태그 사용",
+	settings_field_enableLocalTags_desc: "끄면 로컬 태그 인터페이스가 숨겨지고 집계가 중지됩니다. 저장한 태그는 유지됩니다.",
+	settings_field_localTagPopoverShowDelayMs_label: "태그 상세 창 열기 대기 시간",
+	settings_field_localTagPopoverShowDelayMs_desc: "태그에 마우스를 올리거나 포커스를 둔 후 상세 창이 열리기까지 기다리는 시간입니다.",
+	settings_field_localTagPopoverHideDelayMs_label: "태그 상세 창 닫기 대기 시간",
+	settings_field_localTagPopoverHideDelayMs_desc: "태그나 상세 창에서 마우스를 벗긴 후 창이 닫히기까지 기다리는 시간입니다.",
+	settings_field_previewPreloadCount_label: "미리보기 미리 로드 범위",
+	settings_field_previewPreloadCount_desc: "현재 페이지를 포함해 미리 불러올 이미지 수입니다. 디코딩된 이미지 캐시 한도는 이 값의 두 배입니다.",
+	settings_field_previewCacheMaxEntries_label: "미리보기 메모리 캐시 용량",
+	settings_field_previewCacheMaxEntries_desc: "미리보기 페이지 URL과 우고이라 메타데이터를 메모리에 캐시할 때 각각 적용할 최대 항목 수입니다.",
+	settings_field_previewDetailsMaxStaleMs_label: "미리보기 상세 정보 캐시 추가 사용 시간",
+	settings_field_previewDetailsMaxStaleMs_desc: "‘변경 가능한 작품 정보의 캐시 유효 기간’이 지난 후에도 캐시를 사용할 수 있는 추가 시간입니다.",
+	settings_field_illustrationMutableCacheTtlMs_label: "변경 가능한 작품 정보의 캐시 유효 기간",
+	settings_field_illustrationMutableCacheTtlMs_desc: "북마크 수나 북마크 여부처럼 바뀔 수 있는 정보를 캐시에 보관하는 기간입니다.",
+	settings_field_illustrationStaticCacheTtlMs_label: "고정 작품 정보의 캐시 유효 기간",
+	settings_field_illustrationStaticCacheTtlMs_desc: "제목, 태그, 페이지 수 등의 정보를 캐시에 보관하는 기간입니다.",
+	settings_field_illustrationCacheMaxEntries_label: "작품 상세 정보 캐시 용량",
+	settings_field_illustrationCacheMaxEntries_desc: "IndexedDB에 보관할 작품 상세 정보의 최대 항목 수입니다.",
+	settings_field_newIllustrationNoCacheMs_label: "새 작품 캐시 시작 대기 시간",
+	settings_field_newIllustrationNoCacheMs_desc: "게시 후 이 시간이 지나지 않은 작품의 상세 정보는 캐시하지 않습니다.",
+	settings_field_illustPagesCacheTtlMs_label: "페이지별 이미지 정보의 캐시 유효 기간",
+	settings_field_illustPagesCacheTtlMs_desc: "페이지별 이미지 URL을 IndexedDB에 캐시하는 기간입니다.",
+	settings_field_illustPagesCacheMaxEntries_label: "페이지별 이미지 정보 캐시 용량",
+	settings_field_illustPagesCacheMaxEntries_desc: "IndexedDB에 보관할 페이지별 이미지 정보의 최대 항목 수입니다.",
+	settings_field_userIllustrationsCacheTtlMs_label: "사용자 작품 목록의 캐시 유효 기간",
+	settings_field_userIllustrationsCacheTtlMs_desc: "사용자의 작품 목록을 세션 저장소에 캐시하는 기간입니다.",
+	settings_field_ugoiraCacheTtlMs_label: "우고이라 프레임 캐시 유효 기간",
+	settings_field_ugoiraCacheTtlMs_desc: "우고이라 프레임을 IndexedDB에 캐시하는 기간입니다.",
+	settings_field_ugoiraCacheMaxEntries_label: "우고이라 프레임 캐시 작품 수 한도",
+	settings_field_ugoiraCacheMaxEntries_desc: "IndexedDB에 프레임을 캐시할 우고이라 작품의 최대 수입니다.",
+	settings_field_ugoiraCacheMaxBytes_label: "우고이라 프레임 캐시 크기 한도",
+	settings_field_ugoiraCacheMaxBytes_desc: "IndexedDB에 저장하는 우고이라 프레임의 최대 용량입니다. 바이트로 환산한 값은 양의 정수여야 합니다.",
+	settings_field_localTagMetadataCacheTtlMs_label: "로컬 태그 상세 정보의 캐시 유효 기간",
+	settings_field_localTagMetadataCacheTtlMs_desc: "로컬 태그 설명과 썸네일을 캐시하는 기간입니다.",
+	settings_field_tagTranslationCacheTtlMs_label: "태그 번역 캐시 유효 기간",
+	settings_field_tagTranslationCacheTtlMs_desc: "태그의 중국어 번역을 캐시하는 기간입니다.",
+	settings_field_tagTranslationCacheMaxEntries_label: "태그 번역 캐시 용량",
+	settings_field_tagTranslationCacheMaxEntries_desc: "최소 2개입니다. 용량을 초과하면 용량의 절반(소수점 이하 버림)만큼 오래된 항목부터 제거합니다.",
+	settings_field_completedDownloadsMaxEntries_label: "완료된 다운로드 기록 한도",
+	settings_field_completedDownloadsMaxEntries_desc: "기록을 저장하거나 갱신할 때 한도를 초과한 오래된 완료 기록을 제거합니다.",
+	settings_field_retryableDownloadsMaxEntries_label: "재시도 가능한 다운로드 기록 한도",
+	settings_field_retryableDownloadsMaxEntries_desc: "기록을 저장하거나 갱신할 때 한도를 초과한 오래된 실패·중단 기록을 제거합니다.",
+	settings_field_downloadProgressPersistMs_label: "다운로드 진행률 저장 간격",
+	settings_field_downloadProgressPersistMs_desc: "진행률을 공유 저장소에 저장하는 최소 간격입니다. 하트비트 간격 이하여야 합니다.",
+	settings_field_downloadHeartbeatMs_label: "다운로드 하트비트 간격",
+	settings_field_downloadHeartbeatMs_desc: "활성 다운로드 상태를 알리고 중단 여부를 확인하는 간격입니다. 중단 판정 시간보다 짧아야 합니다.",
+	settings_field_downloadOwnerTimeoutMs_label: "다운로드 중단 판정 시간",
+	settings_field_downloadOwnerTimeoutMs_desc: "이 시간 동안 상태가 갱신되지 않으면 다운로드를 중단된 것으로 처리합니다. 하트비트 간격보다 길어야 합니다.",
+	settings_field_requestRetryIntervalMs_label: "요청 재시도 간격",
+	settings_field_requestRetryIntervalMs_desc: "재시도 사이에 기다리는 시간입니다(최소 1초).",
+	settings_field_requestMaxAttempts_label: "최대 요청 시도 횟수",
+	settings_field_requestMaxAttempts_desc: "최초 요청을 포함합니다. 비워 두거나 ‘무제한’을 입력하면 계속 재시도합니다.",
+	settings_field_requestMaxAttempts_placeholder: "비워 두면 무제한",
+	settings_unlimited: "무제한",
+	settings_field_tagRequestTimeoutMs_label: "태그 요청 제한 시간",
+	settings_field_tagRequestTimeoutMs_desc: "태그 상세 정보나 번역을 가져오는 각 요청의 제한 시간입니다.",
+	settings_field_ugoiraChunkBytes_label: "우고이라 다운로드 청크 크기",
+	settings_field_ugoiraChunkBytes_desc: "프레임이 캐시에 없을 때 우고이라 압축 파일을 나누어 내려받는 단위입니다(최소 65,536바이트).",
+	settings_field_ugoiraTrailerBytes_label: "우고이라 ZIP 끝부분 스캔 크기",
+	settings_field_ugoiraTrailerBytes_desc: "우고이라 ZIP의 중앙 디렉터리를 찾기 위해 끝부분에서 읽는 길이입니다(최소 22바이트).",
+	settings_field_databaseOpenTimeoutMs_label: "데이터베이스 열기 제한 시간",
+	settings_field_databaseOpenTimeoutMs_desc: "IndexedDB 연결이 열리기까지 기다리는 최대 시간입니다.",
+	settings_field_domProbeIntervalMs_label: "DOM 확인 간격",
+	settings_field_domProbeIntervalMs_desc: "비동기로 로드되는 페이지 요소를 확인하는 간격입니다.",
+	settings_field_domProbeMaxAttempts_label: "최대 DOM 확인 횟수",
+	settings_field_domProbeMaxAttempts_desc: "첫 확인을 포함한 최대 확인 횟수입니다.",
+	settings_field_toolbarProbeIntervalMs_label: "도구 모음 확인 간격",
+	settings_field_toolbarProbeIntervalMs_desc: "픽시브 도구 모음이 표시되었는지 확인하는 간격입니다.",
+	settings_field_toolbarProbeMaxAttempts_label: "최대 도구 모음 확인 횟수",
+	settings_field_toolbarProbeMaxAttempts_desc: "픽시브 도구 모음을 확인하는 최대 횟수입니다.",
+	settings_field_localTagRenderDebounceMs_label: "로컬 태그 인터페이스 새로고침 대기 시간",
+	settings_field_localTagRenderDebounceMs_desc: "DOM 변경이 멈춘 후 로컬 태그 인터페이스를 새로고침하기까지 기다리는 시간입니다.",
+	settings_field_localTagPersistDelayMs_label: "로컬 태그 저장 대기 시간",
+	settings_field_localTagPersistDelayMs_desc: "태그 변경 사항을 모아서 저장하기 전까지 기다리는 시간입니다. 이 설정을 바꿔도 저장 대기 중인 변경 사항은 유지됩니다.",
+	settings_field_cacheCleanupIdleTimeoutMs_label: "유휴 시 캐시 정리 최대 대기 시간",
+	settings_field_cacheCleanupIdleTimeoutMs_desc: "영구 캐시 정리를 위한 브라우저 유휴 콜백을 기다리는 최대 시간입니다.",
+	settings_err_required: "값을 입력해 주세요.",
+	settings_err_number: "유효한 유한수를 입력해 주세요.",
+	settings_err_integer: "정수를 입력해 주세요.",
+	settings_err_positive: "0보다 커야 합니다.",
+	settings_err_nonNegative: "0 이상이어야 합니다.",
+	settings_err_min: "%1 이상이어야 합니다.",
+	settings_err_option: "올바른 옵션을 선택해 주세요.",
+	settings_err_progressExceedsHeartbeat: "다운로드 하트비트 간격 이하여야 합니다.",
+	settings_err_timeoutNotGreaterThanHeartbeat: "다운로드 하트비트 간격보다 길어야 합니다."
+};
+
+// src/i18n/zh.ts
+const zh = {
+	install_title: "欢迎使用 Pixiv Previewer L v%1",
+	upgrade_body: "<p>本脚本基于 %1 二次开发，旨在满足开发者自己的使用需求。如果您有想法或建议，欢迎前往原脚本的 %2 或在 %3 提出。</p><p>如需查看功能更新记录，请前往此脚本的 %4。</p>",
+	upgrade_feedback: "Greasy Fork 反馈页面",
+	upgrade_issue: "GitHub 议题",
+	upgrade_versions: "版本历史页面",
+	close: "关闭",
 	setting_clearFollowingCache: "清除缓存",
-	setting_clearFollowingCacheHelp: "本地缓存了作品详情、作品分页、动图帧与标签信息。清除后再次访问会重新请求接口。",
+	setting_clearFollowingCacheHelp: "本地缓存了作品详情、作品分页、动图帧与标签信息。清除后再次访问会重新请求接口。\n\n确定要清除吗？",
 	setting_followingCacheCleared: "已清除缓存，请刷新页面。",
 	setting_clearCacheFailed: "部分缓存清除失败，请稍后重试。",
 	cache_usage: "缓存占用",
 	cache_usageHelp: "作品详情 %1 个 · 作品分页 %2 个 · 动图帧 %3 个（%4）· 标签翻译 %5 个",
-	setting_blank: "使用新标签页打开作品详情页",
-	setting_turnPage: "使用键盘←→进行翻页（排序后的搜索页）",
-	setting_save: "保存设置",
-	setting_reset: "重置脚本",
-	setting_resetHint: "这会删除所有设置，相当于重新安装脚本，确定要重置吗？",
-	setting_novelSort: "小说排序",
-	setting_novelMaxPage: "小说排序时统计的最大页数",
-	setting_novelHideWork: "隐藏收藏数少于设定值的作品",
-	setting_novelHideFav: "排序时隐藏已收藏的作品",
-	sort_noWork: "没有可以显示的作品（隐藏了 %1 个作品）",
-	sort_getWorks: "正在获取第 %1/%2 页作品",
-	sort_getBookmarkCount: "获取收藏数：%1/%2",
-	sort_getPublicFollowing: "获取公开关注画师",
-	sort_getPrivateFollowing: "获取私有关注画师",
-	sort_filtering: "过滤%1收藏量低于%2的作品",
-	sort_filteringHideFavorite: "已收藏和",
-	sort_fullSizeThumb: "全尺寸缩略图（搜索页、用户页）",
-	label_sort: "排序",
-	label_sorting: "排序中",
-	label_nextPage: "下一页",
-	label_hideFav: "过滤收藏",
-	settings_menu: "设置",
-	settings_panelTitle: "设置",
-	settings_close: "关闭",
+	label_sort: "排序作品",
+	label_sorting: "正在排序作品",
+	label_nextPage: "前往下一页",
+	label_hideFav: "隐藏已收藏作品",
+	sort_getUserWorks: "正在获取当前用户的作品…",
+	sort_getWorks: "正在获取第 %1 页作品…",
+	sort_retryWorks: "正在重新获取第 %1 页作品（第 %2 次重试）…",
+	sort_getDetails: "正在获取作品详情（%1/%2）…",
+	sort_filtering: "正在过滤作品…",
+	sort_sorting: "正在对筛选结果排序…",
+	preview_original: "原图",
+	preview_ugoira: "动图",
+	artwork_aiGenerated: "AI 生成",
+	artwork_aiAssisted: "AI 辅助",
+	download_title: "下载记录",
+	download_close: "关闭下载记录",
+	download_clearCompleted: "清空已完成记录",
+	download_clearCompletedHelp: "清空已完成的下载记录",
+	download_retryFailed: "重试所有失败记录",
+	download_moreActions: "更多操作",
+	download_ignoreRetryable: "忽略所有待重试记录",
+	download_ignoreRetryableHelp: "移除所有失败和中断的下载记录",
+	download_list: "图片下载列表",
+	download_empty: "暂无下载记录，点击预览中的“原图”开始下载。",
+	download_summary: "%1 项下载中 · %2 项已完成 · %3 项待重试",
+	download_progress: "%1 的下载进度",
+	download_abort: "中止下载 %1",
+	download_retry: "重试下载 %1",
+	download_remove: "删除记录 %1",
+	download_downloading: "下载中",
+	download_downloadingHere: "下载中 %1",
+	download_downloadingElsewhere: "其他标签页下载中 %1",
+	download_completed: "已下载",
+	download_interrupted: "下载已中断，点击重试重新下载",
+	download_failed: "下载失败：%1",
+	download_errorNetwork: "网络错误",
+	download_errorTimeout: "下载超时",
+	download_errorCanceled: "下载已取消",
+	tag_details: "标签详情",
+	tag_openPreview: "在新标签页打开预览作品",
+	tag_adding: "正在添加…",
+	tag_addFailed: "添加失败，点击重试",
+	tag_add: "添加到本地标签",
+	tag_total: "插画漫画作品总数：%1 件",
+	tag_totalAdded: "插画漫画作品总数：%1 件（新增 %2 件）",
+	tag_totalRemoved: "插画漫画作品总数：%1 件（减少 %2 件）",
+	tag_loadingDetails: "正在加载标签详情…",
+	tag_noDescription: "暂无标签简介",
+	tag_thumbnail: "%1 的缩略图",
+	tag_loadFailed: "标签详情加载失败，请稍后重新悬浮重试。",
+	tag_manage: "本地标签管理",
+	tag_autoSort: "自动排序（访问次数越多越靠前）",
+	tag_empty: "暂无本地标签。悬浮任意标签，点击“添加到本地标签”。",
+	tag_visits: "访问 %1 次",
+	tag_dragSort: "拖拽排序",
+	tag_reorder: "调整 %1 的位置",
+	tag_labelPlaceholder: "填写便于记忆的备注名",
+	tag_label: "%1 的显示名称",
+	tag_saveLabel: "保存备注名",
+	tag_moveUp: "上移",
+	tag_moveDown: "下移",
+	tag_moveUpNamed: "上移 %1",
+	tag_moveDownNamed: "下移 %1",
+	tag_remove: "删除 %1",
+	settings_title: "设置",
 	settings_save: "保存",
 	settings_restoreDefault: "恢复默认",
 	settings_revertToPrevious: "恢复到修改前",
+	settings_restoreField: "恢复 %1 的默认值",
+	settings_revertField: "撤销对 %1 的修改",
 	settings_restoreAll: "全部恢复默认",
 	settings_confirmDiscard: "存在未保存的修改，关闭将放弃这些修改，确定要关闭吗？",
 	settings_saveSuccess: "设置已保存并生效。",
 	settings_saveFailed: "保存失败：%1",
 	settings_saveStorageError: "写入本地存储失败，配置未更改。",
-	settings_validationFailed: "存在无效配置，请修正：%1",
+	settings_validationFailed: "存在无效配置，请修正 %1（%2）",
+	settings_group_general: "通用配置",
 	settings_group_preview: "作品预览",
 	settings_group_sort: "作品排序",
 	settings_group_localTags: "本地标签",
@@ -259,6 +985,9 @@ const Texts = {
 	settings_unit_mib: "MiB",
 	settings_unit_bytes: "字节",
 	settings_unit_times: "次",
+	settings_field_language_label: "界面语言",
+	settings_field_language_desc: "脚本界面的显示语言；默认跟随页面语言，不支持的语言回退为英文",
+	settings_option_languageAuto: "跟随页面语言",
 	settings_field_enablePreview_label: "启用作品预览",
 	settings_field_enablePreview_desc: "关闭后停止弹出作品与动图预览",
 	settings_field_enableAnimePreview_label: "预览动图",
@@ -345,6 +1074,7 @@ const Texts = {
 	settings_field_requestMaxAttempts_label: "最大尝试次数",
 	settings_field_requestMaxAttempts_desc: "包含首次请求；留空或填“不限”表示持续重试",
 	settings_field_requestMaxAttempts_placeholder: "留空表示不限",
+	settings_unlimited: "不限",
 	settings_field_tagRequestTimeoutMs_label: "标签请求超时",
 	settings_field_tagRequestTimeoutMs_desc: "标签详情与翻译接口单次请求的超时时间",
 	settings_field_ugoiraChunkBytes_label: "动图下载分块大小",
@@ -378,97 +1108,131 @@ const Texts = {
 	settings_err_timeoutNotGreaterThanHeartbeat: "必须大于下载心跳间隔"
 };
 
+// src/i18n/index.ts
+const catalogs = /* @__PURE__ */ new Map([
+	["en", en_default],
+	["ja", ja_default],
+	["ko", ko_default],
+	["zh", zh]
+]);
+let locale = "en";
+let texts = en_default;
+let lastLang;
+const setLocale = (preferredLang = "auto", pageLang = document.documentElement?.lang ?? "") => {
+	const rawLang = preferredLang && preferredLang !== "auto" ? preferredLang : pageLang;
+	if (rawLang === lastLang) return;
+	lastLang = rawLang;
+	const language = rawLang.trim().toLowerCase().split("-")[0];
+	const catalog = catalogs.get(language);
+	locale = catalog ? language === "zh" ? "zh-CN" : language : "en";
+	texts = catalog ?? en_default;
+};
+const formatText = (message, ...values) => message.replace(/%(\d+)/g, (placeholder, index) => String(values[Number(index) - 1] ?? placeholder));
+
 // src/constants/settings.ts
 const SETTING_GROUPS = [
 	{
+		id: "general",
+		section: "common"
+	},
+	{
 		id: "preview",
-		section: "common",
-		title: Texts.settings_group_preview
+		section: "common"
 	},
 	{
 		id: "sort",
-		section: "common",
-		title: Texts.settings_group_sort
+		section: "common"
 	},
 	{
 		id: "localTags",
-		section: "common",
-		title: Texts.settings_group_localTags
+		section: "common"
 	},
 	{
 		id: "cache",
-		section: "advanced",
-		title: Texts.settings_group_cache
+		section: "advanced"
 	},
 	{
 		id: "download",
-		section: "advanced",
-		title: Texts.settings_group_download
+		section: "advanced"
 	},
 	{
 		id: "network",
-		section: "advanced",
-		title: Texts.settings_group_network
+		section: "advanced"
 	},
 	{
 		id: "scheduling",
-		section: "advanced",
-		title: Texts.settings_group_scheduling
+		section: "advanced"
 	}
 ];
 /** 用户可见配置字段的唯一清单，由 `UserSettingKey` 约束并明确排除 `version` */
 const SETTING_FIELD_MAP = {
+	language: {
+		key: "language",
+		section: "common",
+		group: "general",
+		control: "select",
+		options: [
+			{
+				value: "auto",
+				labelKey: "settings_option_languageAuto"
+			},
+			{
+				value: "zh-CN",
+				label: "简体中文"
+			},
+			{
+				value: "en",
+				label: "English"
+			},
+			{
+				value: "ja",
+				label: "日本語"
+			},
+			{
+				value: "ko",
+				label: "한국어"
+			}
+		]
+	},
 	enablePreview: {
 		key: "enablePreview",
 		section: "common",
 		group: "preview",
-		control: "boolean",
-		label: Texts.settings_field_enablePreview_label,
-		description: Texts.settings_field_enablePreview_desc
+		control: "boolean"
 	},
 	enableAnimePreview: {
 		key: "enableAnimePreview",
 		section: "common",
 		group: "preview",
-		control: "boolean",
-		label: Texts.settings_field_enableAnimePreview_label,
-		description: Texts.settings_field_enableAnimePreview_desc
+		control: "boolean"
 	},
 	previewDelay: {
 		key: "previewDelay",
 		section: "common",
 		group: "preview",
 		control: "number",
-		label: Texts.settings_field_previewDelay_label,
-		description: Texts.settings_field_previewDelay_desc,
-		unit: Texts.settings_unit_ms,
+		unitKey: "settings_unit_ms",
 		min: 0
 	},
 	linkBlank: {
 		key: "linkBlank",
 		section: "common",
 		group: "preview",
-		control: "boolean",
-		label: Texts.settings_field_linkBlank_label,
-		description: Texts.settings_field_linkBlank_desc
+		control: "boolean"
 	},
 	previewHoldMs: {
 		key: "previewHoldMs",
 		section: "common",
 		group: "preview",
 		control: "number",
-		label: Texts.settings_field_previewHoldMs_label,
-		description: Texts.settings_field_previewHoldMs_desc,
-		unit: Texts.settings_unit_ms
+		unitKey: "settings_unit_ms"
 	},
 	previewLoadingOverlayDelayMs: {
 		key: "previewLoadingOverlayDelayMs",
 		section: "common",
 		group: "preview",
 		control: "number",
-		label: Texts.settings_field_previewLoadingOverlayDelayMs_label,
-		description: Texts.settings_field_previewLoadingOverlayDelayMs_desc,
-		unit: Texts.settings_unit_ms,
+		unitKey: "settings_unit_ms",
 		min: 0
 	},
 	previewDownloadNoticeMs: {
@@ -476,9 +1240,7 @@ const SETTING_FIELD_MAP = {
 		section: "common",
 		group: "preview",
 		control: "number",
-		label: Texts.settings_field_previewDownloadNoticeMs_label,
-		description: Texts.settings_field_previewDownloadNoticeMs_desc,
-		unit: Texts.settings_unit_s,
+		unitKey: "settings_unit_s",
 		scale: 1e3,
 		min: 0
 	},
@@ -487,9 +1249,7 @@ const SETTING_FIELD_MAP = {
 		section: "common",
 		group: "sort",
 		control: "number",
-		label: Texts.settings_field_pageCount_label,
-		description: Texts.settings_field_pageCount_desc,
-		unit: Texts.settings_unit_pages,
+		unitKey: "settings_unit_pages",
 		min: 1,
 		integer: true
 	},
@@ -498,9 +1258,7 @@ const SETTING_FIELD_MAP = {
 		section: "common",
 		group: "sort",
 		control: "number",
-		label: Texts.settings_field_favFilter_label,
-		description: Texts.settings_field_favFilter_desc,
-		unit: Texts.settings_unit_bookmarks,
+		unitKey: "settings_unit_bookmarks",
 		min: 0,
 		integer: true
 	},
@@ -509,73 +1267,57 @@ const SETTING_FIELD_MAP = {
 		section: "common",
 		group: "sort",
 		control: "select",
-		label: Texts.settings_field_orderType_label,
-		description: Texts.settings_field_orderType_desc,
 		options: [{
 			value: 0,
-			label: Texts.settings_option_orderByBookmark
+			labelKey: "settings_option_orderByBookmark"
 		}, {
 			value: 1,
-			label: Texts.settings_option_orderByDate
+			labelKey: "settings_option_orderByDate"
 		}]
 	},
 	aiFilter: {
 		key: "aiFilter",
 		section: "common",
 		group: "sort",
-		control: "boolean",
-		label: Texts.settings_field_aiFilter_label,
-		description: Texts.settings_field_aiFilter_desc
+		control: "boolean"
 	},
 	aiAssistedFilter: {
 		key: "aiAssistedFilter",
 		section: "common",
 		group: "sort",
-		control: "boolean",
-		label: Texts.settings_field_aiAssistedFilter_label,
-		description: Texts.settings_field_aiAssistedFilter_desc
+		control: "boolean"
 	},
 	hideFavorite: {
 		key: "hideFavorite",
 		section: "common",
 		group: "sort",
-		control: "boolean",
-		label: Texts.settings_field_hideFavorite_label,
-		description: Texts.settings_field_hideFavorite_desc
+		control: "boolean"
 	},
 	hideByTag: {
 		key: "hideByTag",
 		section: "common",
 		group: "sort",
-		control: "boolean",
-		label: Texts.settings_field_hideByTag_label,
-		description: Texts.settings_field_hideByTag_desc
+		control: "boolean"
 	},
 	hideByTagList: {
 		key: "hideByTagList",
 		section: "common",
 		group: "sort",
 		control: "text",
-		label: Texts.settings_field_hideByTagList_label,
-		description: Texts.settings_field_hideByTagList_desc,
-		placeholder: Texts.settings_field_hideByTagList_placeholder
+		placeholderKey: "settings_field_hideByTagList_placeholder"
 	},
 	enableLocalTags: {
 		key: "enableLocalTags",
 		section: "common",
 		group: "localTags",
-		control: "boolean",
-		label: Texts.settings_field_enableLocalTags_label,
-		description: Texts.settings_field_enableLocalTags_desc
+		control: "boolean"
 	},
 	localTagPopoverShowDelayMs: {
 		key: "localTagPopoverShowDelayMs",
 		section: "common",
 		group: "localTags",
 		control: "number",
-		label: Texts.settings_field_localTagPopoverShowDelayMs_label,
-		description: Texts.settings_field_localTagPopoverShowDelayMs_desc,
-		unit: Texts.settings_unit_ms,
+		unitKey: "settings_unit_ms",
 		min: 0
 	},
 	localTagPopoverHideDelayMs: {
@@ -583,9 +1325,7 @@ const SETTING_FIELD_MAP = {
 		section: "common",
 		group: "localTags",
 		control: "number",
-		label: Texts.settings_field_localTagPopoverHideDelayMs_label,
-		description: Texts.settings_field_localTagPopoverHideDelayMs_desc,
-		unit: Texts.settings_unit_ms,
+		unitKey: "settings_unit_ms",
 		min: 0
 	},
 	previewPreloadCount: {
@@ -593,9 +1333,7 @@ const SETTING_FIELD_MAP = {
 		section: "advanced",
 		group: "cache",
 		control: "number",
-		label: Texts.settings_field_previewPreloadCount_label,
-		description: Texts.settings_field_previewPreloadCount_desc,
-		unit: Texts.settings_unit_images,
+		unitKey: "settings_unit_images",
 		min: 1,
 		integer: true
 	},
@@ -604,9 +1342,7 @@ const SETTING_FIELD_MAP = {
 		section: "advanced",
 		group: "cache",
 		control: "number",
-		label: Texts.settings_field_previewCacheMaxEntries_label,
-		description: Texts.settings_field_previewCacheMaxEntries_desc,
-		unit: Texts.settings_unit_entries,
+		unitKey: "settings_unit_entries",
 		min: 1,
 		integer: true
 	},
@@ -615,9 +1351,7 @@ const SETTING_FIELD_MAP = {
 		section: "advanced",
 		group: "cache",
 		control: "number",
-		label: Texts.settings_field_previewDetailsMaxStaleMs_label,
-		description: Texts.settings_field_previewDetailsMaxStaleMs_desc,
-		unit: Texts.settings_unit_hour,
+		unitKey: "settings_unit_hour",
 		scale: 36e5
 	},
 	illustrationMutableCacheTtlMs: {
@@ -625,9 +1359,7 @@ const SETTING_FIELD_MAP = {
 		section: "advanced",
 		group: "cache",
 		control: "number",
-		label: Texts.settings_field_illustrationMutableCacheTtlMs_label,
-		description: Texts.settings_field_illustrationMutableCacheTtlMs_desc,
-		unit: Texts.settings_unit_hour,
+		unitKey: "settings_unit_hour",
 		scale: 36e5
 	},
 	illustrationStaticCacheTtlMs: {
@@ -635,9 +1367,7 @@ const SETTING_FIELD_MAP = {
 		section: "advanced",
 		group: "cache",
 		control: "number",
-		label: Texts.settings_field_illustrationStaticCacheTtlMs_label,
-		description: Texts.settings_field_illustrationStaticCacheTtlMs_desc,
-		unit: Texts.settings_unit_day,
+		unitKey: "settings_unit_day",
 		scale: 864e5
 	},
 	illustrationCacheMaxEntries: {
@@ -645,9 +1375,7 @@ const SETTING_FIELD_MAP = {
 		section: "advanced",
 		group: "cache",
 		control: "number",
-		label: Texts.settings_field_illustrationCacheMaxEntries_label,
-		description: Texts.settings_field_illustrationCacheMaxEntries_desc,
-		unit: Texts.settings_unit_entries,
+		unitKey: "settings_unit_entries",
 		min: 1,
 		integer: true
 	},
@@ -656,9 +1384,7 @@ const SETTING_FIELD_MAP = {
 		section: "advanced",
 		group: "cache",
 		control: "number",
-		label: Texts.settings_field_newIllustrationNoCacheMs_label,
-		description: Texts.settings_field_newIllustrationNoCacheMs_desc,
-		unit: Texts.settings_unit_hour,
+		unitKey: "settings_unit_hour",
 		scale: 36e5
 	},
 	illustPagesCacheTtlMs: {
@@ -666,9 +1392,7 @@ const SETTING_FIELD_MAP = {
 		section: "advanced",
 		group: "cache",
 		control: "number",
-		label: Texts.settings_field_illustPagesCacheTtlMs_label,
-		description: Texts.settings_field_illustPagesCacheTtlMs_desc,
-		unit: Texts.settings_unit_day,
+		unitKey: "settings_unit_day",
 		scale: 864e5
 	},
 	illustPagesCacheMaxEntries: {
@@ -676,9 +1400,7 @@ const SETTING_FIELD_MAP = {
 		section: "advanced",
 		group: "cache",
 		control: "number",
-		label: Texts.settings_field_illustPagesCacheMaxEntries_label,
-		description: Texts.settings_field_illustPagesCacheMaxEntries_desc,
-		unit: Texts.settings_unit_entries,
+		unitKey: "settings_unit_entries",
 		min: 1,
 		integer: true
 	},
@@ -687,9 +1409,7 @@ const SETTING_FIELD_MAP = {
 		section: "advanced",
 		group: "cache",
 		control: "number",
-		label: Texts.settings_field_userIllustrationsCacheTtlMs_label,
-		description: Texts.settings_field_userIllustrationsCacheTtlMs_desc,
-		unit: Texts.settings_unit_hour,
+		unitKey: "settings_unit_hour",
 		scale: 36e5
 	},
 	ugoiraCacheTtlMs: {
@@ -697,9 +1417,7 @@ const SETTING_FIELD_MAP = {
 		section: "advanced",
 		group: "cache",
 		control: "number",
-		label: Texts.settings_field_ugoiraCacheTtlMs_label,
-		description: Texts.settings_field_ugoiraCacheTtlMs_desc,
-		unit: Texts.settings_unit_day,
+		unitKey: "settings_unit_day",
 		scale: 864e5
 	},
 	ugoiraCacheMaxEntries: {
@@ -707,9 +1425,7 @@ const SETTING_FIELD_MAP = {
 		section: "advanced",
 		group: "cache",
 		control: "number",
-		label: Texts.settings_field_ugoiraCacheMaxEntries_label,
-		description: Texts.settings_field_ugoiraCacheMaxEntries_desc,
-		unit: Texts.settings_unit_works,
+		unitKey: "settings_unit_works",
 		min: 1,
 		integer: true
 	},
@@ -718,9 +1434,7 @@ const SETTING_FIELD_MAP = {
 		section: "advanced",
 		group: "cache",
 		control: "number",
-		label: Texts.settings_field_ugoiraCacheMaxBytes_label,
-		description: Texts.settings_field_ugoiraCacheMaxBytes_desc,
-		unit: Texts.settings_unit_mib,
+		unitKey: "settings_unit_mib",
 		scale: 1048576,
 		integer: true
 	},
@@ -729,9 +1443,7 @@ const SETTING_FIELD_MAP = {
 		section: "advanced",
 		group: "cache",
 		control: "number",
-		label: Texts.settings_field_localTagMetadataCacheTtlMs_label,
-		description: Texts.settings_field_localTagMetadataCacheTtlMs_desc,
-		unit: Texts.settings_unit_day,
+		unitKey: "settings_unit_day",
 		scale: 864e5
 	},
 	tagTranslationCacheTtlMs: {
@@ -739,9 +1451,7 @@ const SETTING_FIELD_MAP = {
 		section: "advanced",
 		group: "cache",
 		control: "number",
-		label: Texts.settings_field_tagTranslationCacheTtlMs_label,
-		description: Texts.settings_field_tagTranslationCacheTtlMs_desc,
-		unit: Texts.settings_unit_day,
+		unitKey: "settings_unit_day",
 		scale: 864e5
 	},
 	tagTranslationCacheMaxEntries: {
@@ -749,9 +1459,7 @@ const SETTING_FIELD_MAP = {
 		section: "advanced",
 		group: "cache",
 		control: "number",
-		label: Texts.settings_field_tagTranslationCacheMaxEntries_label,
-		description: Texts.settings_field_tagTranslationCacheMaxEntries_desc,
-		unit: Texts.settings_unit_entries,
+		unitKey: "settings_unit_entries",
 		min: 2,
 		integer: true
 	},
@@ -760,9 +1468,7 @@ const SETTING_FIELD_MAP = {
 		section: "advanced",
 		group: "download",
 		control: "number",
-		label: Texts.settings_field_completedDownloadsMaxEntries_label,
-		description: Texts.settings_field_completedDownloadsMaxEntries_desc,
-		unit: Texts.settings_unit_entries,
+		unitKey: "settings_unit_entries",
 		min: 1,
 		integer: true
 	},
@@ -771,9 +1477,7 @@ const SETTING_FIELD_MAP = {
 		section: "advanced",
 		group: "download",
 		control: "number",
-		label: Texts.settings_field_retryableDownloadsMaxEntries_label,
-		description: Texts.settings_field_retryableDownloadsMaxEntries_desc,
-		unit: Texts.settings_unit_entries,
+		unitKey: "settings_unit_entries",
 		min: 1,
 		integer: true
 	},
@@ -782,9 +1486,7 @@ const SETTING_FIELD_MAP = {
 		section: "advanced",
 		group: "download",
 		control: "number",
-		label: Texts.settings_field_downloadProgressPersistMs_label,
-		description: Texts.settings_field_downloadProgressPersistMs_desc,
-		unit: Texts.settings_unit_s,
+		unitKey: "settings_unit_s",
 		scale: 1e3
 	},
 	downloadHeartbeatMs: {
@@ -792,9 +1494,7 @@ const SETTING_FIELD_MAP = {
 		section: "advanced",
 		group: "download",
 		control: "number",
-		label: Texts.settings_field_downloadHeartbeatMs_label,
-		description: Texts.settings_field_downloadHeartbeatMs_desc,
-		unit: Texts.settings_unit_s,
+		unitKey: "settings_unit_s",
 		scale: 1e3
 	},
 	downloadOwnerTimeoutMs: {
@@ -802,9 +1502,7 @@ const SETTING_FIELD_MAP = {
 		section: "advanced",
 		group: "download",
 		control: "number",
-		label: Texts.settings_field_downloadOwnerTimeoutMs_label,
-		description: Texts.settings_field_downloadOwnerTimeoutMs_desc,
-		unit: Texts.settings_unit_s,
+		unitKey: "settings_unit_s",
 		scale: 1e3
 	},
 	requestRetryIntervalMs: {
@@ -812,9 +1510,7 @@ const SETTING_FIELD_MAP = {
 		section: "advanced",
 		group: "network",
 		control: "number",
-		label: Texts.settings_field_requestRetryIntervalMs_label,
-		description: Texts.settings_field_requestRetryIntervalMs_desc,
-		unit: Texts.settings_unit_s,
+		unitKey: "settings_unit_s",
 		scale: 1e3,
 		min: 1e3
 	},
@@ -823,22 +1519,18 @@ const SETTING_FIELD_MAP = {
 		section: "advanced",
 		group: "network",
 		control: "number",
-		label: Texts.settings_field_requestMaxAttempts_label,
-		description: Texts.settings_field_requestMaxAttempts_desc,
-		unit: Texts.settings_unit_times,
+		unitKey: "settings_unit_times",
 		min: 1,
 		integer: true,
 		allowNullUnlimited: true,
-		placeholder: Texts.settings_field_requestMaxAttempts_placeholder
+		placeholderKey: "settings_field_requestMaxAttempts_placeholder"
 	},
 	tagRequestTimeoutMs: {
 		key: "tagRequestTimeoutMs",
 		section: "advanced",
 		group: "network",
 		control: "number",
-		label: Texts.settings_field_tagRequestTimeoutMs_label,
-		description: Texts.settings_field_tagRequestTimeoutMs_desc,
-		unit: Texts.settings_unit_s,
+		unitKey: "settings_unit_s",
 		scale: 1e3
 	},
 	ugoiraChunkBytes: {
@@ -846,9 +1538,7 @@ const SETTING_FIELD_MAP = {
 		section: "advanced",
 		group: "network",
 		control: "number",
-		label: Texts.settings_field_ugoiraChunkBytes_label,
-		description: Texts.settings_field_ugoiraChunkBytes_desc,
-		unit: Texts.settings_unit_bytes,
+		unitKey: "settings_unit_bytes",
 		min: 65536,
 		integer: true
 	},
@@ -857,9 +1547,7 @@ const SETTING_FIELD_MAP = {
 		section: "advanced",
 		group: "network",
 		control: "number",
-		label: Texts.settings_field_ugoiraTrailerBytes_label,
-		description: Texts.settings_field_ugoiraTrailerBytes_desc,
-		unit: Texts.settings_unit_bytes,
+		unitKey: "settings_unit_bytes",
 		min: 22,
 		integer: true
 	},
@@ -868,9 +1556,7 @@ const SETTING_FIELD_MAP = {
 		section: "advanced",
 		group: "scheduling",
 		control: "number",
-		label: Texts.settings_field_databaseOpenTimeoutMs_label,
-		description: Texts.settings_field_databaseOpenTimeoutMs_desc,
-		unit: Texts.settings_unit_s,
+		unitKey: "settings_unit_s",
 		scale: 1e3
 	},
 	domProbeIntervalMs: {
@@ -878,18 +1564,14 @@ const SETTING_FIELD_MAP = {
 		section: "advanced",
 		group: "scheduling",
 		control: "number",
-		label: Texts.settings_field_domProbeIntervalMs_label,
-		description: Texts.settings_field_domProbeIntervalMs_desc,
-		unit: Texts.settings_unit_ms
+		unitKey: "settings_unit_ms"
 	},
 	domProbeMaxAttempts: {
 		key: "domProbeMaxAttempts",
 		section: "advanced",
 		group: "scheduling",
 		control: "number",
-		label: Texts.settings_field_domProbeMaxAttempts_label,
-		description: Texts.settings_field_domProbeMaxAttempts_desc,
-		unit: Texts.settings_unit_times,
+		unitKey: "settings_unit_times",
 		min: 1,
 		integer: true
 	},
@@ -898,18 +1580,14 @@ const SETTING_FIELD_MAP = {
 		section: "advanced",
 		group: "scheduling",
 		control: "number",
-		label: Texts.settings_field_toolbarProbeIntervalMs_label,
-		description: Texts.settings_field_toolbarProbeIntervalMs_desc,
-		unit: Texts.settings_unit_ms
+		unitKey: "settings_unit_ms"
 	},
 	toolbarProbeMaxAttempts: {
 		key: "toolbarProbeMaxAttempts",
 		section: "advanced",
 		group: "scheduling",
 		control: "number",
-		label: Texts.settings_field_toolbarProbeMaxAttempts_label,
-		description: Texts.settings_field_toolbarProbeMaxAttempts_desc,
-		unit: Texts.settings_unit_times,
+		unitKey: "settings_unit_times",
 		min: 1,
 		integer: true
 	},
@@ -918,9 +1596,7 @@ const SETTING_FIELD_MAP = {
 		section: "advanced",
 		group: "scheduling",
 		control: "number",
-		label: Texts.settings_field_localTagRenderDebounceMs_label,
-		description: Texts.settings_field_localTagRenderDebounceMs_desc,
-		unit: Texts.settings_unit_ms,
+		unitKey: "settings_unit_ms",
 		min: 0
 	},
 	localTagPersistDelayMs: {
@@ -928,9 +1604,7 @@ const SETTING_FIELD_MAP = {
 		section: "advanced",
 		group: "scheduling",
 		control: "number",
-		label: Texts.settings_field_localTagPersistDelayMs_label,
-		description: Texts.settings_field_localTagPersistDelayMs_desc,
-		unit: Texts.settings_unit_ms,
+		unitKey: "settings_unit_ms",
 		min: 0
 	},
 	cacheCleanupIdleTimeoutMs: {
@@ -938,9 +1612,7 @@ const SETTING_FIELD_MAP = {
 		section: "advanced",
 		group: "scheduling",
 		control: "number",
-		label: Texts.settings_field_cacheCleanupIdleTimeoutMs_label,
-		description: Texts.settings_field_cacheCleanupIdleTimeoutMs_desc,
-		unit: Texts.settings_unit_s,
+		unitKey: "settings_unit_s",
 		scale: 1e3
 	}
 };
@@ -959,21 +1631,21 @@ const formatSettingInputValue = (descriptor, value) => {
 /** 校验内部表示的单个字段值是否合法 */
 const validateSettingValue = (descriptor, value) => {
 	switch (descriptor.control) {
-		case "boolean": return typeof value === "boolean" ? null : Texts.settings_err_option;
-		case "text": return typeof value === "string" ? null : Texts.settings_err_required;
-		case "select": return descriptor.options?.some((opt) => opt.value === value) ? null : Texts.settings_err_option;
+		case "boolean": return typeof value === "boolean" ? null : texts.settings_err_option;
+		case "text": return typeof value === "string" ? null : texts.settings_err_required;
+		case "select": return descriptor.options?.some((opt) => opt.value === value) ? null : texts.settings_err_option;
 		case "number":
-			if (value === null) return descriptor.allowNullUnlimited ? null : Texts.settings_err_required;
-			if (typeof value !== "number" || !Number.isFinite(value)) return Texts.settings_err_number;
-			if (descriptor.integer && !Number.isInteger(value)) return Texts.settings_err_integer;
+			if (value === null) return descriptor.allowNullUnlimited ? null : texts.settings_err_required;
+			if (typeof value !== "number" || !Number.isFinite(value)) return texts.settings_err_number;
+			if (descriptor.integer && !Number.isInteger(value)) return texts.settings_err_integer;
 			if (descriptor.min !== void 0) {
-				if (descriptor.min === 0 && value < 0) return Texts.settings_err_nonNegative;
+				if (descriptor.min === 0 && value < 0) return texts.settings_err_nonNegative;
 				if (value < descriptor.min) {
 					const displayMin = descriptor.scale ? Number((descriptor.min / descriptor.scale).toPrecision(12)) : descriptor.min;
-					const minText = descriptor.unit ? `${displayMin} ${descriptor.unit}` : String(displayMin);
-					return Texts.settings_err_min.replace("%1", minText);
+					const minText = descriptor.unitKey ? `${displayMin} ${texts[descriptor.unitKey]}` : displayMin;
+					return formatText(texts.settings_err_min, minText);
 				}
-			} else if (value <= 0) return Texts.settings_err_positive;
+			} else if (value <= 0) return texts.settings_err_positive;
 			return null;
 	}
 };
@@ -988,32 +1660,31 @@ const parseSettingInput = (descriptor, rawValue) => {
 		value: String(rawValue)
 	};
 	if (descriptor.control === "select") {
-		const parsed = Number(rawValue);
-		const error = validateSettingValue(descriptor, parsed);
-		if (error) return {
+		const option = descriptor.options?.find((opt) => String(opt.value) === String(rawValue));
+		if (!option) return {
 			ok: false,
-			message: error
+			message: texts.settings_err_option
 		};
 		return {
 			ok: true,
-			value: parsed
+			value: option.value
 		};
 	}
 	const trimmed = String(rawValue).trim();
-	if (!trimmed || descriptor.allowNullUnlimited && trimmed === "不限") {
+	if (!trimmed || descriptor.allowNullUnlimited && trimmed.toLowerCase() === texts.settings_unlimited.toLowerCase()) {
 		if (descriptor.allowNullUnlimited) return {
 			ok: true,
 			value: null
 		};
 		return {
 			ok: false,
-			message: Texts.settings_err_required
+			message: texts.settings_err_required
 		};
 	}
 	const rawNumber = Number(trimmed);
 	if (!Number.isFinite(rawNumber)) return {
 		ok: false,
-		message: Texts.settings_err_number
+		message: texts.settings_err_number
 	};
 	const scale = descriptor.scale ?? 1;
 	const scaled = Number((rawNumber * scale).toPrecision(12));
@@ -1061,6 +1732,7 @@ const ensureSyncListener = () => {
 		const prev = activeSettings ?? normalizeStoredSettings(oldValue);
 		const next = normalizeStoredSettings(newValue);
 		activeSettings = next;
+		setLocale(next.language);
 		notifyListeners(next, prev, "remote");
 	});
 };
@@ -1076,17 +1748,20 @@ const validateCandidateSettings = (candidate) => {
 	}
 	if (candidate.downloadProgressPersistMs > candidate.downloadHeartbeatMs && !errors.some((e) => e.key === "downloadProgressPersistMs")) errors.push({
 		key: "downloadProgressPersistMs",
-		message: Texts.settings_err_progressExceedsHeartbeat
+		message: texts.settings_err_progressExceedsHeartbeat
 	});
 	if (candidate.downloadHeartbeatMs >= candidate.downloadOwnerTimeoutMs && !errors.some((e) => e.key === "downloadOwnerTimeoutMs")) errors.push({
 		key: "downloadOwnerTimeoutMs",
-		message: Texts.settings_err_timeoutNotGreaterThanHeartbeat
+		message: texts.settings_err_timeoutNotGreaterThanHeartbeat
 	});
 	return errors;
 };
 const getSettings = () => {
 	ensureSyncListener();
-	if (!activeSettings) activeSettings = normalizeStoredSettings(GM_getValue(SETTINGS_KEY));
+	if (!activeSettings) {
+		activeSettings = normalizeStoredSettings(GM_getValue(SETTINGS_KEY));
+		setLocale(activeSettings.language);
+	}
 	return { ...activeSettings };
 };
 const subscribeSettings = (listener) => {
@@ -1108,7 +1783,7 @@ const saveUserSettings = (edits) => {
 			ok: false,
 			errors: [{
 				key: null,
-				message: Texts.settings_saveStorageError
+				message: texts.settings_saveStorageError
 			}]
 		};
 	}
@@ -1130,12 +1805,13 @@ const saveUserSettings = (edits) => {
 			ok: false,
 			errors: [{
 				key: null,
-				message: Texts.settings_saveStorageError
+				message: texts.settings_saveStorageError
 			}]
 		};
 	}
 	const prev = activeSettings ? { ...activeSettings } : latest;
 	activeSettings = { ...candidate };
+	setLocale(candidate.language);
 	notifyListeners(candidate, prev, "local");
 	return {
 		ok: true,
@@ -2044,12 +2720,12 @@ const startDownload = (record, options = {}) => {
 			},
 			onerror: function(response) {
 				if (!isActive()) return;
-				fail(response.error || "网络错误");
+				fail(response.error || "network-error");
 				onerror?.call(this, response);
 			},
 			ontimeout: function() {
 				if (!isActive()) return;
-				fail("下载超时");
+				fail("timeout");
 				ontimeout?.call(this);
 			},
 			onabort: function() {
@@ -2058,7 +2734,7 @@ const startDownload = (record, options = {}) => {
 					return;
 				}
 				if (!isActive()) return;
-				fail("下载已取消");
+				fail("canceled");
 				onabort?.call(this);
 			}
 		});
@@ -2242,10 +2918,20 @@ const waitFor = (probe, action, { interval, maxAttempts, onGiveUp } = {}) => {
 const BUTTON_ID = "pp-downloads-button";
 const PANEL_ID$1 = "pp-downloads-panel";
 const formatBytes = (bytes) => bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.ceil(bytes / 1024)} KB`;
-const formatTime = (timestamp) => {
-	const date = new Date(timestamp);
-	const pad = (value) => String(value).padStart(2, "0");
-	return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+const formatTime = (timestamp) => new Date(timestamp).toLocaleString(locale, {
+	year: "numeric",
+	month: "2-digit",
+	day: "2-digit",
+	hour: "2-digit",
+	minute: "2-digit"
+});
+const formatDownloadError = (error) => {
+	switch (error) {
+		case "network-error": return texts.download_errorNetwork;
+		case "timeout": return texts.download_errorTimeout;
+		case "canceled": return texts.download_errorCanceled;
+		default: return error || texts.download_errorNetwork;
+	}
 };
 const createIconButton$1 = (label, icon, className, onClick) => $("<button>").attr({
 	type: "button",
@@ -2349,8 +3035,8 @@ const loadDownloadPanel = (toolbar) => {
 	const button = $("<button>").attr({
 		id: BUTTON_ID,
 		type: "button",
-		title: "下载记录",
-		"aria-label": "下载记录",
+		title: texts.download_title,
+		"aria-label": texts.download_title,
 		"aria-expanded": "false",
 		"aria-controls": PANEL_ID$1,
 		"aria-haspopup": "dialog"
@@ -2366,36 +3052,37 @@ const loadDownloadPanel = (toolbar) => {
 	}).prop("hidden", true).appendTo("body");
 	const closeButton = $("<button>").attr({
 		type: "button",
-		title: "关闭下载记录",
-		"aria-label": "关闭下载记录"
-	}).text("关闭");
-	$("<header>").append($("<h2>").attr("id", "pp-downloads-heading").text("下载记录"), closeButton).appendTo(panel);
+		title: texts.download_close,
+		"aria-label": texts.download_close
+	}).text(texts.close);
+	const heading = $("<h2>").attr("id", "pp-downloads-heading").text(texts.download_title);
+	$("<header>").append(heading, closeButton).appendTo(panel);
 	const summary = $("<p>").addClass("pp-download-summary").appendTo(panel);
 	const actions = $("<div>").addClass("pp-download-actions").appendTo(panel);
 	const clearCompletedButton = $("<button>").attr({
 		type: "button",
-		title: "清空已完成的下载记录"
-	}).text("清空已完成记录").on("click", clearCompletedDownloads).appendTo(actions);
+		title: texts.download_clearCompletedHelp
+	}).text(texts.download_clearCompleted).on("click", clearCompletedDownloads).appendTo(actions);
 	const retryFailedButton = $("<button>").attr({
 		type: "button",
-		title: "重新下载所有失败的记录"
-	}).text("重试所有失败记录").on("click", () => {
+		title: texts.download_retryFailed
+	}).text(texts.download_retryFailed).on("click", () => {
 		for (const record of getDownloads()) if (record.status === "failed") retryDownload(record.id);
 	}).appendTo(actions);
 	const moreActions = $("<details>").addClass("pp-download-menu").appendTo(actions);
 	const moreActionsSummary = $("<summary>").attr({
-		title: "更多操作",
-		"aria-label": "更多操作"
+		title: texts.download_moreActions,
+		"aria-label": texts.download_moreActions
 	}).text("⋯").appendTo(moreActions);
 	const moreActionsContent = $("<div>").addClass("pp-download-menu-content").appendTo(moreActions);
 	const ignoreRetryableButton = $("<button>").attr({
 		type: "button",
-		title: "移除所有失败和中断的下载记录"
-	}).text("忽略所有待重试记录").on("click", () => {
+		title: texts.download_ignoreRetryableHelp
+	}).text(texts.download_ignoreRetryable).on("click", () => {
 		ignoreRetryableDownloads();
 		moreActions.prop("open", false);
 	}).appendTo(moreActionsContent);
-	const list = $("<ul>").attr("aria-label", "图片下载列表").appendTo(panel);
+	const list = $("<ul>").attr("aria-label", texts.download_list).appendTo(panel);
 	const rows = /* @__PURE__ */ new Map();
 	const positionPanel = () => {
 		if (panel.prop("hidden")) return;
@@ -2422,15 +3109,13 @@ const loadDownloadPanel = (toolbar) => {
 			row.item.remove();
 			rows.delete(id);
 		}
-		const title = `下载记录`;
 		countBadge.text(String(active)).prop("hidden", active === 0);
 		button.attr({
 			"data-active": String(active > 0),
 			"data-attention": String(attention > 0),
-			"aria-busy": String(active > 0),
-			title
+			"aria-busy": String(active > 0)
 		});
-		summary.text(records.length ? `${active} 项下载中 · ${completed} 项已完成 · ${attention} 项待重试` : "暂无下载记录，点击预览中的“原图”开始下载。");
+		summary.text(records.length ? formatText(texts.download_summary, active, completed, attention) : texts.download_empty);
 		for (const record of [...records].reverse()) {
 			let row = rows.get(record.id);
 			if (!row) {
@@ -2447,11 +3132,11 @@ const loadDownloadPanel = (toolbar) => {
 				const status = $("<small>").appendTo(info);
 				const progress = $("<progress>").attr({
 					max: 100,
-					"aria-label": `${record.filename} 下载进度`
+					"aria-label": formatText(texts.download_progress, record.filename)
 				}).appendTo(info);
-				const abort = createIconButton$1(`中止下载 ${record.filename}`, stop_default, "pp-download-abort", () => abortDownload(record.id)).appendTo(item);
-				const retry = createIconButton$1(`重试下载 ${record.filename}`, retry_default, "pp-download-retry", () => retryDownload(record.id)).appendTo(item);
-				const remove = createIconButton$1(`删除记录 ${record.filename}`, trash_default, "pp-download-remove", () => removeDownload(record.id)).appendTo(item);
+				const abort = createIconButton$1(formatText(texts.download_abort, record.filename), stop_default, "pp-download-abort", () => abortDownload(record.id)).appendTo(item);
+				const retry = createIconButton$1(formatText(texts.download_retry, record.filename), retry_default, "pp-download-retry", () => retryDownload(record.id)).appendTo(item);
+				const remove = createIconButton$1(formatText(texts.download_remove, record.filename), trash_default, "pp-download-remove", () => removeDownload(record.id)).appendTo(item);
 				list.prepend(item);
 				row = {
 					item,
@@ -2467,12 +3152,12 @@ const loadDownloadPanel = (toolbar) => {
 			const local = running && isDownloadingInThisTab(record.id);
 			const retryable = record.status === "failed" || record.status === "interrupted";
 			const percent = record.total > 0 ? Math.min(100, Math.floor(record.loaded / record.total * 100)) : void 0;
-			const progressText = `${percent === void 0 ? formatBytes(record.loaded) : `${percent}% · ${formatBytes(record.loaded)} / ${formatBytes(record.total)}`}`;
+			const progressText = percent === void 0 ? formatBytes(record.loaded) : `${percent}% · ${formatBytes(record.loaded)} / ${formatBytes(record.total)}`;
 			const labels = {
-				downloading: local ? `下载中 ${progressText}` : `其他标签页下载中 ${progressText}`,
-				completed: `已下载 · ${formatBytes(record.loaded)}${record.completedAt === void 0 ? "" : ` · ${formatTime(record.completedAt)}`}`,
-				interrupted: "下载已中断，点击重试重新下载",
-				failed: `下载失败：${record.error || "网络错误"}`
+				downloading: local ? formatText(texts.download_downloadingHere, progressText) : formatText(texts.download_downloadingElsewhere, progressText),
+				completed: `${texts.download_completed} · ${formatBytes(record.loaded)}${record.completedAt === void 0 ? "" : ` · ${formatTime(record.completedAt)}`}`,
+				interrupted: texts.download_interrupted,
+				failed: formatText(texts.download_failed, formatDownloadError(record.error))
 			};
 			row.status.text(labels[record.status]);
 			row.abort.prop("hidden", !local);
@@ -2521,6 +3206,28 @@ const loadDownloadPanel = (toolbar) => {
 	});
 	window.addEventListener("resize", positionPanel);
 	subscribeDownloads(update);
+	subscribeSettings((next, prev) => {
+		if (next.language === prev.language) return;
+		button.attr({
+			title: texts.download_title,
+			"aria-label": texts.download_title
+		});
+		heading.text(texts.download_title);
+		closeButton.attr({
+			title: texts.download_close,
+			"aria-label": texts.download_close
+		}).text(texts.close);
+		clearCompletedButton.attr("title", texts.download_clearCompletedHelp).text(texts.download_clearCompleted);
+		retryFailedButton.attr("title", texts.download_retryFailed).text(texts.download_retryFailed);
+		moreActionsSummary.attr({
+			title: texts.download_moreActions,
+			"aria-label": texts.download_moreActions
+		});
+		ignoreRetryableButton.attr("title", texts.download_ignoreRetryableHelp).text(texts.download_ignoreRetryable);
+		list.attr("aria-label", texts.download_list).empty();
+		rows.clear();
+		update();
+	});
 	update();
 };
 
@@ -2986,6 +3693,12 @@ const getLocalTagColor = (tag) => {
 
 // src/features/local-tags.ts
 const TAG_LINK_SELECTOR = "a[href*=\"/tags/\"]:not(nav > a, .gtm-new-work-tag-event-click, .gtm-new-work-translate-tag-event-click, .gtm-new-work-tag-thumbnail-event-click, [data-ga4-label=\"tab_link\"], [data-ga4-label=\"suggest_chip\"], [data-ga4-label=\"delete_button\"], [data-ga4-label=\"submit_button\"])";
+const PIXIV_FAVORITE_TAG_BUTTON_LABELS = [
+	/^(?:编辑|編輯|(?:添加|新增)(?:进|到|至))(?:喜欢|喜爱|喜歡|喜愛)的(?:标签|標籤)$/,
+	/^(?:Add to (?:your )?(?:favorites|favorite tags)|Edit (?:your )?favorite tags)$/i,
+	/^お気に入り(?:に登録|タグを編集)$/,
+	/^즐겨찾기(?:에 등록| 태그를 편집)$/
+];
 const POPOVER_ID = "pp-local-tag-popover";
 const MANAGER_ID = "pp-local-tags-manager";
 const STRIP_CLASS = "pp-local-tags";
@@ -3224,13 +3937,13 @@ const loadLocalTags = () => {
 	const popover = $("<div>").attr({
 		id: POPOVER_ID,
 		role: "dialog",
-		"aria-label": "标签详情"
+		"aria-label": texts.tag_details
 	}).prop("hidden", true);
 	const preview = $("<a>").attr({
 		class: "pp-tag-preview",
 		target: "_blank",
 		rel: "noopener noreferrer",
-		"aria-label": "在新窗口打开预览作品"
+		"aria-label": texts.tag_openPreview
 	});
 	const thumbnail = $("<img>").appendTo(preview);
 	const content = $("<div>").addClass("pp-tag-content");
@@ -3251,7 +3964,7 @@ const loadLocalTags = () => {
 		if (addingTag) return;
 		addingTag = tag;
 		button?.prop("disabled", true);
-		button?.text("正在添加…");
+		button?.text(texts.tag_adding);
 		updateAction();
 		getTagTranslation(tag).then((label) => {
 			if (disposed || !getSettings().enableLocalTags) return;
@@ -3264,11 +3977,11 @@ const loadLocalTags = () => {
 			updateAction();
 		}).catch((error) => {
 			if (disposed) return;
-			if (button !== action || activeTag === tag) button?.text("添加失败，点击重试");
+			if (button !== action || activeTag === tag) button?.text(texts.tag_addFailed);
 			iLog.w("Failed to add local tag:", error);
 		});
 	};
-	const action = createButton("添加到本地标签", () => {
+	const action = createButton(texts.tag_add, () => {
 		if (activeTag) addTagFromApi(activeTag, action);
 	});
 	content.append(title, abstract, stats, action);
@@ -3292,7 +4005,7 @@ const loadLocalTags = () => {
 	};
 	const updateAction = () => {
 		const pending = !!activeTag && addingTag === activeTag;
-		action.prop("hidden", !activeTag || hasLocalTag(activeTag)).prop("disabled", pending).text(pending ? "正在添加…" : "添加到本地标签");
+		action.prop("hidden", !activeTag || hasLocalTag(activeTag)).prop("disabled", pending).text(pending ? texts.tag_adding : texts.tag_add);
 	};
 	const positionPopover = () => {
 		if (!activeLink || popover.prop("hidden")) return;
@@ -3313,15 +4026,15 @@ const loadLocalTags = () => {
 	const updateStats = async (tag, link) => {
 		if (!hasLocalTag(tag)) return;
 		const lastTotal = getLocalTag(tag)?.lastTotal;
-		stats.text(`插画漫画作品总数：${lastTotal ?? "-"} 件`);
+		stats.text(formatText(texts.tag_total, lastTotal ?? "-"));
 		stats.prop("hidden", false);
 		try {
 			const total = await getTagCurrentTotal(tag);
 			if (disposed || total === void 0 || activeLink !== link || activeTag !== tag) return;
-			if (lastTotal === void 0) stats.text(`插画漫画作品总数：${total} 件`);
+			if (lastTotal === void 0) stats.text(formatText(texts.tag_total, total));
 			else {
 				const added = total - lastTotal;
-				stats.text(added >= 0 ? `插画漫画作品总数：${total} 件（新增 ${added} 件）` : `插画漫画作品总数：${total} 件（减少 ${-added} 件）`);
+				stats.text(added >= 0 ? formatText(texts.tag_totalAdded, total, added) : formatText(texts.tag_totalRemoved, total, -added));
 			}
 			positionPopover();
 		} catch {}
@@ -3333,7 +4046,7 @@ const loadLocalTags = () => {
 		activeLink = link;
 		activeTag = tag;
 		title.text(tag);
-		abstract.text("正在加载标签详情…");
+		abstract.text(texts.tag_loadingDetails);
 		stats.prop("hidden", true).text("");
 		thumbnail.prop("hidden", true).removeAttr("src");
 		preview.removeAttr("href");
@@ -3348,18 +4061,18 @@ const loadLocalTags = () => {
 			const details = await getTagDetails(tag);
 			if (disposed || activeLink !== link || activeTag !== tag) return;
 			title.text(details.tag || tag);
-			abstract.text(details.abstract || "暂无标签简介");
+			abstract.text(details.abstract || texts.tag_noDescription);
 			if (details.thumbnail) {
 				const artworkId = details.thumbnail.match(/\/(\d+)(?:-[\da-zA-Z]+)?_p\d+/)?.[1];
 				if (artworkId) preview.attr("href", `https://www.pixiv.net/artworks/${artworkId}`);
 				thumbnail.attr({
-					alt: `${details.tag || tag}的缩略图`,
+					alt: formatText(texts.tag_thumbnail, details.tag || tag),
 					src: details.thumbnail
 				}).prop("hidden", false);
 			}
 		} catch {
 			if (disposed || activeLink !== link || activeTag !== tag) return;
-			abstract.text("标签详情加载失败，请稍后重新悬浮重试。");
+			abstract.text(texts.tag_loadFailed);
 		}
 		if (!disposed) positionPopover();
 	};
@@ -3368,8 +4081,8 @@ const loadLocalTags = () => {
 		const drafts = new Map(manager.find("input[type=\"text\"]").toArray().filter((input) => $(input).val() !== $(input).prop("defaultValue")).map((input) => [$(input).attr("data-focus-key"), $(input).val()]));
 		manager.empty();
 		const header = $("<header>");
-		const heading = $("<h2>").attr("id", "pp-local-tags-heading").text("本地标签管理");
-		header.append(heading, createButton("关闭", () => manager.get(0).close()));
+		const heading = $("<h2>").attr("id", "pp-local-tags-heading").text(texts.tag_manage);
+		header.append(heading, createButton(texts.close, () => manager.get(0).close()));
 		const sortLabel = $("<label>");
 		const autoSort = $("<input>").attr({
 			type: "checkbox",
@@ -3379,10 +4092,10 @@ const loadLocalTags = () => {
 			setLocalTagAutoSort(autoSort.prop("checked"));
 			refresh();
 		});
-		sortLabel.append(autoSort, "自动排序（访问次数越多越靠前）");
+		sortLabel.append(autoSort, texts.tag_autoSort);
 		manager.append(header, sortLabel);
 		const tags = getSortedLocalTags();
-		if (!tags.length) manager.append($("<p>").text("暂无本地标签。悬浮任意标签，点击“添加到本地标签”。"));
+		if (!tags.length) manager.append($("<p>").text(texts.tag_empty));
 		const list = $("<ul>");
 		let draggedRow = null;
 		list.on("drop", (event) => {
@@ -3398,14 +4111,14 @@ const loadLocalTags = () => {
 				href: `/tags/${encodeURIComponent(item.tag)}`,
 				target: "_blank",
 				rel: "noopener noreferrer"
-			}).text(item.tag), $("<small>").text(` · 访问 ${item.visits} 次`));
+			}).text(item.tag), $("<small>").text(` · ${formatText(texts.tag_visits, item.visits)}`));
 			const rowHeading = $("<div>").addClass("pp-tag-heading");
 			if (!autoSort.prop("checked")) {
 				const handle = $("<button>").attr({
 					type: "button",
 					draggable: "true",
-					title: "拖拽排序",
-					"aria-label": `排序 ${item.label || item.tag}`,
+					title: texts.tag_dragSort,
+					"aria-label": formatText(texts.tag_reorder, item.label || item.tag),
 					"data-focus-key": `sort:${item.tag}`
 				}).addClass("pp-tag-drag").on("dragstart", (event) => {
 					draggedRow = row;
@@ -3439,14 +4152,14 @@ const loadLocalTags = () => {
 			const form = $("<form>");
 			const input = $("<input>").attr({
 				type: "text",
-				placeholder: "填一个好记的备注名吧",
-				"aria-label": `${item.tag}的显示名称`,
+				placeholder: texts.tag_labelPlaceholder,
+				"aria-label": formatText(texts.tag_label, item.tag),
 				"data-focus-key": `label:${item.tag}`
 			}).prop("defaultValue", item.label).val(drafts.get(`label:${item.tag}`) ?? item.label);
 			const save = $("<button>").attr({
 				type: "submit",
 				"data-focus-key": `save:${item.tag}`
-			}).text("保存备注名");
+			}).text(texts.tag_saveLabel);
 			form.on("submit", (event) => {
 				event.preventDefault();
 				const label = input.val().trim();
@@ -3454,29 +4167,29 @@ const loadLocalTags = () => {
 				input.val(label).prop("defaultValue", label);
 				refresh();
 			});
-			const up = createButton("上移", () => {
+			const up = createButton(texts.tag_moveUp, () => {
 				moveLocalTag(item.tag, index - 1);
 				refresh();
 			});
-			const down = createButton("下移", () => {
+			const down = createButton(texts.tag_moveDown, () => {
 				moveLocalTag(item.tag, index + 1);
 				refresh();
 			});
 			up.attr({
 				"data-focus-key": `up:${item.tag}`,
-				"aria-label": `上移 ${item.label || item.tag}`
+				"aria-label": formatText(texts.tag_moveUpNamed, item.label || item.tag)
 			}).prop({
 				hidden: autoSort.prop("checked"),
 				disabled: index === 0
 			});
 			down.attr({
 				"data-focus-key": `down:${item.tag}`,
-				"aria-label": `下移 ${item.label || item.tag}`
+				"aria-label": formatText(texts.tag_moveDownNamed, item.label || item.tag)
 			}).prop({
 				hidden: autoSort.prop("checked"),
 				disabled: index === tags.length - 1
 			});
-			const remove = createIconButton(`删除 ${item.label || item.tag}`, trash_default, () => {
+			const remove = createIconButton(formatText(texts.tag_remove, item.label || item.tag), trash_default, () => {
 				removeLocalTag(item.tag);
 				refresh();
 			}).addClass("pp-tag-danger");
@@ -3497,15 +4210,15 @@ const loadLocalTags = () => {
 		strip.empty();
 		const tag = getTagFromPath(location.pathname);
 		if (tag) {
-			if (hasLocalTag(tag)) strip.append(createButton("本地标签管理", openManager));
+			if (hasLocalTag(tag)) strip.append(createButton(texts.tag_manage, openManager));
 			else {
-				const addButton = createButton("添加到本地标签", () => addTagFromApi(tag, addButton));
+				const addButton = createButton(texts.tag_add, () => addTagFromApi(tag, addButton));
 				strip.append(addButton);
 			}
 			return;
 		}
 		const tags = getSortedLocalTags();
-		strip.append(tags.length >= 10 ? createIconButton("本地标签管理", settings_default, openManager) : createButton("本地标签管理", openManager));
+		strip.append(tags.length >= 10 ? createIconButton(texts.tag_manage, settings_default, openManager) : createButton(texts.tag_manage, openManager));
 		const links = $("<span>").attr("data-tag-links", "");
 		links.append(...tags.map(createTagLink));
 		strip.append(links);
@@ -3524,9 +4237,13 @@ const loadLocalTags = () => {
 		before.before(strip);
 	};
 	const mountEntries = () => {
+		if ($(`.${STRIP_CLASS}`).length) return;
 		const pathname = location.pathname.replace(/^\/en(?=\/|$)/, "") || "/";
 		if (getTagFromPath(pathname)) {
-			const edit = $("button").filter((_, button) => /(?:编辑|添加(?:进|到))(喜欢|喜爱)的标签/.test($(button).text())).first();
+			const edit = $("button").filter((_, button) => {
+				const label = $(button).text().trim();
+				return PIXIV_FAVORITE_TAG_BUTTON_LABELS.some((pattern) => pattern.test(label));
+			}).first();
 			if (edit.length) mountStrip(edit.parent(), edit);
 		} else if (/^\/(?:illustration\/?|manga\/?|cate_r18\.php)?$/.test(pathname)) {
 			const firstTag = $(TAG_LINK_SELECTOR).filter((_, link) => !$(link).closest(`.${STRIP_CLASS}, header`).length && !!getTagLink(link)).first();
@@ -4651,6 +5368,10 @@ const loadIllustPreview = () => {
 			previewIllust.cancel();
 			previewedIllust.reset();
 		}
+		if (next.language !== prev.language) {
+			previewedIllust.resetDownloadButton();
+			previewedIllust.renderIllustrationDetails(previewedIllust.illustDetails);
+		}
 	});
 	(function inactiveUnexpectedDoms() {
 		injectStyle(`
@@ -4798,6 +5519,7 @@ var PreviewedIllust = class {
 	*/
 	#ensureWrapperDom() {
 		if (this.previewWrapperElement.length) return;
+		setLocale(getSettings().language);
 		this.previewWrapperElement = $(document.createElement("div")).attr({ id: "pp-wrapper" }).css({
 			position: "fixed",
 			"z-index": "999999",
@@ -4827,7 +5549,7 @@ var PreviewedIllust = class {
 		}).appendTo(this.previewWrapperHeader);
 		this.pageCountText = $(document.createElement("span")).text("1/1");
 		this.pageCountElement = $(document.createElement("div")).css(INTERACTIVE_BADGE_CSS).append(page_default).append(this.pageCountText).hide().appendTo(this.previewWrapperHeader);
-		this.downloadOriginalElement = $(document.createElement("a")).css(INTERACTIVE_BADGE_CSS).append(`${download_default}<span>原图</span>`).appendTo(this.previewWrapperHeader);
+		this.downloadOriginalElement = $(document.createElement("a")).css(INTERACTIVE_BADGE_CSS).append(download_default, $("<span>").text(texts.preview_original)).appendTo(this.previewWrapperHeader);
 		this.previewLoadingElement = createLoadingSpinner().appendTo(this.previewWrapperElement);
 		this.previewImageElement = $(new Image()).css({ "border-radius": `${8}px` }).hide().appendTo(this.previewWrapperElement);
 		this.pageLoadingOverlayElement = $(document.createElement("div")).css({
@@ -5000,7 +5722,7 @@ var PreviewedIllust = class {
 			clearTimeout(this.#downloadResetTimeout);
 			this.#downloadResetTimeout = null;
 		}
-		this.downloadOriginalElement.find("span").text("原图");
+		this.downloadOriginalElement.find("span").text(texts.preview_original);
 		this.downloadOriginalElement.css({
 			pointerEvents: "",
 			backgroundImage: "",
@@ -5068,7 +5790,7 @@ var PreviewedIllust = class {
 			backgroundSize: "0% 100%",
 			backgroundRepeat: "no-repeat"
 		});
-		textSpan.text("下载中");
+		textSpan.text(texts.download_downloading);
 		downloadIllust({
 			url: currentImageOriginalUrl,
 			filename: currentImageFilename,
@@ -5091,7 +5813,7 @@ var PreviewedIllust = class {
 				},
 				onload: () => {
 					if (this.downloadOriginalElement !== downloadElement || this.currentPage !== downloadPage) return;
-					textSpan.text("已下载");
+					textSpan.text(texts.download_completed);
 					this.downloadOriginalElement.css({
 						backgroundImage: "",
 						backgroundSize: "",
@@ -5249,16 +5971,16 @@ var PreviewedIllust = class {
 				illustrationDetailsElements.push($(document.createElement("div")).css({
 					...DETAIL_BADGE_CSS,
 					background: "rgb(14, 116, 144)"
-				}).text("动图"));
+				}).text(texts.preview_ugoira));
 			}
 			if (isAi) illustrationDetailsElements.push($(document.createElement("div")).css({
 				...DETAIL_BADGE_CSS,
 				background: "rgb(162, 28, 175)"
-			}).text("AI 生成"));
+			}).text(texts.artwork_aiGenerated));
 			else if (isAiAssisted) illustrationDetailsElements.push($(document.createElement("div")).css({
 				...DETAIL_BADGE_CSS,
 				background: "rgb(109, 40, 217)"
-			}).text("AI 辅助"));
+			}).text(texts.artwork_aiAssisted));
 			illustrationDetailsElements.push($(document.createElement("div")).css({
 				...DETAIL_BADGE_CSS,
 				background: bookmarkUserTotal > 5e4 ? "rgb(159, 18, 57)" : bookmarkUserTotal > 1e4 ? "rgb(220, 38, 38)" : bookmarkUserTotal > 5e3 ? "rgb(29, 78, 216)" : bookmarkUserTotal > 1e3 ? "rgb(21, 128, 61)" : "rgb(71, 85, 105)"
@@ -5846,7 +6568,8 @@ const createFieldRow = (descriptor, session, onFieldChange) => {
 		"data-control": descriptor.control
 	});
 	const mainRow = $("<div>").addClass("pp-settings-row");
-	const label = $("<label>").addClass("pp-settings-label").attr("for", inputId).text(descriptor.label);
+	const fieldLabel = texts[`settings_field_${descriptor.key}_label`];
+	const label = $("<label>").addClass("pp-settings-label").attr("for", inputId).text(fieldLabel);
 	const controlWrap = $("<div>").addClass("pp-settings-control");
 	let input;
 	const initialValue = session.getDraftValue(descriptor.key);
@@ -5863,7 +6586,7 @@ const createFieldRow = (descriptor, session, onFieldChange) => {
 			id: inputId,
 			"aria-describedby": descId
 		});
-		for (const option of descriptor.options ?? []) $("<option>").val(String(option.value)).text(option.label).appendTo(select);
+		for (const option of descriptor.options ?? []) $("<option>").val(String(option.value)).text("label" in option ? option.label : texts[option.labelKey]).appendTo(select);
 		select.val(String(initialValue)).on("change", () => {
 			session.setInput(descriptor.key, String(select.val() ?? ""));
 			onFieldChange(descriptor.key);
@@ -5875,7 +6598,7 @@ const createFieldRow = (descriptor, session, onFieldChange) => {
 			id: inputId,
 			type: "text",
 			inputmode: isNumber ? descriptor.integer ? "numeric" : "decimal" : "text",
-			placeholder: descriptor.placeholder ?? "",
+			placeholder: descriptor.placeholderKey ? texts[descriptor.placeholderKey] : "",
 			"aria-describedby": descId
 		}).val(String(initialValue)).on("input", () => {
 			session.setInput(descriptor.key, String(input.val() ?? ""));
@@ -5884,8 +6607,8 @@ const createFieldRow = (descriptor, session, onFieldChange) => {
 	}
 	const restoreOneButton = $("<button>").attr({
 		type: "button",
-		title: Texts.settings_restoreDefault,
-		"aria-label": `${Texts.settings_restoreDefault}：${descriptor.label}`
+		title: texts.settings_restoreDefault,
+		"aria-label": formatText(texts.settings_restoreField, fieldLabel)
 	}).addClass("pp-settings-icon-btn pp-settings-reset-one").html(restore_default_default).prop("hidden", session.isFieldDefault(descriptor.key)).on("click", () => {
 		const wasFocused = document.activeElement === restoreOneButton.get(0);
 		const restored = session.restoreField(descriptor.key);
@@ -5895,8 +6618,8 @@ const createFieldRow = (descriptor, session, onFieldChange) => {
 	});
 	const revertOneButton = $("<button>").attr({
 		type: "button",
-		title: Texts.settings_revertToPrevious,
-		"aria-label": `${Texts.settings_revertToPrevious}：${descriptor.label}`
+		title: texts.settings_revertToPrevious,
+		"aria-label": formatText(texts.settings_revertField, fieldLabel)
 	}).addClass("pp-settings-icon-btn pp-settings-revert-one").html(undo_default).prop("hidden", !session.isFieldModified(descriptor.key)).on("click", () => {
 		const wasFocused = document.activeElement === revertOneButton.get(0);
 		const reverted = session.revertField(descriptor.key);
@@ -5905,11 +6628,33 @@ const createFieldRow = (descriptor, session, onFieldChange) => {
 		if (wasFocused) input.trigger("focus");
 	});
 	controlWrap.append(restoreOneButton, revertOneButton, input);
-	if (descriptor.unit) $("<span>").addClass("pp-settings-unit").text(descriptor.unit).appendTo(controlWrap);
+	const unitEl = descriptor.unitKey ? $("<span>").addClass("pp-settings-unit").text(texts[descriptor.unitKey]).appendTo(controlWrap) : null;
 	mainRow.append(label, controlWrap);
-	const desc = $("<div>").addClass("pp-settings-desc").attr("id", descId).text(descriptor.description);
+	const desc = $("<div>").addClass("pp-settings-desc").attr("id", descId).text(texts[`settings_field_${descriptor.key}_desc`]);
 	const errorEl = $("<div>").addClass("pp-settings-error").attr("id", errorId).prop("hidden", true);
 	row.append(mainRow, desc, errorEl);
+	const refreshText = () => {
+		const nextLabel = texts[`settings_field_${descriptor.key}_label`];
+		label.text(nextLabel);
+		desc.text(texts[`settings_field_${descriptor.key}_desc`]);
+		if (unitEl && descriptor.unitKey) unitEl.text(texts[descriptor.unitKey]);
+		if (descriptor.placeholderKey) input.attr("placeholder", texts[descriptor.placeholderKey]);
+		if (descriptor.control === "select") {
+			const options = descriptor.options ?? [];
+			input.children("option").each((index, el) => {
+				const option = options[index];
+				if (option) $(el).text("label" in option ? option.label : texts[option.labelKey]);
+			});
+		}
+		restoreOneButton.attr({
+			title: texts.settings_restoreDefault,
+			"aria-label": formatText(texts.settings_restoreField, nextLabel)
+		});
+		revertOneButton.attr({
+			title: texts.settings_revertToPrevious,
+			"aria-label": formatText(texts.settings_revertField, nextLabel)
+		});
+	};
 	return {
 		row,
 		input,
@@ -5917,7 +6662,8 @@ const createFieldRow = (descriptor, session, onFieldChange) => {
 		revertButton: revertOneButton,
 		errorEl,
 		descId,
-		errorId
+		errorId,
+		refreshText
 	};
 };
 const syncControlValue = (descriptor, input, value) => {
@@ -5970,9 +6716,10 @@ const openSettingsPanel = () => {
 	});
 	const closeButton = $("<button>").attr({
 		type: "button",
-		"aria-label": Texts.settings_close
-	}).text(Texts.settings_close);
-	$("<header>").append($("<h2>").attr("id", HEADING_ID).text(Texts.settings_panelTitle), closeButton).appendTo(panel);
+		"aria-label": texts.close
+	}).text(texts.close);
+	const heading = $("<h2>").attr("id", HEADING_ID).text(texts.settings_title);
+	$("<header>").append(heading, closeButton).appendTo(panel);
 	const body = $("<div>").addClass("pp-settings-body").appendTo(panel);
 	const statusBanner = $("<div>").addClass("pp-settings-status").attr({
 		role: "status",
@@ -6004,11 +6751,13 @@ const openSettingsPanel = () => {
 		for (const key of fieldControls.keys()) syncFieldVisualState(key);
 		syncAdvancedModifiedState();
 	};
+	const groupHeadings = /* @__PURE__ */ new Map();
 	const renderGroupSection = (group) => {
 		const fields = SETTING_FIELDS.filter((field) => field.group === group.id);
 		if (fields.length === 0) return null;
 		const section = $("<section>").addClass("pp-settings-group").attr("data-setting-group", group.id);
-		$("<h3>").text(group.title).appendTo(section);
+		const groupHeading = $("<h3>").text(texts[`settings_group_${group.id}`]).appendTo(section);
+		groupHeadings.set(group.id, groupHeading);
 		for (const descriptor of fields) {
 			const created = createFieldRow(descriptor, session, (key) => {
 				clearFieldError(key);
@@ -6025,7 +6774,8 @@ const openSettingsPanel = () => {
 				revertButton: created.revertButton,
 				errorEl: created.errorEl,
 				descId: created.descId,
-				errorId: created.errorId
+				errorId: created.errorId,
+				refreshText: created.refreshText
 			});
 			section.append(created.row);
 		}
@@ -6044,12 +6794,13 @@ const openSettingsPanel = () => {
 		if (section) advancedBody.append(section);
 	}
 	let advancedExpanded = false;
+	const advancedLabel = $("<span>").text(texts.settings_advancedToggle);
 	const advancedArrow = $("<span>").attr("aria-hidden", "true").text("▸");
 	advancedToggle = $("<button>").attr({
 		type: "button",
 		"aria-expanded": "false",
 		"aria-controls": advancedBodyId
-	}).addClass("pp-settings-advanced-toggle").append($("<span>").text(Texts.settings_advancedToggle), advancedArrow);
+	}).addClass("pp-settings-advanced-toggle").append(advancedLabel, advancedArrow);
 	const setAdvancedExpanded = (expanded) => {
 		advancedExpanded = expanded;
 		advancedToggle.attr("aria-expanded", String(expanded));
@@ -6058,19 +6809,29 @@ const openSettingsPanel = () => {
 	};
 	advancedToggle.on("click", () => setAdvancedExpanded(!advancedExpanded));
 	body.append(advancedToggle, advancedBody);
-	const restoreAllButton = $("<button>").attr("type", "button").addClass("pp-settings-restore-all").text(Texts.settings_restoreAll).on("click", () => {
+	const restoreAllButton = $("<button>").attr("type", "button").addClass("pp-settings-restore-all").text(texts.settings_restoreAll).on("click", () => {
 		const nextDraft = session.restoreAll();
 		for (const [key, control] of fieldControls) syncControlValue(control.descriptor, control.input, nextDraft[key]);
 		syncAllVisualStates();
 		clearAllErrors();
 	});
-	const saveButton = $("<button>").attr("type", "button").addClass("pp-settings-primary").text(Texts.settings_save).on("click", () => {
+	const refreshPanelTexts = () => {
+		heading.text(texts.settings_title);
+		closeButton.attr("aria-label", texts.close).text(texts.close);
+		for (const [groupId, groupHeading] of groupHeadings) groupHeading.text(texts[`settings_group_${groupId}`]);
+		for (const control of fieldControls.values()) control.refreshText();
+		advancedLabel.text(texts.settings_advancedToggle);
+		restoreAllButton.text(texts.settings_restoreAll);
+		saveButton.text(texts.settings_save);
+	};
+	const saveButton = $("<button>").attr("type", "button").addClass("pp-settings-primary").text(texts.settings_save).on("click", () => {
 		clearAllErrors();
 		const result = session.save();
 		if (result.ok) {
+			refreshPanelTexts();
 			for (const [key, control] of fieldControls) syncControlValue(control.descriptor, control.input, session.getDraftValue(key));
 			syncAllVisualStates();
-			statusBanner.attr("data-state", "success").text(Texts.settings_saveSuccess).prop("hidden", false);
+			statusBanner.attr("data-state", "success").text(texts.settings_saveSuccess).prop("hidden", false);
 			return;
 		}
 		const firstError = result.errors[0];
@@ -6078,16 +6839,17 @@ const openSettingsPanel = () => {
 		if (!advancedExpanded && result.errors.some((err) => err.key && fieldControls.get(err.key)?.descriptor.section === "advanced")) setAdvancedExpanded(true);
 		if (firstError?.key) {
 			const control = fieldControls.get(firstError.key);
-			const label = control?.descriptor.label ?? firstError.key;
-			statusBanner.attr("data-state", "error").text(Texts.settings_validationFailed.replace("%1", `${label}（${firstError.message}）`)).prop("hidden", false);
+			const label = texts[`settings_field_${firstError.key}_label`];
+			statusBanner.attr("data-state", "error").text(formatText(texts.settings_validationFailed, label, firstError.message)).prop("hidden", false);
 			const inputEl = control?.input.get(0);
 			inputEl?.scrollIntoView({ block: "nearest" });
 			inputEl?.focus();
-		} else statusBanner.attr("data-state", "error").text(Texts.settings_saveFailed.replace("%1", firstError?.message ?? Texts.settings_saveStorageError)).prop("hidden", false);
+		} else statusBanner.attr("data-state", "error").text(formatText(texts.settings_saveFailed, firstError?.message ?? texts.settings_saveStorageError)).prop("hidden", false);
 	});
 	$("<footer>").append(statusBanner, $("<div>").addClass("pp-settings-actions").append(restoreAllButton, saveButton)).appendTo(panel);
-	const unsubscribe = subscribeSettings((nextSettings, _prev, source) => {
+	const unsubscribe = subscribeSettings((nextSettings, prevSettings, source) => {
 		if (source !== "remote") return;
+		if (nextSettings.language !== prevSettings.language) refreshPanelTexts();
 		const updatedKeys = session.applyRemoteUpdate(nextSettings);
 		for (const key of updatedKeys) {
 			const control = fieldControls.get(key);
@@ -6107,7 +6869,7 @@ const openSettingsPanel = () => {
 		else if (restoreFocus && document.activeElement instanceof HTMLElement) document.activeElement.blur();
 	};
 	const requestClose = (restoreFocus = false) => {
-		if (session.hasModifiedFields() && !confirm(Texts.settings_confirmDiscard)) return;
+		if (session.hasModifiedFields() && !confirm(texts.settings_confirmDiscard)) return;
 		closePanel(restoreFocus);
 	};
 	closeButton.on("click", () => requestClose(true));
@@ -6182,8 +6944,8 @@ const loadIllustSort = () => {
 					color: "initial"
 				}).appendTo(this.progressElement);
 				this.sortButtonElement.attr({
-					title: "排序作品",
-					"aria-label": "排序作品",
+					title: texts.label_sort,
+					"aria-label": texts.label_sort,
 					"aria-busy": "false"
 				});
 			} catch (error) {
@@ -6197,8 +6959,8 @@ const loadIllustSort = () => {
 			const { pageCount, favFilter, orderType, hideFavorite, hideByTag, hideByTagList, aiFilter, aiAssistedFilter } = settings;
 			const excludedTags = hideByTag ? parseExcludedTags(hideByTagList) : [];
 			this.sortButtonElement.attr({
-				title: "正在排序作品",
-				"aria-label": "正在排序作品",
+				title: texts.label_sorting,
+				"aria-label": texts.label_sorting,
 				"aria-busy": "true"
 			});
 			try {
@@ -6215,7 +6977,7 @@ const loadIllustSort = () => {
 						searchParams.set("is_first_page", page > 1 ? "0" : "1");
 						searchParams.delete("ids[]");
 						const userId = searchParams.get("user_id") || "";
-						const userIllustrations = await getUserIllustrationsWithCache(userId, { onRequesting: () => this.setProgress(`Getting illustrations of current user...`) });
+						const userIllustrations = await getUserIllustrationsWithCache(userId, { onRequesting: () => this.setProgress(texts.sort_getUserWorks) });
 						const fromIndex = (page - 1) * USER_TYPE_ARTWORKS_PER_PAGE;
 						const toIndex = page * USER_TYPE_ARTWORKS_PER_PAGE;
 						switch (type) {
@@ -6228,13 +6990,13 @@ const loadIllustSort = () => {
 							case 9: userIllustrations.manga.slice(fromIndex, toIndex).forEach((id) => searchParams.append("ids[]", id));
 						}
 					} else if ([10].includes(type)) searchParams.set("offset", String((page - 1) * USER_TYPE_ARTWORKS_PER_PAGE));
-					this.setProgress(`Getting illustration list of page ${page} ...`);
+					this.setProgress(formatText(texts.sort_getWorks, page));
 					const requestUrl = `${api}?${searchParams}`;
 					const extractedIllustrations = getIllustrationsFromResponse(type, (await requestWithRetry({
 						url: requestUrl,
 						onRetry: (response, retryTimes) => {
 							iLog.w(`Get illustration list through \`${requestUrl}\` failed:`, response, `${retryTimes} times retrying...`);
-							this.setProgress(`Retry to get illustration list of page ${page} (${retryTimes} times)...`);
+							this.setProgress(formatText(texts.sort_retryWorks, page, retryTimes));
 						}
 					})).response);
 					illustrations = illustrations.concat(extractedIllustrations);
@@ -6246,7 +7008,7 @@ const loadIllustSort = () => {
 					const illustrationAuthorId = illustration.userId;
 					if (String(illustrationAuthorId) === "0") continue;
 					getDetailedIllustrationPromises.push(async () => {
-						this.setProgress(`Getting details of ${i + 1}/${illustrations.length} illustration...`);
+						this.setProgress(formatText(texts.sort_getDetails, i + 1, illustrations.length));
 						const illustrationDetails = await getIllustrationDetailsWithCache(illustrationId, true);
 						return {
 							...illustration,
@@ -6256,7 +7018,7 @@ const loadIllustSort = () => {
 				}
 				const detailedIllustrations = await execLimitConcurrentPromises(getDetailedIllustrationPromises);
 				iLog.d("Queried detailed illustrations:", detailedIllustrations);
-				this.setProgress("Filtering illustrations...");
+				this.setProgress(texts.sort_filtering);
 				const filteredIllustrations = detailedIllustrations.filter((illustration) => {
 					if (hideFavorite && illustration.bookmarkData) return false;
 					if (aiFilter && checkIsAiGenerated(illustration.aiType)) return false;
@@ -6264,7 +7026,7 @@ const loadIllustSort = () => {
 					if (excludedTags.length > 0 && illustration.tags.some((tag) => excludedTags.includes(tag.toLowerCase()))) return false;
 					return illustration.bookmarkUserTotal >= favFilter;
 				});
-				this.setProgress("Sorting filtered illustrations...");
+				this.setProgress(texts.sort_sorting);
 				const sortedIllustrations = orderType === 0 ? filteredIllustrations.sort((a, b) => b.bookmarkUserTotal - a.bookmarkUserTotal) : filteredIllustrations;
 				iLog.d("Filtered and sorted illustrations:", sortedIllustrations);
 				iLog.i("Sort illustrations successfully.");
@@ -6276,8 +7038,8 @@ const loadIllustSort = () => {
 			this.hideProgress();
 			this.sorting = false;
 			this.sortButtonElement.attr({
-				title: "排序作品",
-				"aria-label": "排序作品",
+				title: texts.label_sort,
+				"aria-label": texts.label_sort,
 				"aria-busy": "false"
 			});
 		}
@@ -6320,7 +7082,7 @@ const loadIllustSort = () => {
 				illustrationMeta.style = "position: absolute; top: 0px; left: 0px; right: 0px; display: flex; align-items: flex-start; padding: 4px 4px 0; pointer-events: none; font-size: 10px;";
 				illustrationMeta.innerHTML = `
           ${isR18G ? "<div style=\"padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: rgb(255, 64, 96); font-weight: bold; line-height: 16px; user-select: none;\">R-18G</div>" : isR18 ? "<div style=\"padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: rgb(255, 64, 96); font-weight: bold; line-height: 16px; user-select: none;\">R-18</div>" : ""}
-          ${isAi ? "<div style=\"padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: rgb(162, 28, 175); font-weight: bold; line-height: 16px; user-select: none;\">AI 生成</div>" : isAiAssisted ? "<div style=\"padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: rgb(109, 40, 217); font-weight: bold; line-height: 16px; user-select: none;\">AI 辅助</div>" : ""}
+          ${isAi ? `<div style="padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: rgb(162, 28, 175); font-weight: bold; line-height: 16px; user-select: none;">${texts.artwork_aiGenerated}</div>` : isAiAssisted ? `<div style="padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: rgb(109, 40, 217); font-weight: bold; line-height: 16px; user-select: none;">${texts.artwork_aiAssisted}</div>` : ""}
           ${pageCount > 1 ? `
                 <div style="margin-left: auto;">
                   <div style="display: flex; justify-content: center; align-items: center; height: 20px; min-width: 20px; color: rgb(245, 245, 245); font-weight: bold; padding: 0px 6px; background: rgba(0, 0, 0, 0.32); border-radius: 10px; line-height: 10px;">
@@ -6670,27 +7432,25 @@ function showSearchLinksForDeletedArtworks() {
 	});
 }
 const registerSettingsMenu = () => {
-	const settings = getSettings();
-	GM_registerMenuCommand(`⚙️ ${Texts.settings_menu}`, () => {
+	GM_registerMenuCommand(`⚙️ ${texts.settings_title}`, () => {
 		openSettingsPanel();
 	});
-	GM_registerMenuCommand(`🧹 ${Texts.setting_clearFollowingCache}`, () => {
-		if (!confirm(`${Texts.setting_clearFollowingCacheHelp}\n\n确定要清除吗？`)) return;
+	GM_registerMenuCommand(`🧹 ${texts.setting_clearFollowingCache}`, () => {
+		if (!confirm(texts.setting_clearFollowingCacheHelp)) return;
 		clearAllLocalCaches().then((cleared) => {
 			if (!cleared) {
-				alert(Texts.setting_clearCacheFailed);
+				alert(texts.setting_clearCacheFailed);
 				return;
 			}
-			alert(Texts.setting_followingCacheCleared);
+			alert(texts.setting_followingCacheCleared);
 			location.reload();
 		});
 	});
-	GM_registerMenuCommand(`📊 ${Texts.cache_usage}`, () => {
+	GM_registerMenuCommand(`📊 ${texts.cache_usage}`, () => {
 		getCacheUsage().then((usage) => {
-			alert(Texts.cache_usageHelp.replace("%1", String(usage.illustrationDetails)).replace("%2", String(usage.illustPages)).replace("%3", String(usage.ugoiraFrames)).replace("%4", formatCacheBytes(usage.ugoiraBytes)).replace("%5", String(usage.tagTranslations)));
+			alert(formatText(texts.cache_usageHelp, usage.illustrationDetails, usage.illustPages, usage.ugoiraFrames, formatCacheBytes(usage.ugoiraBytes), usage.tagTranslations));
 		});
 	});
-	return settings;
 };
 const ShowUpgradeMessage = () => {
 	const panelId = "pp-upgrade-panel";
@@ -6788,14 +7548,16 @@ const ShowUpgradeMessage = () => {
 	};
 	const closeButton = $("<button>").attr({
 		type: "button",
-		"aria-label": Texts.settings_close
-	}).text(Texts.settings_close).on("click", close);
+		"aria-label": texts.close
+	}).text(texts.close).on("click", close);
+	const link = (url, label) => `<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+	const body = formatText(texts.upgrade_body, link("https://greasyfork.org/scripts/30766-pixiv-previewer", "Pixiv Previewer"), link("https://greasyfork.org/scripts/30766-pixiv-previewer/feedback", texts.upgrade_feedback), link("https://github.com/Ocrosoft/PixivPreviewer/issues", texts.upgrade_issue), link("https://greasyfork.org/scripts/533844-pixiv-previewer-l/versions", texts.upgrade_versions));
 	const panel = $("<div>").attr({
 		id: panelId,
 		role: "dialog",
 		"aria-modal": "false",
 		"aria-labelledby": headingId
-	}).append($("<header>").append($("<h2>").attr("id", headingId).text(`${Texts.install_title}${g_version}`), closeButton), $("<div>").addClass("pp-upgrade-body").html(Texts.upgrade_body)).on("keydown", (event) => {
+	}).append($("<header>").append($("<h2>").attr("id", headingId).text(formatText(texts.install_title, g_version)), closeButton), $("<div>").addClass("pp-upgrade-body").html(body)).on("keydown", (event) => {
 		if (event.key === "Escape") {
 			event.preventDefault();
 			event.stopPropagation();
@@ -6820,23 +7582,32 @@ const appendToolbarButton = (toolBar, { id, title, icon, onClick }) => {
 	$(newButton).on("click", onClick);
 	toolBar.appendChild(newListItem);
 };
+const setToolbarButtonTitle = (id, title) => {
+	const button = $(`#${id}`);
+	if (!button.length) return;
+	button.attr({
+		title,
+		"aria-label": title
+	});
+	button.parent().attr("title", title);
+};
 const mountToolbar = (toolBar) => {
 	DoLog(4, toolBar);
 	appendToolbarButton(toolBar, {
 		id: SORT_BUTTON_ID,
-		title: "排序作品",
+		title: texts.label_sort,
 		icon: sort_default,
 		onClick: () => window.dispatchEvent(new Event(SORT_EVENT_NAME))
 	});
 	appendToolbarButton(toolBar, {
 		id: SORT_NEXT_PAGE_BUTTON_ID,
-		title: "前往下一页",
+		title: texts.label_nextPage,
 		icon: next_page_default,
 		onClick: () => window.dispatchEvent(new Event(SORT_NEXT_PAGE_EVENT_NAME))
 	});
 	appendToolbarButton(toolBar, {
 		id: HIDE_FAVORITES_BUTTON_ID,
-		title: "隐藏已收藏作品",
+		title: texts.label_hideFav,
 		icon: hide_favorites_default,
 		onClick: hideFavorites
 	});
@@ -6855,7 +7626,7 @@ const matchPageType = () => {
 */
 const initializeEarly = () => {
 	try {
-		g_settings = registerSettingsMenu();
+		g_settings = getSettings();
 		iLog.i("Start to initialize Pixiv Previewer with global settings:", g_settings);
 		warmUpCacheDatabase();
 		pruneCachesOnStartup();
@@ -6885,8 +7656,20 @@ const initializeEarly = () => {
 const initializeDom = () => {
 	try {
 		if (!g_settings) return;
+		setLocale(getSettings().language);
+		registerSettingsMenu();
 		if (getSettings().enableLocalTags) loadLocalTags();
 		subscribeSettings((next, prev) => {
+			if (next.language !== prev.language) {
+				if ($(`#${"pp-sort"}`).attr("aria-busy") === "true") setToolbarButtonTitle(SORT_BUTTON_ID, texts.label_sorting);
+				else setToolbarButtonTitle(SORT_BUTTON_ID, texts.label_sort);
+				setToolbarButtonTitle(SORT_NEXT_PAGE_BUTTON_ID, texts.label_nextPage);
+				setToolbarButtonTitle(HIDE_FAVORITES_BUTTON_ID, texts.label_hideFav);
+				if (next.enableLocalTags) {
+					unloadLocalTags();
+					loadLocalTags();
+				}
+			}
 			if (next.enableLocalTags === prev.enableLocalTags) return;
 			if (next.enableLocalTags) loadLocalTags();
 			else unloadLocalTags();

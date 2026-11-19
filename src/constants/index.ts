@@ -6,6 +6,8 @@ export const g_version = process.env.VERSION ?? "0.0.0";
 
 /** 默认设置 */
 export const g_defaultSettings: GlobalSettings = {
+  language: "auto",
+
   enablePreview: true,
   enableAnimePreview: true,
   previewDelay: 300,

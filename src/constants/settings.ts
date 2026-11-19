@@ -1,10 +1,11 @@
 import { IllustSortOrder } from "../enums";
-import Texts from "../i18n";
+import Texts, { formatText, type TextKey } from "../i18n";
 import type { UserSettingKey, UserSettings } from "../types";
 
 export type SettingSection = "common" | "advanced";
 
 export type SettingGroup =
+  | "general"
   | "preview"
   | "sort"
   | "localTags"
@@ -15,10 +16,9 @@ export type SettingGroup =
 
 export type SettingControlKind = "boolean" | "number" | "text" | "select";
 
-export interface SettingFieldOption {
-  value: number;
-  label: string;
-}
+export type SettingFieldOption = {
+  value: number | string;
+} & ({ label: string } | { labelKey: TextKey });
 
 export interface SettingFieldDescriptor<
   K extends UserSettingKey = UserSettingKey,
@@ -27,67 +27,68 @@ export interface SettingFieldDescriptor<
   section: SettingSection;
   group: SettingGroup;
   control: SettingControlKind;
-  label: string;
-  description: string;
-  unit?: string;
+  unitKey?: TextKey;
   /** 面板输入值乘以该倍率后作为内部持久化值（如秒 -> 毫秒为 1000） */
   scale?: number;
   /** 内部持久化值的最小允许值 */
   min?: number;
   /** 是否要求内部持久化值为整数 */
   integer?: boolean;
-  /** 是否允许空/“不限”以持久化为 null */
+  /** 是否允许空值或当前语言的“不限”，以持久化为 null */
   allowNullUnlimited?: boolean;
-  placeholder?: string;
+  placeholderKey?: TextKey;
   options?: readonly SettingFieldOption[];
 }
 
 export const SETTING_GROUPS: ReadonlyArray<{
   id: SettingGroup;
   section: SettingSection;
-  title: string;
 }> = [
-  { id: "preview", section: "common", title: Texts.settings_group_preview },
-  { id: "sort", section: "common", title: Texts.settings_group_sort },
-  { id: "localTags", section: "common", title: Texts.settings_group_localTags },
-  { id: "cache", section: "advanced", title: Texts.settings_group_cache },
-  { id: "download", section: "advanced", title: Texts.settings_group_download },
-  { id: "network", section: "advanced", title: Texts.settings_group_network },
-  {
-    id: "scheduling",
-    section: "advanced",
-    title: Texts.settings_group_scheduling,
-  },
+  { id: "general", section: "common" },
+  { id: "preview", section: "common" },
+  { id: "sort", section: "common" },
+  { id: "localTags", section: "common" },
+  { id: "cache", section: "advanced" },
+  { id: "download", section: "advanced" },
+  { id: "network", section: "advanced" },
+  { id: "scheduling", section: "advanced" },
 ];
 
 /** 用户可见配置字段的唯一清单，由 `UserSettingKey` 约束并明确排除 `version` */
 export const SETTING_FIELD_MAP: {
   [K in UserSettingKey]: SettingFieldDescriptor<K>;
 } = {
+  language: {
+    key: "language",
+    section: "common",
+    group: "general",
+    control: "select",
+    options: [
+      { value: "auto", labelKey: "settings_option_languageAuto" },
+      { value: "zh-CN", label: "简体中文" },
+      { value: "en", label: "English" },
+      { value: "ja", label: "日本語" },
+      { value: "ko", label: "한국어" },
+    ],
+  },
   enablePreview: {
     key: "enablePreview",
     section: "common",
     group: "preview",
     control: "boolean",
-    label: Texts.settings_field_enablePreview_label,
-    description: Texts.settings_field_enablePreview_desc,
   },
   enableAnimePreview: {
     key: "enableAnimePreview",
     section: "common",
     group: "preview",
     control: "boolean",
-    label: Texts.settings_field_enableAnimePreview_label,
-    description: Texts.settings_field_enableAnimePreview_desc,
   },
   previewDelay: {
     key: "previewDelay",
     section: "common",
     group: "preview",
     control: "number",
-    label: Texts.settings_field_previewDelay_label,
-    description: Texts.settings_field_previewDelay_desc,
-    unit: Texts.settings_unit_ms,
+    unitKey: "settings_unit_ms",
     min: 0,
   },
   linkBlank: {
@@ -95,26 +96,20 @@ export const SETTING_FIELD_MAP: {
     section: "common",
     group: "preview",
     control: "boolean",
-    label: Texts.settings_field_linkBlank_label,
-    description: Texts.settings_field_linkBlank_desc,
   },
   previewHoldMs: {
     key: "previewHoldMs",
     section: "common",
     group: "preview",
     control: "number",
-    label: Texts.settings_field_previewHoldMs_label,
-    description: Texts.settings_field_previewHoldMs_desc,
-    unit: Texts.settings_unit_ms,
+    unitKey: "settings_unit_ms",
   },
   previewLoadingOverlayDelayMs: {
     key: "previewLoadingOverlayDelayMs",
     section: "common",
     group: "preview",
     control: "number",
-    label: Texts.settings_field_previewLoadingOverlayDelayMs_label,
-    description: Texts.settings_field_previewLoadingOverlayDelayMs_desc,
-    unit: Texts.settings_unit_ms,
+    unitKey: "settings_unit_ms",
     min: 0,
   },
   previewDownloadNoticeMs: {
@@ -122,9 +117,7 @@ export const SETTING_FIELD_MAP: {
     section: "common",
     group: "preview",
     control: "number",
-    label: Texts.settings_field_previewDownloadNoticeMs_label,
-    description: Texts.settings_field_previewDownloadNoticeMs_desc,
-    unit: Texts.settings_unit_s,
+    unitKey: "settings_unit_s",
     scale: 1000,
     min: 0,
   },
@@ -133,9 +126,7 @@ export const SETTING_FIELD_MAP: {
     section: "common",
     group: "sort",
     control: "number",
-    label: Texts.settings_field_pageCount_label,
-    description: Texts.settings_field_pageCount_desc,
-    unit: Texts.settings_unit_pages,
+    unitKey: "settings_unit_pages",
     min: 1,
     integer: true,
   },
@@ -144,9 +135,7 @@ export const SETTING_FIELD_MAP: {
     section: "common",
     group: "sort",
     control: "number",
-    label: Texts.settings_field_favFilter_label,
-    description: Texts.settings_field_favFilter_desc,
-    unit: Texts.settings_unit_bookmarks,
+    unitKey: "settings_unit_bookmarks",
     min: 0,
     integer: true,
   },
@@ -155,16 +144,14 @@ export const SETTING_FIELD_MAP: {
     section: "common",
     group: "sort",
     control: "select",
-    label: Texts.settings_field_orderType_label,
-    description: Texts.settings_field_orderType_desc,
     options: [
       {
         value: IllustSortOrder.BY_BOOKMARK_COUNT,
-        label: Texts.settings_option_orderByBookmark,
+        labelKey: "settings_option_orderByBookmark",
       },
       {
         value: IllustSortOrder.BY_DATE,
-        label: Texts.settings_option_orderByDate,
+        labelKey: "settings_option_orderByDate",
       },
     ],
   },
@@ -173,58 +160,44 @@ export const SETTING_FIELD_MAP: {
     section: "common",
     group: "sort",
     control: "boolean",
-    label: Texts.settings_field_aiFilter_label,
-    description: Texts.settings_field_aiFilter_desc,
   },
   aiAssistedFilter: {
     key: "aiAssistedFilter",
     section: "common",
     group: "sort",
     control: "boolean",
-    label: Texts.settings_field_aiAssistedFilter_label,
-    description: Texts.settings_field_aiAssistedFilter_desc,
   },
   hideFavorite: {
     key: "hideFavorite",
     section: "common",
     group: "sort",
     control: "boolean",
-    label: Texts.settings_field_hideFavorite_label,
-    description: Texts.settings_field_hideFavorite_desc,
   },
   hideByTag: {
     key: "hideByTag",
     section: "common",
     group: "sort",
     control: "boolean",
-    label: Texts.settings_field_hideByTag_label,
-    description: Texts.settings_field_hideByTag_desc,
   },
   hideByTagList: {
     key: "hideByTagList",
     section: "common",
     group: "sort",
     control: "text",
-    label: Texts.settings_field_hideByTagList_label,
-    description: Texts.settings_field_hideByTagList_desc,
-    placeholder: Texts.settings_field_hideByTagList_placeholder,
+    placeholderKey: "settings_field_hideByTagList_placeholder",
   },
   enableLocalTags: {
     key: "enableLocalTags",
     section: "common",
     group: "localTags",
     control: "boolean",
-    label: Texts.settings_field_enableLocalTags_label,
-    description: Texts.settings_field_enableLocalTags_desc,
   },
   localTagPopoverShowDelayMs: {
     key: "localTagPopoverShowDelayMs",
     section: "common",
     group: "localTags",
     control: "number",
-    label: Texts.settings_field_localTagPopoverShowDelayMs_label,
-    description: Texts.settings_field_localTagPopoverShowDelayMs_desc,
-    unit: Texts.settings_unit_ms,
+    unitKey: "settings_unit_ms",
     min: 0,
   },
   localTagPopoverHideDelayMs: {
@@ -232,9 +205,7 @@ export const SETTING_FIELD_MAP: {
     section: "common",
     group: "localTags",
     control: "number",
-    label: Texts.settings_field_localTagPopoverHideDelayMs_label,
-    description: Texts.settings_field_localTagPopoverHideDelayMs_desc,
-    unit: Texts.settings_unit_ms,
+    unitKey: "settings_unit_ms",
     min: 0,
   },
   previewPreloadCount: {
@@ -242,9 +213,7 @@ export const SETTING_FIELD_MAP: {
     section: "advanced",
     group: "cache",
     control: "number",
-    label: Texts.settings_field_previewPreloadCount_label,
-    description: Texts.settings_field_previewPreloadCount_desc,
-    unit: Texts.settings_unit_images,
+    unitKey: "settings_unit_images",
     min: 1,
     integer: true,
   },
@@ -253,9 +222,7 @@ export const SETTING_FIELD_MAP: {
     section: "advanced",
     group: "cache",
     control: "number",
-    label: Texts.settings_field_previewCacheMaxEntries_label,
-    description: Texts.settings_field_previewCacheMaxEntries_desc,
-    unit: Texts.settings_unit_entries,
+    unitKey: "settings_unit_entries",
     min: 1,
     integer: true,
   },
@@ -264,9 +231,7 @@ export const SETTING_FIELD_MAP: {
     section: "advanced",
     group: "cache",
     control: "number",
-    label: Texts.settings_field_previewDetailsMaxStaleMs_label,
-    description: Texts.settings_field_previewDetailsMaxStaleMs_desc,
-    unit: Texts.settings_unit_hour,
+    unitKey: "settings_unit_hour",
     scale: 1000 * 60 * 60,
   },
   illustrationMutableCacheTtlMs: {
@@ -274,9 +239,7 @@ export const SETTING_FIELD_MAP: {
     section: "advanced",
     group: "cache",
     control: "number",
-    label: Texts.settings_field_illustrationMutableCacheTtlMs_label,
-    description: Texts.settings_field_illustrationMutableCacheTtlMs_desc,
-    unit: Texts.settings_unit_hour,
+    unitKey: "settings_unit_hour",
     scale: 1000 * 60 * 60,
   },
   illustrationStaticCacheTtlMs: {
@@ -284,9 +247,7 @@ export const SETTING_FIELD_MAP: {
     section: "advanced",
     group: "cache",
     control: "number",
-    label: Texts.settings_field_illustrationStaticCacheTtlMs_label,
-    description: Texts.settings_field_illustrationStaticCacheTtlMs_desc,
-    unit: Texts.settings_unit_day,
+    unitKey: "settings_unit_day",
     scale: 1000 * 60 * 60 * 24,
   },
   illustrationCacheMaxEntries: {
@@ -294,9 +255,7 @@ export const SETTING_FIELD_MAP: {
     section: "advanced",
     group: "cache",
     control: "number",
-    label: Texts.settings_field_illustrationCacheMaxEntries_label,
-    description: Texts.settings_field_illustrationCacheMaxEntries_desc,
-    unit: Texts.settings_unit_entries,
+    unitKey: "settings_unit_entries",
     min: 1,
     integer: true,
   },
@@ -305,9 +264,7 @@ export const SETTING_FIELD_MAP: {
     section: "advanced",
     group: "cache",
     control: "number",
-    label: Texts.settings_field_newIllustrationNoCacheMs_label,
-    description: Texts.settings_field_newIllustrationNoCacheMs_desc,
-    unit: Texts.settings_unit_hour,
+    unitKey: "settings_unit_hour",
     scale: 1000 * 60 * 60,
   },
   illustPagesCacheTtlMs: {
@@ -315,9 +272,7 @@ export const SETTING_FIELD_MAP: {
     section: "advanced",
     group: "cache",
     control: "number",
-    label: Texts.settings_field_illustPagesCacheTtlMs_label,
-    description: Texts.settings_field_illustPagesCacheTtlMs_desc,
-    unit: Texts.settings_unit_day,
+    unitKey: "settings_unit_day",
     scale: 1000 * 60 * 60 * 24,
   },
   illustPagesCacheMaxEntries: {
@@ -325,9 +280,7 @@ export const SETTING_FIELD_MAP: {
     section: "advanced",
     group: "cache",
     control: "number",
-    label: Texts.settings_field_illustPagesCacheMaxEntries_label,
-    description: Texts.settings_field_illustPagesCacheMaxEntries_desc,
-    unit: Texts.settings_unit_entries,
+    unitKey: "settings_unit_entries",
     min: 1,
     integer: true,
   },
@@ -336,9 +289,7 @@ export const SETTING_FIELD_MAP: {
     section: "advanced",
     group: "cache",
     control: "number",
-    label: Texts.settings_field_userIllustrationsCacheTtlMs_label,
-    description: Texts.settings_field_userIllustrationsCacheTtlMs_desc,
-    unit: Texts.settings_unit_hour,
+    unitKey: "settings_unit_hour",
     scale: 1000 * 60 * 60,
   },
   ugoiraCacheTtlMs: {
@@ -346,9 +297,7 @@ export const SETTING_FIELD_MAP: {
     section: "advanced",
     group: "cache",
     control: "number",
-    label: Texts.settings_field_ugoiraCacheTtlMs_label,
-    description: Texts.settings_field_ugoiraCacheTtlMs_desc,
-    unit: Texts.settings_unit_day,
+    unitKey: "settings_unit_day",
     scale: 1000 * 60 * 60 * 24,
   },
   ugoiraCacheMaxEntries: {
@@ -356,9 +305,7 @@ export const SETTING_FIELD_MAP: {
     section: "advanced",
     group: "cache",
     control: "number",
-    label: Texts.settings_field_ugoiraCacheMaxEntries_label,
-    description: Texts.settings_field_ugoiraCacheMaxEntries_desc,
-    unit: Texts.settings_unit_works,
+    unitKey: "settings_unit_works",
     min: 1,
     integer: true,
   },
@@ -367,9 +314,7 @@ export const SETTING_FIELD_MAP: {
     section: "advanced",
     group: "cache",
     control: "number",
-    label: Texts.settings_field_ugoiraCacheMaxBytes_label,
-    description: Texts.settings_field_ugoiraCacheMaxBytes_desc,
-    unit: Texts.settings_unit_mib,
+    unitKey: "settings_unit_mib",
     scale: 1024 * 1024,
     integer: true,
   },
@@ -378,9 +323,7 @@ export const SETTING_FIELD_MAP: {
     section: "advanced",
     group: "cache",
     control: "number",
-    label: Texts.settings_field_localTagMetadataCacheTtlMs_label,
-    description: Texts.settings_field_localTagMetadataCacheTtlMs_desc,
-    unit: Texts.settings_unit_day,
+    unitKey: "settings_unit_day",
     scale: 1000 * 60 * 60 * 24,
   },
   tagTranslationCacheTtlMs: {
@@ -388,9 +331,7 @@ export const SETTING_FIELD_MAP: {
     section: "advanced",
     group: "cache",
     control: "number",
-    label: Texts.settings_field_tagTranslationCacheTtlMs_label,
-    description: Texts.settings_field_tagTranslationCacheTtlMs_desc,
-    unit: Texts.settings_unit_day,
+    unitKey: "settings_unit_day",
     scale: 1000 * 60 * 60 * 24,
   },
   tagTranslationCacheMaxEntries: {
@@ -398,9 +339,7 @@ export const SETTING_FIELD_MAP: {
     section: "advanced",
     group: "cache",
     control: "number",
-    label: Texts.settings_field_tagTranslationCacheMaxEntries_label,
-    description: Texts.settings_field_tagTranslationCacheMaxEntries_desc,
-    unit: Texts.settings_unit_entries,
+    unitKey: "settings_unit_entries",
     min: 2,
     integer: true,
   },
@@ -409,9 +348,7 @@ export const SETTING_FIELD_MAP: {
     section: "advanced",
     group: "download",
     control: "number",
-    label: Texts.settings_field_completedDownloadsMaxEntries_label,
-    description: Texts.settings_field_completedDownloadsMaxEntries_desc,
-    unit: Texts.settings_unit_entries,
+    unitKey: "settings_unit_entries",
     min: 1,
     integer: true,
   },
@@ -420,9 +357,7 @@ export const SETTING_FIELD_MAP: {
     section: "advanced",
     group: "download",
     control: "number",
-    label: Texts.settings_field_retryableDownloadsMaxEntries_label,
-    description: Texts.settings_field_retryableDownloadsMaxEntries_desc,
-    unit: Texts.settings_unit_entries,
+    unitKey: "settings_unit_entries",
     min: 1,
     integer: true,
   },
@@ -431,9 +366,7 @@ export const SETTING_FIELD_MAP: {
     section: "advanced",
     group: "download",
     control: "number",
-    label: Texts.settings_field_downloadProgressPersistMs_label,
-    description: Texts.settings_field_downloadProgressPersistMs_desc,
-    unit: Texts.settings_unit_s,
+    unitKey: "settings_unit_s",
     scale: 1000,
   },
   downloadHeartbeatMs: {
@@ -441,9 +374,7 @@ export const SETTING_FIELD_MAP: {
     section: "advanced",
     group: "download",
     control: "number",
-    label: Texts.settings_field_downloadHeartbeatMs_label,
-    description: Texts.settings_field_downloadHeartbeatMs_desc,
-    unit: Texts.settings_unit_s,
+    unitKey: "settings_unit_s",
     scale: 1000,
   },
   downloadOwnerTimeoutMs: {
@@ -451,9 +382,7 @@ export const SETTING_FIELD_MAP: {
     section: "advanced",
     group: "download",
     control: "number",
-    label: Texts.settings_field_downloadOwnerTimeoutMs_label,
-    description: Texts.settings_field_downloadOwnerTimeoutMs_desc,
-    unit: Texts.settings_unit_s,
+    unitKey: "settings_unit_s",
     scale: 1000,
   },
   requestRetryIntervalMs: {
@@ -461,9 +390,7 @@ export const SETTING_FIELD_MAP: {
     section: "advanced",
     group: "network",
     control: "number",
-    label: Texts.settings_field_requestRetryIntervalMs_label,
-    description: Texts.settings_field_requestRetryIntervalMs_desc,
-    unit: Texts.settings_unit_s,
+    unitKey: "settings_unit_s",
     scale: 1000,
     min: 1000,
   },
@@ -472,22 +399,18 @@ export const SETTING_FIELD_MAP: {
     section: "advanced",
     group: "network",
     control: "number",
-    label: Texts.settings_field_requestMaxAttempts_label,
-    description: Texts.settings_field_requestMaxAttempts_desc,
-    unit: Texts.settings_unit_times,
+    unitKey: "settings_unit_times",
     min: 1,
     integer: true,
     allowNullUnlimited: true,
-    placeholder: Texts.settings_field_requestMaxAttempts_placeholder,
+    placeholderKey: "settings_field_requestMaxAttempts_placeholder",
   },
   tagRequestTimeoutMs: {
     key: "tagRequestTimeoutMs",
     section: "advanced",
     group: "network",
     control: "number",
-    label: Texts.settings_field_tagRequestTimeoutMs_label,
-    description: Texts.settings_field_tagRequestTimeoutMs_desc,
-    unit: Texts.settings_unit_s,
+    unitKey: "settings_unit_s",
     scale: 1000,
   },
   ugoiraChunkBytes: {
@@ -495,9 +418,7 @@ export const SETTING_FIELD_MAP: {
     section: "advanced",
     group: "network",
     control: "number",
-    label: Texts.settings_field_ugoiraChunkBytes_label,
-    description: Texts.settings_field_ugoiraChunkBytes_desc,
-    unit: Texts.settings_unit_bytes,
+    unitKey: "settings_unit_bytes",
     min: 64 * 1024,
     integer: true,
   },
@@ -506,9 +427,7 @@ export const SETTING_FIELD_MAP: {
     section: "advanced",
     group: "network",
     control: "number",
-    label: Texts.settings_field_ugoiraTrailerBytes_label,
-    description: Texts.settings_field_ugoiraTrailerBytes_desc,
-    unit: Texts.settings_unit_bytes,
+    unitKey: "settings_unit_bytes",
     min: 22,
     integer: true,
   },
@@ -517,9 +436,7 @@ export const SETTING_FIELD_MAP: {
     section: "advanced",
     group: "scheduling",
     control: "number",
-    label: Texts.settings_field_databaseOpenTimeoutMs_label,
-    description: Texts.settings_field_databaseOpenTimeoutMs_desc,
-    unit: Texts.settings_unit_s,
+    unitKey: "settings_unit_s",
     scale: 1000,
   },
   domProbeIntervalMs: {
@@ -527,18 +444,14 @@ export const SETTING_FIELD_MAP: {
     section: "advanced",
     group: "scheduling",
     control: "number",
-    label: Texts.settings_field_domProbeIntervalMs_label,
-    description: Texts.settings_field_domProbeIntervalMs_desc,
-    unit: Texts.settings_unit_ms,
+    unitKey: "settings_unit_ms",
   },
   domProbeMaxAttempts: {
     key: "domProbeMaxAttempts",
     section: "advanced",
     group: "scheduling",
     control: "number",
-    label: Texts.settings_field_domProbeMaxAttempts_label,
-    description: Texts.settings_field_domProbeMaxAttempts_desc,
-    unit: Texts.settings_unit_times,
+    unitKey: "settings_unit_times",
     min: 1,
     integer: true,
   },
@@ -547,18 +460,14 @@ export const SETTING_FIELD_MAP: {
     section: "advanced",
     group: "scheduling",
     control: "number",
-    label: Texts.settings_field_toolbarProbeIntervalMs_label,
-    description: Texts.settings_field_toolbarProbeIntervalMs_desc,
-    unit: Texts.settings_unit_ms,
+    unitKey: "settings_unit_ms",
   },
   toolbarProbeMaxAttempts: {
     key: "toolbarProbeMaxAttempts",
     section: "advanced",
     group: "scheduling",
     control: "number",
-    label: Texts.settings_field_toolbarProbeMaxAttempts_label,
-    description: Texts.settings_field_toolbarProbeMaxAttempts_desc,
-    unit: Texts.settings_unit_times,
+    unitKey: "settings_unit_times",
     min: 1,
     integer: true,
   },
@@ -567,9 +476,7 @@ export const SETTING_FIELD_MAP: {
     section: "advanced",
     group: "scheduling",
     control: "number",
-    label: Texts.settings_field_localTagRenderDebounceMs_label,
-    description: Texts.settings_field_localTagRenderDebounceMs_desc,
-    unit: Texts.settings_unit_ms,
+    unitKey: "settings_unit_ms",
     min: 0,
   },
   localTagPersistDelayMs: {
@@ -577,9 +484,7 @@ export const SETTING_FIELD_MAP: {
     section: "advanced",
     group: "scheduling",
     control: "number",
-    label: Texts.settings_field_localTagPersistDelayMs_label,
-    description: Texts.settings_field_localTagPersistDelayMs_desc,
-    unit: Texts.settings_unit_ms,
+    unitKey: "settings_unit_ms",
     min: 0,
   },
   cacheCleanupIdleTimeoutMs: {
@@ -587,9 +492,7 @@ export const SETTING_FIELD_MAP: {
     section: "advanced",
     group: "scheduling",
     control: "number",
-    label: Texts.settings_field_cacheCleanupIdleTimeoutMs_label,
-    description: Texts.settings_field_cacheCleanupIdleTimeoutMs_desc,
-    unit: Texts.settings_unit_s,
+    unitKey: "settings_unit_s",
     scale: 1000,
   },
 };
@@ -655,10 +558,10 @@ export const validateSettingValue = (
           const displayMin = descriptor.scale
             ? Number((descriptor.min / descriptor.scale).toPrecision(12))
             : descriptor.min;
-          const minText = descriptor.unit
-            ? `${displayMin} ${descriptor.unit}`
-            : String(displayMin);
-          return Texts.settings_err_min.replace("%1", minText);
+          const minText = descriptor.unitKey
+            ? `${displayMin} ${Texts[descriptor.unitKey]}`
+            : displayMin;
+          return formatText(Texts.settings_err_min, minText);
         }
       } else if (value <= 0) {
         return Texts.settings_err_positive;
@@ -680,14 +583,19 @@ export const parseSettingInput = <K extends UserSettingKey>(
     return { ok: true, value: String(rawValue) as UserSettings[K] };
   }
   if (descriptor.control === "select") {
-    const parsed = Number(rawValue);
-    const error = validateSettingValue(descriptor, parsed);
-    if (error) return { ok: false, message: error };
-    return { ok: true, value: parsed as UserSettings[K] };
+    const option = descriptor.options?.find(
+      (opt) => String(opt.value) === String(rawValue)
+    );
+    if (!option) return { ok: false, message: Texts.settings_err_option };
+    return { ok: true, value: option.value as UserSettings[K] };
   }
 
   const trimmed = String(rawValue).trim();
-  if (!trimmed || (descriptor.allowNullUnlimited && trimmed === "不限")) {
+  if (
+    !trimmed ||
+    (descriptor.allowNullUnlimited &&
+      trimmed.toLowerCase() === Texts.settings_unlimited.toLowerCase())
+  ) {
     if (descriptor.allowNullUnlimited) {
       return { ok: true, value: null as unknown as UserSettings[K] };
     }

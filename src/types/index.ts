@@ -1,6 +1,10 @@
 import { AiType, IllustSortOrder, IllustType } from "../enums";
 
+export type LanguageOption = "auto" | "zh-CN" | "en" | "ja" | "ko";
+
 export interface GlobalSettings {
+  /** 界面显示语言 */
+  language: LanguageOption;
   /** 是否启用插画（漫画）作品预览功能 */
   enablePreview: boolean;
   /** 是否启用动图作品预览功能 */

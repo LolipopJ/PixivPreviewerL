@@ -4,7 +4,7 @@
 </h3>
 
 <div align="center">
-  <a href="https://greasyfork.org/zh-CN/scripts/533844">
+  <a href="https://greasyfork.org/en/scripts/533844">
     <img src="https://img.shields.io/badge/tampermonkey-%2300485B.svg?style=for-the-badge&logo=tampermonkey&logoColor=white" alt="Tampermonkey">
   </a>
   <a href="https://github.com/LolipopJ/PixivPreviewerL">
@@ -14,88 +14,89 @@
 
 ---
 
+English | [中文](./README.zh.md)
+
 # Pixiv Previewer (LolipopJ Edition)
 
-> 原项目：[Ocrosoft/PixivPreviewer](https://github.com/Ocrosoft/PixivPreviewer)，原插件页面：[Pixiv Previewer](https://greasyfork.org/zh-CN/scripts/30766)
+> Original project: [Ocrosoft/PixivPreviewer](https://github.com/Ocrosoft/PixivPreviewer), original userscript page: [Pixiv Previewer](https://greasyfork.org/en/scripts/30766)
 
-我是 Pixiv 中度仓鼠症，Ocrosoft/PixivPreviewer 带给我很大的效率提升，是我的浏览器的必备插件之一，因而我 Fork 了该项目并进行了现代前端工程化改造，并彻底按照**自己的喜好**对此项目进行开发维护。
+As a moderate Pixiv digital hoarder, Ocrosoft/PixivPreviewer has been a huge productivity booster and one of my essential browser extensions. I forked the project, modernized its frontend tooling, and now maintain it strictly according to **my own preferences**.
 
-😥 由于我的自以为是，相比原项目，此项目里的插件有如下退化：
+😥 Because of my opinionated choices, this fork has the following trade-offs compared to the original project:
 
-- **不支持小说相关内容。** 我不使用 Pixiv 浏览小说，所以不会对小说相关内容进行开发与维护。
-- **较少的可配置项。** 我自己用不着的功能配置项也不会进行开发维护，而是直接删除。
-- **更低的浏览器兼容性。** 构建产物目标为 `Chrome >= 107`，不保证较低版本 Chrome 以及其他浏览器的兼容性。
-- **不添加多语言支持。** 中文优先，没有对其他语言的支持计划。
+- **No novel support.** I do not use Pixiv to read novels, so novel-related features are neither developed nor maintained.
+- **Fewer configuration options.** Settings for features I do not personally use are removed rather than maintained.
+- **Narrower browser compatibility.** The build targets `Chrome >= 107`; compatibility with older Chrome versions or other browsers is not guaranteed.
 
-🥰 此仓库重构了原有项目，并专注于解决如下问题：
+🥰 This repository refactors the original project and focuses on the following improvements:
 
-- **兼容所有页面的作品预览。** 对于所有能点击跳转到作品详情页的图片，显示预览窗口。
-  ![作品预览](./docs/preview.png)
-- **为我认为可以支持排序的页面添加排序功能。** 例如用户收藏作品、关注画师的新作品等页面。
-- 提升插件开发效率和代码安全性。
+- **Artwork previews across all pages.** Hovering over any image link that leads to an artwork page opens a preview window.
+  ![Artwork preview](./docs/preview.png)
+- **Sorting on more pages.** Adds sorting support to pages where it is useful, such as a user's bookmarked artworks and new artworks from followed artists.
+- Improved development ergonomics and type safety.
 
-🤗 另外，相比原插件，我额外添加了如下满足自身需要的功能：
+🤗 In addition, I added the following features for my own workflow:
 
-- **在作品预览窗口显示元数据信息。** 目前会在作品预览窗口的顶部展示“收藏数”和“AI 生成”信息。
-  ![包含元信息的作品预览](./docs/preview-meta.png)
-- **作品预览添加单手模式。** 显示作品预览窗口时，鼠标长按进入单手模式，相当于长按 `Ctrl`/`Command` 键，保持窗口显示。按 `Esc` 或点击预览窗口外部退出。
-- **新增列表管理原图下载。** 点击右下角工具栏的“下载记录”按钮，可以追踪原图下载的进度，对因网络断连或网页关闭导致的下载中断问题，能快速发起重试。下载状态在所有 Pixiv 标签页之间共享，可在任意标签页查看进度、重试中断的下载。
-  ![下载记录](./docs/download-record.png)
-- **下载不同分级原图到对应子目录。** 当启用 Tampermonkey 的「浏览器 API」下载模式时，自动将分级作品保存到默认下载文件夹的子目录中。对于使用不同文件夹管理分级作品的屯屯鼠来说，能够起到初筛分类的作用。
-- **过滤当前页面已收藏的作品。** 点击右下角工具栏的“过滤收藏”按钮，可以隐藏当前页面里已标注爱心的作品，提升发现更多优质作品的效率。
-- **本地标签管理。** 支持将喜欢的标签放在本地管理，不受普通用户 10 个收藏标签上限的限制；悬浮本地标签即可查看标签详情及相比上次访问新增的作品数。
-  ![本地标签管理](./docs/local-tags.png)
-- **优化后的缓存能力。** 插件默认按以下策略在本地缓存数据（可在设置面板「高级设置 → 缓存」中调整）：
+- **Metadata in the preview window.** Displays bookmark counts and AI-generated badges at the top of the preview window.
+  ![Artwork preview with metadata](./docs/preview-meta.png)
+- **One-handed preview mode.** Long-press the mouse button while a preview window is open to enter one-handed mode—equivalent to holding `Ctrl`/`Command`—keeping the preview open after releasing the mouse. Press `Esc` or click outside the preview window to exit.
+- **Download history panel for original images.** Click the "Download history" button in the bottom-right toolbar to track original-image download progress and quickly retry downloads interrupted by network drops or closed tabs. Download state is shared across all open Pixiv tabs, so you can check progress or retry interrupted downloads from any tab.
+  ![Download history](./docs/download-record.png)
+- **Rating-based subdirectories for original-image downloads.** When Tampermonkey's "Download Mode" is set to "Browser API", rated artworks (`R-18` / `R-18G`) are automatically saved into corresponding subdirectories under your default downloads folder, helping organize downloaded artworks during initial triage.
+- **Hide bookmarked artworks on the current page.** Click the "Hide bookmarked artworks" button in the bottom-right toolbar to hide artworks already marked with a heart on the current page, making it easier to discover new works.
+- **Local tag management.** Save and organize favorite tags locally without Pixiv's 10-tag limit for free accounts; hover over any tag to view its details and see how many new works were added since your last visit.
+  ![Local tag management](./docs/local-tags.png)
+- **Multi-layered local caching.** By default, data is cached locally using the following policies (configurable under "Settings → Advanced settings → Cache"):
 
-  | 数据                                   | 存储位置        | 默认有效期   | 默认上限                              |
-  | -------------------------------------- | --------------- | ------------ | ------------------------------------- |
-  | 作品详情（标题、标签、页数等静态字段） | IndexedDB       | 30 天        | 5000 条                               |
-  | 作品详情（收藏数、收藏状态等可变字段） | IndexedDB       | 6 小时       | 同上（预览可额外容忍 24 小时）        |
-  | 作品分页（预览图片链接）               | IndexedDB       | 7 天         | 1500 条                               |
-  | 动图帧                                 | IndexedDB       | 7 天         | 20 个作品 / 64 MiB                    |
-  | 标签详情与中文翻译                     | `GM_setValue`   | 30 天 / 7 天 | 2000 条（超限按容量一半向下取整淘汰） |
-  | 用户作品列表                           | Session Storage | 3 小时       | 随标签页                              |
-  | 预览内部元数据缓存（分页/动图）        | 内存            | 页面生命周期 | 各 100 条                             |
-  | 预览图片解码结果                       | 内存            | 页面生命周期 | 10 张（按预加载数量 5 张的 2 倍计算） |
+  | Data                                                      | Storage         | Default TTL   | Default Limit                                               |
+  | --------------------------------------------------------- | --------------- | ------------- | ----------------------------------------------------------- |
+  | Artwork details (static fields: title, tags, page count)  | IndexedDB       | 30 days       | 5,000 entries                                               |
+  | Artwork details (mutable fields: bookmark count & status) | IndexedDB       | 6 hours       | Same as above (previews tolerate up to 24 hours extra)      |
+  | Image pages (preview image URLs)                          | IndexedDB       | 7 days        | 1,500 entries                                               |
+  | Ugoira frames                                             | IndexedDB       | 7 days        | 20 artworks / 64 MiB                                        |
+  | Tag details and Chinese translations                      | `GM_setValue`   | 30d / 7d      | 2,000 entries (evicts oldest down to `floor(capacity / 2)`) |
+  | User artwork lists                                        | Session Storage | 3 hours       | Per-tab lifecycle                                           |
+  | In-memory preview metadata cache (image pages / Ugoira)   | Memory          | Page lifetime | 100 entries each                                            |
+  | Decoded preview images                                    | Memory          | Page lifetime | 10 images (2× the preload window of 5 images)               |
 
-  发布未满默认 1 小时的作品不会缓存详情，以免固化发布初期的信息。访问作品详情页时会主动让该作品的详情缓存失效。
+  Artworks published within the last 1 hour (by default) are not cached so early metadata does not get frozen. Visiting an artwork page automatically invalidates the cached details for that artwork.
 
-  可以右键 Tampermonkey 图标选择「清除缓存」清空全部本地缓存，或选择「缓存占用」查看当前条目数。
+  Right-click the Tampermonkey icon and select "Clear cache" to purge all local caches, or "Cache usage" to inspect current entry counts.
 
-## 兼容性
+## Compatibility
 
-`Chrome >= 107`（2022.10.25）；较低版本 Chrome 以及其他浏览器的兼容性未测试。
+`Chrome >= 107` (2022-10-25); older Chrome versions and other browsers are untested.
 
-## 安装
+## Installation
 
-如果您想获取跟我一样的体验，那么请看插件页面 [PixivPreviewerL](https://greasyfork.org/zh-CN/scripts/533844)。或者直接在 Tampermonkey 上导入已经打包好的插件代码：[`dist/pixiv-previewer-l.user.js`](./dist/pixiv-previewer-l.user.js)。
+To get the same experience, install the script from [PixivPreviewerL on Greasy Fork](https://greasyfork.org/en/scripts/533844), or import the prebuilt userscript [`dist/pixiv-previewer-l.user.js`](./dist/pixiv-previewer-l.user.js) directly into Tampermonkey.
 
-[Pixiv Plus](https://greasyfork.org/en/scripts/34153) 是另一个我在浏览器上的必备插件，在兼容它的同时，对此插件的维护开发也将避免做与它重复的工作。您可以放心地同时启用这两个插件。
+[Pixiv Plus](https://greasyfork.org/en/scripts/34153) is another essential userscript in my browser. This project is designed to remain compatible with Pixiv Plus and avoids duplicating its features, so you can safely enable both scripts at the same time.
 
-## 限制
+## Limitations
 
-由于 Pixiv 对**接口访问频率的限制**，作品排序功能建议使用默认的页数 —— 2 页，降低被风控的风险。
+Because Pixiv enforces **strict API rate limits**, it is recommended to keep "Pages per sort" at the default of 2 pages to reduce the risk of triggering rate limiting.
 
-如果出现排序一直转圈（重试请求中），或是无法访问或收藏作品的情况，请耐心等待风控解除。
+If sorting stays on the loading spinner (retrying requests) or you temporarily cannot view or bookmark artworks, please wait for Pixiv's rate limit to lift.
 
-## 开发
+## Development
 
-安装项目依赖：
+Install dependencies:
 
 ```bash
 pnpm install
 ```
 
-开发与维护插件，可编辑 `src/` 目录里的源码；修改 Tampermonkey 的元数据，可编辑 `tsdown.config.ts` 中的 `banner` 配置。
+Edit source files under `src/` to develop and maintain the script; edit the `banner` option in `tsdown.config.ts` to update the Tampermonkey userscript metadata.
 
-查找并修复质量或格式问题：
+Lint and format the codebase:
 
 ```bash
-pnpm run lint     # 修复代码质量与格式问题
-pnpm run prettier # 修复代码的格式问题
+pnpm run lint     # Fix code quality and formatting issues
+pnpm run prettier # Format all files with Prettier
 ```
 
-打包为可发布文件 `dist/pixiv-previewer-l.user.js`：
+Build the distributable userscript at `dist/pixiv-previewer-l.user.js`:
 
 ```bash
 pnpm run build

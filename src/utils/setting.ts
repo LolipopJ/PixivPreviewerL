@@ -1,6 +1,6 @@
 import { g_defaultSettings } from "../constants";
 import { SETTING_FIELDS, validateSettingValue } from "../constants/settings";
-import Texts from "../i18n";
+import Texts, { setLocale } from "../i18n";
 import type { GlobalSettings, UserSettingKey, UserSettings } from "../types";
 import { iLog } from "./logger";
 
@@ -73,6 +73,7 @@ const ensureSyncListener = () => {
       const prev = activeSettings ?? normalizeStoredSettings(oldValue);
       const next = normalizeStoredSettings(newValue);
       activeSettings = next;
+      setLocale(next.language);
       notifyListeners(next, prev, "remote");
     }
   );
@@ -120,6 +121,7 @@ export const getSettings = (): GlobalSettings => {
     activeSettings = normalizeStoredSettings(
       GM_getValue<Partial<GlobalSettings>>(SETTINGS_KEY)
     );
+    setLocale(activeSettings.language);
   }
   return { ...activeSettings };
 };
@@ -178,6 +180,7 @@ export const saveUserSettings = (
 
   const prev = activeSettings ? { ...activeSettings } : latest;
   activeSettings = { ...candidate };
+  setLocale(candidate.language);
   notifyListeners(candidate, prev, "local");
   return { ok: true, settings: { ...candidate } };
 };
