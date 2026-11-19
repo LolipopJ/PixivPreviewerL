@@ -33,7 +33,9 @@ export default defineConfig({
 // @description         ${packageJson.description}
 // @author              ${packageJson.author}
 // @license             ${packageJson.license}
-// @supportURL          ${packageJson.homepage}
+// @homepageURL         ${packageJson.homepage}
+// @supportURL          ${packageJson.bugs.url}
+// @compatible          chrome 107+
 // @match               *://www.pixiv.net/*
 // @grant               GM_getValue
 // @grant               GM_setValue

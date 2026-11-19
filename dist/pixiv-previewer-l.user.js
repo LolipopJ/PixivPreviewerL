@@ -2,10 +2,12 @@
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
 // @version             1.9.0-20261119
-// @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
+// @description         Pixiv 油猴脚本。鼠标悬停即可预览插画、漫画和动图。支持按收藏数排序、原图下载与进度追踪、隐藏已收藏作品和本地标签管理。
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0-only
-// @supportURL          https://github.com/LolipopJ/PixivPreviewer
+// @homepageURL         https://github.com/LolipopJ/PixivPreviewer
+// @supportURL          https://github.com/LolipopJ/PixivPreviewer/issues
+// @compatible          chrome 107+
 // @match               *://www.pixiv.net/*
 // @grant               GM_getValue
 // @grant               GM_setValue
