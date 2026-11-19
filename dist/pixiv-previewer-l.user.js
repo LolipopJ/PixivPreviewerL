@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             1.8.1-20261117
+// @version             1.9.0-20261119
 // @description         Original project: https://github.com/Ocrosoft/PixivPreviewer.
 // @author              Ocrosoft, LolipopJ
 // @license             GPL-3.0-only
@@ -24,7 +24,7 @@
 // ==/UserScript==
 // src/constants/index.ts
 /** 版本号，发生改变时将会弹窗 */
-const g_version = "1.8.1";
+const g_version = "1.9.0";
 /** 默认设置 */
 const g_defaultSettings = {
 	enablePreview: true,
@@ -6889,7 +6889,7 @@ const initializeDom = () => {
 			if (next.enableLocalTags) loadLocalTags();
 			else unloadLocalTags();
 		});
-		if (g_settings.version !== "1.8.1") ShowUpgradeMessage();
+		if (g_settings.version !== "1.9.0") ShowUpgradeMessage();
 		if (g_pageType === void 0) return;
 		if (g_pageType === 3) waitFor(() => matchPageType() === 3 && document.querySelector("span[to]"), () => showSearchLinksForDeletedArtworks());
 		const page = Pages[g_pageType];

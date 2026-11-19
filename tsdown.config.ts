@@ -5,13 +5,15 @@ import packageJson from "./package.json" with { type: "json" };
 
 export default defineConfig({
   entry: ["src/index.ts"],
+  inputOptions: {
+    platform: "browser",
+  },
   outputOptions: {
     entryFileNames: "pixiv-previewer-l.user.js",
   },
   target: ["chrome107"],
   minify: false,
   clean: true,
-  platform: "browser",
   plugins: [svg()],
   env: {
     VERSION: packageJson.version,
