@@ -66,9 +66,13 @@ export const SETTING_FIELD_MAP: {
     options: [
       { value: "auto", labelKey: "settings_option_languageAuto" },
       { value: "zh-CN", label: "简体中文" },
+      { value: "zh-TW", label: "繁體中文" },
       { value: "en", label: "English" },
       { value: "ja", label: "日本語" },
       { value: "ko", label: "한국어" },
+      { value: "ru", label: "Русский" },
+      { value: "de", label: "Deutsch" },
+      { value: "fr", label: "Français" },
     ],
   },
   enablePreview: {

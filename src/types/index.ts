@@ -1,6 +1,7 @@
 import { AiType, IllustSortOrder, IllustType } from "../enums";
 
-export type LanguageOption = "auto" | "zh-CN" | "en" | "ja" | "ko";
+export type LanguageOption =
+  "auto" | "zh-CN" | "zh-TW" | "en" | "ja" | "ko" | "ru" | "de" | "fr";
 
 export interface GlobalSettings {
   /** 界面显示语言 */

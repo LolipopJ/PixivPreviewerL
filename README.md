@@ -1,6 +1,6 @@
 <h3 align="center">
   <a name="readme-top"></a>
-  <img src="./docs/logo.jpg">
+  <img src="https://raw.githubusercontent.com/LolipopJ/PixivPreviewerL/master/docs/logo.jpg">
 </h3>
 
 <div align="center">
@@ -14,7 +14,7 @@
 
 ---
 
-English | [中文](./README.zh.md)
+English | [中文](https://github.com/LolipopJ/PixivPreviewerL/blob/master/README.zh.md)
 
 # Pixiv Previewer (LolipopJ Edition)
 
@@ -31,21 +31,21 @@ As a moderate Pixiv digital hoarder, Ocrosoft/PixivPreviewer has been a huge pro
 🥰 This repository refactors the original project and focuses on the following improvements:
 
 - **Artwork previews across all pages.** Hovering over any image link that leads to an artwork page opens a preview window.
-  ![Artwork preview](./docs/preview.png)
+  ![Artwork preview](https://raw.githubusercontent.com/LolipopJ/PixivPreviewerL/master/docs/preview.png)
 - **Sorting on more pages.** Adds sorting support to pages where it is useful, such as a user's bookmarked artworks and new artworks from followed artists.
 - Improved development ergonomics and type safety.
 
 🤗 In addition, I added the following features for my own workflow:
 
 - **Metadata in the preview window.** Displays bookmark counts and AI-generated badges at the top of the preview window.
-  ![Artwork preview with metadata](./docs/preview-meta.png)
+  ![Artwork preview with metadata](https://raw.githubusercontent.com/LolipopJ/PixivPreviewerL/master/docs/preview-meta.png)
 - **One-handed preview mode.** Long-press the mouse button while a preview window is open to enter one-handed mode—equivalent to holding `Ctrl`/`Command`—keeping the preview open after releasing the mouse. Press `Esc` or click outside the preview window to exit.
 - **Download history panel for original images.** Click the "Download history" button in the bottom-right toolbar to track original-image download progress and quickly retry downloads interrupted by network drops or closed tabs. Download state is shared across all open Pixiv tabs, so you can check progress or retry interrupted downloads from any tab.
-  ![Download history](./docs/download-record.png)
+  ![Download history](https://raw.githubusercontent.com/LolipopJ/PixivPreviewerL/master/docs/download-record.png)
 - **Rating-based subdirectories for original-image downloads.** When Tampermonkey's "Download Mode" is set to "Browser API", rated artworks (`R-18` / `R-18G`) are automatically saved into corresponding subdirectories under your default downloads folder, helping organize downloaded artworks during initial triage.
 - **Hide bookmarked artworks on the current page.** Click the "Hide bookmarked artworks" button in the bottom-right toolbar to hide artworks already marked with a heart on the current page, making it easier to discover new works.
 - **Local tag management.** Save and organize favorite tags locally without Pixiv's 10-tag limit for free accounts; hover over any tag to view its details and see how many new works were added since your last visit.
-  ![Local tag management](./docs/local-tags.png)
+  ![Local tag management](https://raw.githubusercontent.com/LolipopJ/PixivPreviewerL/master/docs/local-tags.png)
 - **Multi-layered local caching.** By default, data is cached locally using the following policies (configurable under "Settings → Advanced settings → Cache"):
 
   | Data                                                      | Storage         | Default TTL   | Default Limit                                               |
@@ -69,7 +69,7 @@ As a moderate Pixiv digital hoarder, Ocrosoft/PixivPreviewer has been a huge pro
 
 ## Installation
 
-To get the same experience, install the script from [PixivPreviewerL on Greasy Fork](https://greasyfork.org/en/scripts/533844), or import the prebuilt userscript [`dist/pixiv-previewer-l.user.js`](./dist/pixiv-previewer-l.user.js) directly into Tampermonkey.
+To get the same experience, install the script from [PixivPreviewerL on Greasy Fork](https://greasyfork.org/en/scripts/533844), or import the prebuilt userscript [`dist/pixiv-previewer-l.user.js`](https://github.com/LolipopJ/PixivPreviewerL/blob/master/dist/pixiv-previewer-l.user.js) directly into Tampermonkey.
 
 [Pixiv Plus](https://greasyfork.org/en/scripts/34153) is another essential userscript in my browser. This project is designed to remain compatible with Pixiv Plus and avoids duplicating its features, so you can safely enable both scripts at the same time.
 
