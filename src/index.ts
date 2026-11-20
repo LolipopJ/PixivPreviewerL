@@ -386,7 +386,7 @@ const ShowUpgradeMessage = () => {
       Texts.upgrade_issue
     ),
     link(
-      "https://greasyfork.org/scripts/533844-pixiv-previewer-l/versions",
+      "https://github.com/LolipopJ/PixivPreviewerL/blob/master/CHANGELOG.md",
       Texts.upgrade_versions
     )
   );

@@ -37,6 +37,7 @@ There are no automated tests. Verify behavior by building and loading `dist/pixi
 
 - `dist/pixiv-previewer-l.user.js` is committed. Rebuild it only for a release or when the user asks; never hand-edit it.
 - A release is one `release x.y.z` commit that bumps `package.json` `version`, rebuilds `dist/`, and updates README/lockfile as needed. The version drives the metadata `@version` and the upgrade dialog (`g_version`), so do not bump it otherwise.
+- In the release commit, move the shipped entries from `Unreleased` into a `## [x.y.z] - YYYY-MM-DD` section. Keep `Unreleased` at the top and update the version comparison links in [CHANGELOG.md](CHANGELOG.md).
 - Tampermonkey metadata lives only in the `banner` of [tsdown.config.ts](tsdown.config.ts). Add a `@grant` there for every new `GM_*`/`GM.*` API, and a `@require` for every new CDN library. Keep `@match` limited to `www.pixiv.net`.
 - Build target is `chrome107`, output format is `cjs`, `minify: false`. Do not use syntax or APIs newer than that.
 - `process.env.VERSION` and `process.env.BUG_REPORT_PAGE` are injected by tsdown `env`; declare new build-time values there.
@@ -59,7 +60,8 @@ There are no automated tests. Verify behavior by building and loading `dist/pixi
 
 ## Docs
 
-[README.md](README.md) is Chinese and user-facing. Update it when a feature, setting, cache policy, or compatibility statement changes. Do not add changelog files; release history lives on the Greasy Fork versions page.
+- Update both the English [README.md](README.md) and the Chinese [README.zh.md](README.zh.md) when a feature, setting, cache policy, or compatibility statement changes.
+- Record every completed code change under `Unreleased` in [CHANGELOG.md](CHANGELOG.md) before handing off the work. Use the appropriate [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) category and summarize the impact for users or maintainers. Update an existing entry when it already covers the change.
 
 ## Secrets
 
