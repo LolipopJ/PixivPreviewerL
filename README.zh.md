@@ -22,6 +22,8 @@
 
 我是 Pixiv 中度仓鼠症，Ocrosoft/PixivPreviewer 带给我很大的效率提升，是我的浏览器的必备插件之一，因而我 Fork 了该项目并进行了现代前端工程化改造，并彻底按照**自己的喜好**对此项目进行开发维护。
 
+![作品预览](https://raw.githubusercontent.com/LolipopJ/PixivPreviewerL/master/docs/preview.png)
+
 😥 由于我的自以为是，相比原项目，此项目里的插件有如下退化：
 
 - **不支持小说相关内容。** 我不使用 Pixiv 浏览小说，所以不会对小说相关内容进行开发与维护。
@@ -30,8 +32,6 @@
 
 🥰 此仓库重构了原有项目，并专注于解决如下问题：
 
-- **兼容所有页面的作品预览。** 对于所有能点击跳转到作品详情页的图片，显示预览窗口。
-  ![作品预览](https://raw.githubusercontent.com/LolipopJ/PixivPreviewerL/master/docs/preview.png)
 - **为我认为可以支持排序的页面添加排序功能。** 例如用户收藏作品、关注画师的新作品等页面。
 - 提升插件开发效率和代码安全性。
 

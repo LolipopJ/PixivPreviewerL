@@ -22,6 +22,8 @@ English | [中文](https://github.com/LolipopJ/PixivPreviewerL/blob/master/READM
 
 As a moderate Pixiv digital hoarder, Ocrosoft/PixivPreviewer has been a huge productivity booster and one of my essential browser extensions. I forked the project, modernized its frontend tooling, and now maintain it strictly according to **my own preferences**.
 
+![Artwork preview](https://raw.githubusercontent.com/LolipopJ/PixivPreviewerL/master/docs/preview.png)
+
 😥 Because of my opinionated choices, this fork has the following trade-offs compared to the original project:
 
 - **No novel support.** I do not use Pixiv to read novels, so novel-related features are neither developed nor maintained.
@@ -30,8 +32,6 @@ As a moderate Pixiv digital hoarder, Ocrosoft/PixivPreviewer has been a huge pro
 
 🥰 This repository refactors the original project and focuses on the following improvements:
 
-- **Artwork previews across all pages.** Hovering over any image link that leads to an artwork page opens a preview window.
-  ![Artwork preview](https://raw.githubusercontent.com/LolipopJ/PixivPreviewerL/master/docs/preview.png)
 - **Sorting on more pages.** Adds sorting support to pages where it is useful, such as a user's bookmarked artworks and new artworks from followed artists.
 - Improved development ergonomics and type safety.
 
