@@ -26,14 +26,6 @@ const formatBytes = (bytes: number) =>
     ? `${(bytes / (1024 * 1024)).toFixed(1)} MB`
     : `${Math.ceil(bytes / 1024)} KB`;
 
-const formatTime = (timestamp: number) =>
-  new Date(timestamp).toLocaleString(locale, {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 const formatDownloadError = (error?: string) => {
   switch (error) {
     case "network-error":
@@ -248,6 +240,7 @@ export const loadDownloadPanel = (toolbar: HTMLElement) => {
       abort: JQuery;
       retry: JQuery;
       remove: JQuery;
+      rendered?: { record: DownloadRecord; local: boolean; locale: string };
     }
   >();
 
@@ -276,6 +269,15 @@ export const loadDownloadPanel = (toolbar: HTMLElement) => {
     const attention = records.filter((record) =>
       ["failed", "interrupted"].includes(record.status)
     ).length;
+    countBadge.text(String(active)).prop("hidden", active === 0);
+    button.attr({
+      "data-active": String(active > 0),
+      "data-attention": String(attention > 0),
+      "aria-busy": String(active > 0),
+    });
+
+    if (panel.prop("hidden")) return;
+
     const completed = records.filter(
       (record) => record.status === "completed"
     ).length;
@@ -296,17 +298,24 @@ export const loadDownloadPanel = (toolbar: HTMLElement) => {
         rows.delete(id);
       }
     }
-    countBadge.text(String(active)).prop("hidden", active === 0);
-    button.attr({
-      "data-active": String(active > 0),
-      "data-attention": String(attention > 0),
-      "aria-busy": String(active > 0),
-    });
     summary.text(
       records.length
         ? formatText(Texts.download_summary, active, completed, attention)
         : Texts.download_empty
     );
+    let dateFormatter: Intl.DateTimeFormat | undefined;
+    const formatTime = (timestamp: number) => {
+      const date = new Date(timestamp);
+      if (Number.isNaN(date.getTime())) return date.toString();
+      dateFormatter ??= new Intl.DateTimeFormat(locale, {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      return dateFormatter.format(date);
+    };
     for (const record of [...records].reverse()) {
       let row = rows.get(record.id);
       if (!row) {
@@ -359,6 +368,20 @@ export const loadDownloadPanel = (toolbar: HTMLElement) => {
       }
       const running = record.status === "downloading";
       const local = running && isDownloadingInThisTab(record.id);
+      const previous = row.rendered;
+      // 避免下载进度变化时反复格式化历史记录的时间。
+      if (
+        previous &&
+        previous.locale === locale &&
+        previous.local === local &&
+        previous.record.status === record.status &&
+        previous.record.loaded === record.loaded &&
+        previous.record.total === record.total &&
+        previous.record.completedAt === record.completedAt &&
+        previous.record.error === record.error
+      ) {
+        continue;
+      }
       const retryable =
         record.status === "failed" || record.status === "interrupted";
       const percent =
@@ -387,6 +410,7 @@ export const loadDownloadPanel = (toolbar: HTMLElement) => {
       row.progress.prop("hidden", !running);
       if (percent === undefined) row.progress.removeAttr("value");
       else row.progress.val(percent);
+      row.rendered = { record, local, locale };
     }
     if (focusedRemovedIndex >= 0 && !panel.prop("hidden")) {
       const items = list.children("li");
@@ -399,7 +423,6 @@ export const loadDownloadPanel = (toolbar: HTMLElement) => {
         closeButton.get(0);
       target?.focus({ preventScroll: true });
     }
-    positionPanel();
   };
 
   const close = (restoreFocus = false) => {
@@ -410,9 +433,9 @@ export const loadDownloadPanel = (toolbar: HTMLElement) => {
   };
   button.on("click", () => {
     if (!panel.prop("hidden")) return close();
-    update();
     panel.prop("hidden", false);
     button.attr("aria-expanded", "true");
+    update();
     positionPanel();
     closeButton.trigger("focus");
   });
@@ -432,6 +455,9 @@ export const loadDownloadPanel = (toolbar: HTMLElement) => {
         moreActionsSummary.trigger("focus");
       } else close(true);
     }
+  });
+  new ResizeObserver(positionPanel).observe(panel.get(0)!, {
+    box: "border-box",
   });
   window.addEventListener("resize", positionPanel);
   subscribeDownloads(update);

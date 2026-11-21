@@ -10,6 +10,10 @@ For versions 1.9.0 and earlier, see the [Greasy Fork version history](https://gr
 
 - Updated the upgrade notice to link to the project changelog on GitHub.
 
+### Fixed
+
+- Improved artwork preview responsiveness during downloads and reduced the time to open large download histories.
+
 ## [1.10.0] - 2026-11-19
 
 This section covers the `1.10.0-20261119` userscript on Greasy Fork, including the locale additions published after the Git tag.
