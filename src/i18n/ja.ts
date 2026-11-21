@@ -23,6 +23,11 @@ export default {
   label_sorting: "作品を並べ替え中",
   label_nextPage: "次のページへ",
   label_hideFav: "ブックマーク済みの作品を非表示",
+  sort_failed: "作品を並べ替えられませんでした",
+  sort_listMissing: "並べ替え対象の作品一覧が見つかりませんでした。",
+  sort_listAmbiguous:
+    "作品一覧が %1 件見つかったため、並べ替え対象を特定できません。",
+  sort_reportIssue: "GitHub の Issue ページで報告",
   sort_getUserWorks: "このユーザーの作品を取得中…",
   sort_getWorks: "%1 ページ目の作品を取得中…",
   sort_retryWorks: "%1 ページ目の作品を再取得中（%2 回目）…",

@@ -426,17 +426,20 @@ const appendToolbarButton = (
     title,
     icon,
     onClick,
+    hidden = false,
   }: {
     id: string;
     title: string;
     icon: string;
     onClick: () => void;
+    hidden?: boolean;
   }
 ) => {
   if ($(`#${id}`).length) return;
 
   const newListItem = document.createElement("div");
   newListItem.title = title;
+  newListItem.hidden = hidden;
   const newButton = document.createElement("button");
   newButton.id = id;
   newButton.className = "pp-toolbar-button";
@@ -461,18 +464,22 @@ const setToolbarButtonTitle = (id: string, title: string) => {
 const mountToolbar = (toolBar: HTMLElement) => {
   DoLog(LogLevel.Elements, toolBar);
 
-  appendToolbarButton(toolBar, {
-    id: SORT_BUTTON_ID,
-    title: Texts.label_sort,
-    icon: sortIcon,
-    onClick: () => window.dispatchEvent(new Event(SORT_EVENT_NAME)),
-  });
-  appendToolbarButton(toolBar, {
-    id: SORT_NEXT_PAGE_BUTTON_ID,
-    title: Texts.label_nextPage,
-    icon: nextPageIcon,
-    onClick: () => window.dispatchEvent(new Event(SORT_NEXT_PAGE_EVENT_NAME)),
-  });
+  if (toolBar.id === TOOLBAR_ID) {
+    appendToolbarButton(toolBar, {
+      id: SORT_BUTTON_ID,
+      title: Texts.label_sort,
+      icon: sortIcon,
+      hidden: true,
+      onClick: () => window.dispatchEvent(new Event(SORT_EVENT_NAME)),
+    });
+    appendToolbarButton(toolBar, {
+      id: SORT_NEXT_PAGE_BUTTON_ID,
+      title: Texts.label_nextPage,
+      icon: nextPageIcon,
+      hidden: true,
+      onClick: () => window.dispatchEvent(new Event(SORT_NEXT_PAGE_EVENT_NAME)),
+    });
+  }
   appendToolbarButton(toolBar, {
     id: HIDE_FAVORITES_BUTTON_ID,
     title: Texts.label_hideFav,
@@ -481,6 +488,15 @@ const mountToolbar = (toolBar: HTMLElement) => {
   });
 
   loadDownloadPanel(toolBar);
+};
+
+const updateSortButtons = (visible: boolean) => {
+  if (visible && !findToolbar()) {
+    mountToolbar(createToolbar());
+  }
+  $(`#${SORT_BUTTON_ID}, #${SORT_NEXT_PAGE_BUTTON_ID}`)
+    .parent()
+    .prop("hidden", !visible);
 };
 //#endregion
 
@@ -548,9 +564,6 @@ const initializeEarly = () => {
 
     // 初始化作品预览功能。仅绑定一次事件委托，内部按当前配置决定是否触发
     loadIllustPreview();
-
-    // 初始化作品排序功能。按钮稍后创建，事件监听先就位，避免点击无响应
-    loadIllustSort();
   } catch (e) {
     DoLog(LogLevel.Error, "An error occurred while initializing:", e);
   }
@@ -599,9 +612,8 @@ const initializeDom = () => {
       ShowUpgradeMessage();
     }
 
-    if (g_pageType === undefined) return;
-
-    if (g_pageType === PageType.Member) {
+    const pageType = matchPageType();
+    if (pageType === PageType.Member) {
       // Pixiv 是 SPA，探测窗口内可能已跳转到其它页面；
       // 复核页面类型，避免把搜索结果链接处理逻辑套用到新页面
       waitFor(
@@ -612,18 +624,23 @@ const initializeDom = () => {
       );
     }
 
-    // 工具栏只需要挂载一次；页面自带工具栏的页面（如动态页）需等其渲染
-    const page = Pages[g_pageType];
-    if ("CreateToolBar" in page) {
-      mountToolbar(page.CreateToolBar());
-    } else {
-      const { toolbarProbeIntervalMs, toolbarProbeMaxAttempts } = getSettings();
-      waitFor(page.FindToolBar, mountToolbar, {
-        interval: toolbarProbeIntervalMs,
-        maxAttempts: toolbarProbeMaxAttempts,
-        onGiveUp: () => DoLog(LogLevel.Warning, "Get toolbar failed."),
-      });
+    if (pageType !== undefined) {
+      // 工具栏只需要挂载一次；页面自带工具栏的页面（如动态页）需等其渲染
+      const page = Pages[pageType];
+      if ("CreateToolBar" in page) {
+        mountToolbar(page.CreateToolBar());
+      } else {
+        const { toolbarProbeIntervalMs, toolbarProbeMaxAttempts } =
+          getSettings();
+        waitFor(page.FindToolBar, mountToolbar, {
+          interval: toolbarProbeIntervalMs,
+          maxAttempts: toolbarProbeMaxAttempts,
+          onGiveUp: () => DoLog(LogLevel.Warning, "Get toolbar failed."),
+        });
+      }
     }
+
+    loadIllustSort(updateSortButtons);
   } catch (e) {
     DoLog(LogLevel.Error, "An error occurred while initializing:", e);
   }
@@ -632,7 +649,7 @@ const initializeDom = () => {
 // 必须在 `document-start` 劫持页面自身的标签搜索请求（仅安装一次，按当前开关决定是否统计）
 interceptTagSearchRequests();
 
-// 预览、排序、缓存清理与页面识别不依赖 DOM，尽早启动
+// 预览、缓存清理与页面识别不依赖 DOM，尽早启动
 initializeEarly();
 
 onDomReady(initializeDom);

@@ -22,6 +22,11 @@ export default {
   label_sorting: "Tri des œuvres en cours",
   label_nextPage: "Page suivante",
   label_hideFav: "Masquer les œuvres en favoris",
+  sort_failed: "Impossible de trier les œuvres",
+  sort_listMissing: "La liste d’œuvres à trier est introuvable.",
+  sort_listAmbiguous:
+    "%1 listes d’œuvres ont été trouvées. La liste à trier est ambiguë.",
+  sort_reportIssue: "Signaler le problème sur GitHub",
   sort_getUserWorks: "Chargement des œuvres de cet utilisateur…",
   sort_getWorks: "Chargement des œuvres de la page %1…",
   sort_retryWorks: "Nouvelle tentative pour la page %1 (essai %2)…",

@@ -23,6 +23,11 @@ export default {
   label_sorting: "Werke werden sortiert",
   label_nextPage: "Zur nächsten Seite",
   label_hideFav: "Gespeicherte Werke ausblenden",
+  sort_failed: "Werke konnten nicht sortiert werden",
+  sort_listMissing: "Die zu sortierende Werkliste wurde nicht gefunden.",
+  sort_listAmbiguous:
+    "Es wurden %1 Werklisten gefunden. Die zu sortierende Liste ist nicht eindeutig.",
+  sort_reportIssue: "Problem auf GitHub melden",
   sort_getUserWorks: "Werke dieses Nutzers werden geladen…",
   sort_getWorks: "Werke auf Seite %1 werden geladen…",
   sort_retryWorks: "Seite %1 wird erneut geladen (Versuch %2)…",

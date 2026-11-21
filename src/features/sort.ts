@@ -18,6 +18,8 @@ import {
 } from "../services";
 import type { GlobalSettings, IllustrationListItem } from "../types";
 import { markSortedArtworkLink } from "../utils/artwork-link";
+import debounce from "../utils/debounce";
+import { injectStyle } from "../utils/dom";
 import {
   checkIsAiAssisted,
   checkIsAiGenerated,
@@ -51,8 +53,76 @@ const parseExcludedTags = (raw: string) =>
     .map((tag) => tag.trim().toLowerCase())
     .filter(Boolean);
 
+const SORT_ERROR_PANEL_ID = "pp-sort-error";
+
+const showSortError = (error: unknown) => {
+  injectStyle(
+    `
+      #${SORT_ERROR_PANEL_ID} {
+        position: fixed; right: 20px; bottom: 20px; z-index: 100002;
+        width: min(400px, calc(100vw - 40px)); max-height: calc(100vh - 40px);
+        box-sizing: border-box; padding: 14px 16px; overflow: auto;
+        overflow-wrap: anywhere; font: 14px/1.5 sans-serif;
+        color-scheme: light dark; background: Canvas; color: CanvasText;
+        border: 1px solid GrayText; border-radius: 12px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, .24);
+      }
+      #${SORT_ERROR_PANEL_ID} p { margin: 6px 0 12px; }
+      #${SORT_ERROR_PANEL_ID} footer {
+        display: flex; align-items: center; flex-wrap: wrap;
+        justify-content: space-between; gap: 8px;
+      }
+      #${SORT_ERROR_PANEL_ID} a { color: LinkText; text-decoration: underline; }
+      #${SORT_ERROR_PANEL_ID} button {
+        padding: 4px 8px; border: 1px solid GrayText; border-radius: 6px;
+        background: Canvas; color: inherit; font: inherit; cursor: pointer;
+      }
+      #${SORT_ERROR_PANEL_ID} :is(a, button):focus-visible {
+        outline: 2px solid Highlight; outline-offset: 2px;
+      }
+    `,
+    "pp-sort-error-style"
+  );
+
+  const close = () => {
+    const hadFocus = panel.get(0)?.contains(document.activeElement);
+    panel.remove();
+    if (hadFocus) document.getElementById(SORT_BUTTON_ID)?.focus();
+  };
+  const message = error instanceof Error ? error.message : String(error);
+  const alert = $("<div>").attr("role", "alert");
+  const panel = $("<aside>")
+    .attr("id", SORT_ERROR_PANEL_ID)
+    .append(
+      alert,
+      $("<footer>").append(
+        $("<a>")
+          .attr({
+            href: process.env.BUG_REPORT_PAGE,
+            target: "_blank",
+            rel: "noopener noreferrer",
+          })
+          .text(Texts.sort_reportIssue),
+        $("<button>")
+          .attr("type", "button")
+          .text(Texts.close)
+          .on("click", close)
+      )
+    )
+    .on("keydown", (event) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      close();
+    })
+    .appendTo("body");
+  alert.append($("<strong>").text(Texts.sort_failed), $("<p>").text(message));
+};
+
 let isInitialized = false;
-export const loadIllustSort = () => {
+export const loadIllustSort = (
+  setButtonsVisible: (visible: boolean) => void
+) => {
   if (isInitialized) return;
 
   class IllustSorter {
@@ -71,60 +141,47 @@ export const loadIllustSort = () => {
       return $(`#${SORT_BUTTON_ID}`);
     }
 
-    reset({ type }: { type: IllustSortType }) {
-      try {
-        this.type = type;
-        this.illustrations = [];
-        this.sorting = false;
-        this.nextSortPage = 1;
-        this.listElement = getIllustrationsListDom(type);
-        this.progressElement?.remove();
-        this.progressElement = $(document.createElement("div"))
-          .attr({
-            id: "pp-sort-progress",
-          })
-          .css({
-            width: "100%",
-            display: "flex",
-            "flex-direction": "column",
-            "align-items": "center",
-            "justify-content": "center",
-            gap: "6px",
-          })
-          .append(
-            $(new Image(96, 96))
-              .attr({
-                id: "sort-progress__loading",
-                src: g_loadingImage,
-              })
-              .css({
-                "border-radius": "50%",
-              })
-          )
-          .prependTo(this.listElement)
-          .hide();
-        this.progressText = $(document.createElement("div"))
-          .attr({
-            id: "pp-sort-progress__text",
-          })
-          .css({
-            "text-align": "center",
-            "font-size": "16px",
-            "font-weight": "bold",
-            color: "initial",
-          })
-          .appendTo(this.progressElement);
-        this.sortButtonElement.attr({
-          title: Texts.label_sort,
-          "aria-label": Texts.label_sort,
-          "aria-busy": "false",
-        });
-      } catch (error) {
-        iLog.e(`An error occurred while resetting sorter:`, error);
-        throw new Error(String(error), {
-          cause: error,
-        });
-      }
+    reset(type: IllustSortType) {
+      this.type = type;
+      this.illustrations = [];
+      this.nextSortPage = undefined;
+      this.listElement = getIllustrationsListDom(type);
+      this.progressElement.remove();
+      this.progressElement = $(document.createElement("div"))
+        .attr({
+          id: "pp-sort-progress",
+        })
+        .css({
+          width: "100%",
+          display: "flex",
+          "flex-direction": "column",
+          "align-items": "center",
+          "justify-content": "center",
+          gap: "6px",
+        })
+        .append(
+          $(new Image(96, 96))
+            .attr({
+              id: "sort-progress__loading",
+              src: g_loadingImage,
+            })
+            .css({
+              "border-radius": "50%",
+            })
+        )
+        .prependTo(this.listElement)
+        .hide();
+      this.progressText = $(document.createElement("div"))
+        .attr({
+          id: "pp-sort-progress__text",
+        })
+        .css({
+          "text-align": "center",
+          "font-size": "16px",
+          "font-weight": "bold",
+          color: "initial",
+        })
+        .appendTo(this.progressElement);
     }
 
     async sort({
@@ -132,11 +189,13 @@ export const loadIllustSort = () => {
       api,
       searchParams,
       settings,
+      isCurrentPage,
     }: {
       type: IllustSortType;
       api: string;
       searchParams: URLSearchParams;
       settings: SortRuntimeSettings;
+      isCurrentPage: () => boolean;
     }) {
       this.sorting = true;
       iLog.i("Start to sort illustrations.");
@@ -153,17 +212,16 @@ export const loadIllustSort = () => {
       } = settings;
       const excludedTags = hideByTag ? parseExcludedTags(hideByTagList) : [];
 
-      this.sortButtonElement.attr({
-        title: Texts.label_sorting,
-        "aria-label": Texts.label_sorting,
-        "aria-busy": "true",
-      });
-
       try {
+        this.sortButtonElement.attr({
+          title: Texts.label_sorting,
+          "aria-label": Texts.label_sorting,
+          "aria-busy": "true",
+        });
+
         //#region 获取作品分页列表
         let illustrations: IllustrationListItem[] = [];
         const startPage = Number(searchParams.get("p") ?? 1);
-        this.nextSortPage = startPage + pageCount;
 
         for (let page = startPage; page < startPage + pageCount; page += 1) {
           searchParams.set("p", String(page));
@@ -185,6 +243,7 @@ export const loadIllustSort = () => {
                 onRequesting: () => this.setProgress(Texts.sort_getUserWorks),
               }
             );
+            if (!isCurrentPage()) return;
             const fromIndex = (page - 1) * USER_TYPE_ARTWORKS_PER_PAGE;
             const toIndex = page * USER_TYPE_ARTWORKS_PER_PAGE;
             switch (type) {
@@ -216,6 +275,12 @@ export const loadIllustSort = () => {
           const getIllustRes = await requestWithRetry({
             url: requestUrl,
             onRetry: (response, retryTimes) => {
+              if (!isCurrentPage()) {
+                throw new DOMException(
+                  "The sorting page changed.",
+                  "AbortError"
+                );
+              }
               iLog.w(
                 `Get illustration list through \`${requestUrl}\` failed:`,
                 response,
@@ -226,6 +291,7 @@ export const loadIllustSort = () => {
               );
             },
           });
+          if (!isCurrentPage()) return;
           const extractedIllustrations = getIllustrationsFromResponse(
             type,
             getIllustRes.response
@@ -265,6 +331,7 @@ export const loadIllustSort = () => {
         const detailedIllustrations = await execLimitConcurrentPromises(
           getDetailedIllustrationPromises
         );
+        if (!isCurrentPage()) return;
         iLog.d("Queried detailed illustrations:", detailedIllustrations);
         //#endregion
 
@@ -309,20 +376,22 @@ export const loadIllustSort = () => {
         iLog.d("Filtered and sorted illustrations:", sortedIllustrations);
         //#endregion
 
-        iLog.i("Sort illustrations successfully.");
+        if (!this.listElement.get(0)?.isConnected) {
+          throw new Error(Texts.sort_listMissing);
+        }
         this.illustrations = sortedIllustrations;
         this.showIllustrations();
-      } catch (error) {
-        iLog.e("Sort illustrations failed:", error);
+        this.nextSortPage = startPage + pageCount;
+        iLog.i("Sort illustrations successfully.");
+      } finally {
+        this.sorting = false;
+        this.hideProgress();
+        this.sortButtonElement.attr({
+          title: Texts.label_sort,
+          "aria-label": Texts.label_sort,
+          "aria-busy": "false",
+        });
       }
-
-      this.hideProgress();
-      this.sorting = false;
-      this.sortButtonElement.attr({
-        title: Texts.label_sort,
-        "aria-label": Texts.label_sort,
-        "aria-busy": "false",
-      });
     }
 
     setProgress(text: string) {
@@ -476,43 +545,93 @@ export const loadIllustSort = () => {
   }
 
   const illustSorter = new IllustSorter();
-  window.addEventListener(SORT_EVENT_NAME, () => {
+  let currentPage: URL | undefined;
+
+  const diagnoseSortPage = debounce(
+    (url: URL, type: IllustSortType) => {
+      if (url.href !== location.href) return;
+      try {
+        getIllustrationsListDom(type);
+      } catch (error) {
+        iLog.w(
+          "Artwork sorting page check failed:",
+          url.href,
+          IllustSortType[type],
+          error
+        );
+      }
+    },
+    () => {
+      const { domProbeIntervalMs, domProbeMaxAttempts } = getSettings();
+      return domProbeIntervalMs * (domProbeMaxAttempts - 1);
+    }
+  );
+
+  const refreshSortPage = () => {
+    const url = new URL(location.href);
+    if (url.href === currentPage?.href) return;
+
+    currentPage = url;
+    illustSorter.nextSortPage = undefined;
+    illustSorter.progressElement.remove();
+    $(`#${SORT_ERROR_PANEL_ID}`).remove();
+
+    const options = getSortOptionsFromUrl(url);
+    setButtonsVisible(Boolean(options));
+
+    // 路由变化时页面可能仍保留上一个列表，等异步渲染完成后再检查。
+    diagnoseSortPage.cancel();
+    if (options) diagnoseSortPage(url, options.type);
+  };
+
+  window.addEventListener(SORT_EVENT_NAME, async () => {
     if (illustSorter.sorting) {
       iLog.w("Current is in sorting progress.");
       return;
     }
 
     const url = new URL(location.href);
-    const {
-      type,
-      api,
-      searchParams: defaultSearchParams,
-    } = getSortOptionsFromUrl(url);
+    const page = currentPage;
+    const isCurrentPage = () =>
+      page === currentPage && url.href === location.href;
+    try {
+      const options = getSortOptionsFromUrl(url);
+      if (!options) return;
+      const { type, api, searchParams } = options;
 
-    const mergedSearchParams = new URLSearchParams(defaultSearchParams);
-    url.searchParams.forEach((value, key) => {
-      mergedSearchParams.set(key, value);
-    });
+      url.searchParams.forEach((value, key) => {
+        searchParams.set(key, value);
+      });
 
-    illustSorter.reset({
-      type,
-    });
-    illustSorter.sort({
-      type,
-      api,
-      searchParams: mergedSearchParams,
-      settings: getSettings(),
-    });
+      $(`#${SORT_ERROR_PANEL_ID}`).remove();
+      illustSorter.reset(type);
+      await illustSorter.sort({
+        type,
+        api,
+        searchParams,
+        settings: getSettings(),
+        isCurrentPage,
+      });
+    } catch (error) {
+      if (!isCurrentPage()) return;
+      iLog.e("Sort illustrations failed:", url.href, error);
+      showSortError(error);
+    }
   });
 
   window.addEventListener(SORT_NEXT_PAGE_EVENT_NAME, () => {
     const url = new URL(location.href);
+    if (!getSortOptionsFromUrl(url)) return;
     const { origin, pathname, searchParams } = url;
 
-    const currentPage = Number(searchParams.get("p") ?? 1);
-    let nextPage = currentPage + 1;
+    const currentPageNumber = Number(searchParams.get("p") ?? 1);
+    let nextPage = currentPageNumber + 1;
 
-    if (illustSorter.listElement?.length && illustSorter.nextSortPage) {
+    if (
+      url.href === currentPage?.href &&
+      illustSorter.nextSortPage &&
+      illustSorter.listElement.get(0)?.isConnected
+    ) {
       iLog.i(
         "Illustrations in current page are sorted, jump to next available page..."
       );
@@ -523,54 +642,42 @@ export const loadIllustSort = () => {
     location.href = `${origin}${pathname}?${searchParams}`;
   });
 
+  window.addEventListener("urlchange", refreshSortPage);
+  refreshSortPage();
+
   isInitialized = true;
 };
 
 /** 获取作品节点 li 的父节点 ul */
 function getIllustrationsListDom(type: IllustSortType) {
-  let dom: JQuery<HTMLElement> | undefined;
+  const isSearchResult = [
+    IllustSortType.TAG_ARTWORK,
+    IllustSortType.TAG_ILLUST,
+    IllustSortType.TAG_MANGA,
+    IllustSortType.SEARCH_ILLUST,
+    IllustSortType.SEARCH_MANGA,
+  ].includes(type);
+  let dom = isSearchResult
+    ? $('div[data-ga4-label="works_content"]').children("div").last()
+    : $(BOOKMARK_USER_PAGE_ILLUSTRATION_LIST_SELECTOR);
 
-  if (
-    [
-      IllustSortType.TAG_ARTWORK,
-      IllustSortType.TAG_ILLUST,
-      IllustSortType.TAG_MANGA,
-      IllustSortType.SEARCH_ILLUST,
-      IllustSortType.SEARCH_MANGA,
-    ].includes(type)
-  ) {
-    dom = $('div[data-ga4-label="works_content"]').children("div").last();
-    if (!dom.length) {
-      dom = $("section").find("ul").last();
-    }
-  } else if (
-    [
-      IllustSortType.BOOKMARK_NEW,
-      IllustSortType.BOOKMARK_NEW_R18,
-      IllustSortType.USER_BOOKMARK,
-    ].includes(type)
-  ) {
-    dom = $(BOOKMARK_USER_PAGE_ILLUSTRATION_LIST_SELECTOR);
-    if (!dom.length) {
-      dom = $("section").find("ul").last();
-    }
-  } else if (
-    [
+  if (!dom.length) {
+    const isUserArtworkList = [
       IllustSortType.USER_ARTWORK,
       IllustSortType.USER_ILLUST,
       IllustSortType.USER_MANGA,
-    ].includes(type)
-  ) {
-    dom = $(BOOKMARK_USER_PAGE_ILLUSTRATION_LIST_SELECTOR);
-    if (!dom.length) {
-      dom = $(".__top_side_menu_body").find("ul").last();
-    }
+    ].includes(type);
+    const selector = isUserArtworkList
+      ? ".__top_side_menu_body ul"
+      : "section ul";
+    dom = $(selector).has('a[href*="/artworks/"]');
   }
 
-  if (!dom || !dom.length) {
-    throw new Error(
-      `Illustrations list DOM not found in current page: ${location.href}. Please create a new issue here: ${process.env.BUG_REPORT_PAGE}`
-    );
+  if (!dom.length) {
+    throw new Error(Texts.sort_listMissing);
+  }
+  if (dom.length > 1) {
+    throw new Error(formatText(Texts.sort_listAmbiguous, dom.length));
   }
 
   return dom;
@@ -578,7 +685,8 @@ function getIllustrationsListDom(type: IllustSortType) {
 
 /** 根据当前路由获取接口参数 */
 function getSortOptionsFromUrl(url: URL) {
-  const { pathname, searchParams } = url;
+  const { searchParams } = url;
+  const pathname = url.pathname.replace(/^\/en(?=\/)/, "");
 
   let type: IllustSortType | undefined;
   let api: string | undefined;
@@ -586,7 +694,9 @@ function getSortOptionsFromUrl(url: URL) {
 
   let match: RegExpMatchArray | null;
   if (
-    (match = pathname.match(/\/tags\/(.+)\/(artworks|illustrations|manga)$/))
+    (match = pathname.match(
+      /^\/tags\/([^/]+)\/(artworks|illustrations|manga)$/
+    ))
   ) {
     const tagName = match[1];
     const filterType = match[2];
@@ -608,8 +718,9 @@ function getSortOptionsFromUrl(url: URL) {
         defaultSearchParams = `word=${tagName}&order=date_d&mode=all&p=1&csw=0&s_mode=s_tag_full&type=manga&lang=zh`;
         break;
     }
-  } else if (pathname.match(/\/search/)) {
-    const tagName = searchParams.get("q");
+  } else if (pathname === "/search") {
+    const tagName = searchParams.get("q")?.trim();
+    if (!tagName) return;
     const filterType = searchParams.get("type");
 
     switch (filterType) {
@@ -624,25 +735,24 @@ function getSortOptionsFromUrl(url: URL) {
         defaultSearchParams = `word=${tagName}&order=date_d&mode=all&p=1&csw=0&s_mode=s_tag_full&type=manga&lang=zh`;
         break;
     }
-  } else if ((match = pathname.match(/\/bookmark_new_illust(_r18)?\.php$/))) {
+  } else if ((match = pathname.match(/^\/bookmark_new_illust(_r18)?\.php$/))) {
     const isR18 = !!match[1];
 
     api = "/ajax/follow_latest/illust";
-    if (isR18) {
-      type = IllustSortType.BOOKMARK_NEW;
-      defaultSearchParams = "mode=r18&lang=zh";
-    } else {
-      type = IllustSortType.BOOKMARK_NEW_R18;
-      defaultSearchParams = "mode=all&lang=zh";
-    }
-  } else if ((match = pathname.match(/\/users\/(\d+)\/bookmarks\/artworks$/))) {
+    type = isR18
+      ? IllustSortType.BOOKMARK_NEW_R18
+      : IllustSortType.BOOKMARK_NEW;
+    defaultSearchParams = `mode=${isR18 ? "r18" : "all"}&lang=zh`;
+  } else if (
+    (match = pathname.match(/^\/users\/(\d+)\/bookmarks\/artworks$/))
+  ) {
     const userId = match[1];
 
     type = IllustSortType.USER_BOOKMARK;
     api = `/ajax/user/${userId}/illusts/bookmarks`;
     defaultSearchParams = `tag=&offset=0&limit=${USER_TYPE_ARTWORKS_PER_PAGE}&rest=show&lang=zh`;
   } else if (
-    (match = pathname.match(/\/users\/(\d+)\/(artworks|illustrations|manga)$/))
+    (match = pathname.match(/^\/users\/(\d+)\/(artworks|illustrations|manga)$/))
   ) {
     const userId = match[1];
     const filterType = match[2];
@@ -670,7 +780,7 @@ function getSortOptionsFromUrl(url: URL) {
     api === undefined ||
     defaultSearchParams === undefined
   ) {
-    throw new Error("Current page doesn't support sorting illustrations.");
+    return;
   }
 
   return {

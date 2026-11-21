@@ -6,6 +6,11 @@ For versions 1.9.0 and earlier, see the [Greasy Fork version history](https://gr
 
 ## [Unreleased]
 
+### Fixed
+
+- Show sorting and next-page controls only on supported Pixiv routes, and update them during navigation.
+- Report sorting failures in a bottom-right notice with a link to GitHub Issues, and log artwork-list problems before sorting.
+
 ## [1.10.1] - 2026-11-21
 
 ### Changed
