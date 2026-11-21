@@ -26,7 +26,24 @@ export default {
   sort_listMissing: "La liste d’œuvres à trier est introuvable.",
   sort_listAmbiguous:
     "%1 listes d’œuvres ont été trouvées. La liste à trier est ambiguë.",
+  sort_nextPageNotReady:
+    "La liste d’œuvres de la page suivante ne s’est pas chargée complètement.",
+  sort_emptyWorksPage:
+    "Pixiv a renvoyé une liste d’œuvres vide pour la page %1. Le tri a été arrêté.",
+  sort_invalidWorksResponse:
+    "Pixiv a renvoyé les données de la liste d’œuvres dans un format inattendu.",
   sort_reportIssue: "Signaler le problème sur GitHub",
+  sort_rateLimited: "Limite de requêtes Pixiv (HTTP 429)",
+  sort_rateLimitHelp:
+    "Pixiv a limité certaines requêtes de tri. Vous pouvez attendre les nouvelles tentatives ou arrêter le tri.",
+  sort_rateLimitRetry: "Nouvelle tentative n° %1 en cours.",
+  sort_abort: "Arrêter le tri",
+  sort_bookmark: "Ajouter l’œuvre aux favoris",
+  sort_removeBookmark: "Retirer des favoris",
+  sort_bookmarkFailed: "Impossible de modifier le favori",
+  sort_bookmarkSignIn:
+    "Connectez-vous à Pixiv pour ajouter des œuvres aux favoris.",
+  sort_bookmarkUnconfirmed: "Pixiv n’a renvoyé aucun identifiant de favori.",
   sort_getUserWorks: "Chargement des œuvres de cet utilisateur…",
   sort_getWorks: "Chargement des œuvres de la page %1…",
   sort_retryWorks: "Nouvelle tentative pour la page %1 (essai %2)…",

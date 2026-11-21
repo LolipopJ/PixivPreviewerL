@@ -77,7 +77,7 @@ To get the same experience, install the script from [PixivPreviewerL on Greasy F
 
 Because Pixiv enforces **strict API rate limits**, it is recommended to keep "Pages per sort" at the default of 2 pages to reduce the risk of triggering rate limiting.
 
-If sorting stays on the loading spinner (retrying requests) or you temporarily cannot view or bookmark artworks, please wait for Pixiv's rate limit to lift.
+If rate-limited, based on experience, you need to wait 120 seconds for the restriction to be lifted.
 
 ## Development
 

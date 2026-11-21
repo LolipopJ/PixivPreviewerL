@@ -6,8 +6,6 @@ import {
 } from "../constants";
 import { IllustSortOrder, IllustSortType } from "../enums";
 import Texts, { formatText } from "../i18n";
-import heartIcon from "../icons/heart.svg";
-import heartFilledIcon from "../icons/heart-filled.svg";
 import pageIcon from "../icons/page.svg";
 import playIcon from "../icons/play.svg";
 import {
@@ -19,7 +17,7 @@ import {
 import type { GlobalSettings, IllustrationListItem } from "../types";
 import { markSortedArtworkLink } from "../utils/artwork-link";
 import debounce from "../utils/debounce";
-import { injectStyle } from "../utils/dom";
+import { waitFor } from "../utils/dom";
 import {
   checkIsAiAssisted,
   checkIsAiGenerated,
@@ -30,6 +28,13 @@ import {
 import { iLog } from "../utils/logger";
 import { execLimitConcurrentPromises } from "../utils/promise";
 import { getSettings } from "../utils/setting";
+import { createSortBookmarkButton } from "./sort-bookmark";
+import {
+  showSortError,
+  showSortRateLimit,
+  SORT_ERROR_PANEL_ID,
+  SORT_RATE_LIMIT_PANEL_ID,
+} from "./sort-notice";
 
 type SortRuntimeSettings = Pick<
   GlobalSettings,
@@ -46,78 +51,33 @@ type SortRuntimeSettings = Pick<
 const BOOKMARK_USER_PAGE_ILLUSTRATION_LIST_SELECTOR = "ul.sc-e967f3f1-1.cEOodl";
 
 const USER_TYPE_ARTWORKS_PER_PAGE = 48;
+const ARTWORK_LINK_SELECTOR = 'a[href*="/artworks/"]';
+const NEXT_SORT_PAGE_STORAGE_KEY = "PIXIV_PREVIEWER_L_NEXT_SORT_PAGE";
+
+const getSortPathname = (url: URL) => url.pathname.replace(/^\/en(?=\/)/, "");
+
+const getSortPageKey = (url: URL) => {
+  const params = new URLSearchParams(url.search);
+  params.sort();
+  return `${getSortPathname(url)}?${params}`;
+};
+
+const takeNextSortPage = () => {
+  try {
+    const pageKey = sessionStorage.getItem(NEXT_SORT_PAGE_STORAGE_KEY);
+    if (pageKey !== null) sessionStorage.removeItem(NEXT_SORT_PAGE_STORAGE_KEY);
+    return pageKey;
+  } catch (error) {
+    iLog.w("Failed to read pending artwork sort page:", error);
+    return null;
+  }
+};
 
 const parseExcludedTags = (raw: string) =>
   raw
     .split(",")
     .map((tag) => tag.trim().toLowerCase())
     .filter(Boolean);
-
-const SORT_ERROR_PANEL_ID = "pp-sort-error";
-
-const showSortError = (error: unknown) => {
-  injectStyle(
-    `
-      #${SORT_ERROR_PANEL_ID} {
-        position: fixed; right: 20px; bottom: 20px; z-index: 100002;
-        width: min(400px, calc(100vw - 40px)); max-height: calc(100vh - 40px);
-        box-sizing: border-box; padding: 14px 16px; overflow: auto;
-        overflow-wrap: anywhere; font: 14px/1.5 sans-serif;
-        color-scheme: light dark; background: Canvas; color: CanvasText;
-        border: 1px solid GrayText; border-radius: 12px;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, .24);
-      }
-      #${SORT_ERROR_PANEL_ID} p { margin: 6px 0 12px; }
-      #${SORT_ERROR_PANEL_ID} footer {
-        display: flex; align-items: center; flex-wrap: wrap;
-        justify-content: space-between; gap: 8px;
-      }
-      #${SORT_ERROR_PANEL_ID} a { color: LinkText; text-decoration: underline; }
-      #${SORT_ERROR_PANEL_ID} button {
-        padding: 4px 8px; border: 1px solid GrayText; border-radius: 6px;
-        background: Canvas; color: inherit; font: inherit; cursor: pointer;
-      }
-      #${SORT_ERROR_PANEL_ID} :is(a, button):focus-visible {
-        outline: 2px solid Highlight; outline-offset: 2px;
-      }
-    `,
-    "pp-sort-error-style"
-  );
-
-  const close = () => {
-    const hadFocus = panel.get(0)?.contains(document.activeElement);
-    panel.remove();
-    if (hadFocus) document.getElementById(SORT_BUTTON_ID)?.focus();
-  };
-  const message = error instanceof Error ? error.message : String(error);
-  const alert = $("<div>").attr("role", "alert");
-  const panel = $("<aside>")
-    .attr("id", SORT_ERROR_PANEL_ID)
-    .append(
-      alert,
-      $("<footer>").append(
-        $("<a>")
-          .attr({
-            href: process.env.BUG_REPORT_PAGE,
-            target: "_blank",
-            rel: "noopener noreferrer",
-          })
-          .text(Texts.sort_reportIssue),
-        $("<button>")
-          .attr("type", "button")
-          .text(Texts.close)
-          .on("click", close)
-      )
-    )
-    .on("keydown", (event) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      event.stopPropagation();
-      close();
-    })
-    .appendTo("body");
-  alert.append($("<strong>").text(Texts.sort_failed), $("<p>").text(message));
-};
 
 let isInitialized = false;
 export const loadIllustSort = (
@@ -129,7 +89,6 @@ export const loadIllustSort = (
     type: IllustSortType | undefined;
     illustrations: (IllustrationListItem & { bookmarkUserTotal: number })[] =
       [];
-    sorting: boolean = false;
     nextSortPage: number | undefined;
     listElement: JQuery<HTMLElement> = $();
 
@@ -190,14 +149,18 @@ export const loadIllustSort = (
       searchParams,
       settings,
       isCurrentPage,
+      retryControls,
     }: {
       type: IllustSortType;
       api: string;
       searchParams: URLSearchParams;
       settings: SortRuntimeSettings;
       isCurrentPage: () => boolean;
+      retryControls: {
+        signal: AbortSignal;
+        onRateLimit: (retryTimes: number) => void;
+      };
     }) {
-      this.sorting = true;
       iLog.i("Start to sort illustrations.");
 
       const {
@@ -220,10 +183,16 @@ export const loadIllustSort = (
         });
 
         //#region 获取作品分页列表
-        let illustrations: IllustrationListItem[] = [];
+        const illustrationsById = new Map<string, IllustrationListItem>();
         const startPage = Number(searchParams.get("p") ?? 1);
+        let nextPage = startPage;
+        let lastPage: number | undefined;
 
-        for (let page = startPage; page < startPage + pageCount; page += 1) {
+        for (
+          let page = startPage;
+          page < startPage + pageCount && page <= (lastPage ?? Infinity);
+          page += 1
+        ) {
           searchParams.set("p", String(page));
 
           if (
@@ -240,29 +209,25 @@ export const loadIllustSort = (
             const userIllustrations = await getUserIllustrationsWithCache(
               userId,
               {
+                ...retryControls,
                 onRequesting: () => this.setProgress(Texts.sort_getUserWorks),
               }
             );
             if (!isCurrentPage()) return;
-            const fromIndex = (page - 1) * USER_TYPE_ARTWORKS_PER_PAGE;
-            const toIndex = page * USER_TYPE_ARTWORKS_PER_PAGE;
-            switch (type) {
-              case IllustSortType.USER_ARTWORK:
-                userIllustrations.artworks
-                  .slice(fromIndex, toIndex)
-                  .forEach((id) => searchParams.append("ids[]", id));
-                break;
-              case IllustSortType.USER_ILLUST:
-                userIllustrations.illusts
-                  .slice(fromIndex, toIndex)
-                  .forEach((id) => searchParams.append("ids[]", id));
-                break;
-              case IllustSortType.USER_MANGA:
-                userIllustrations.manga
-                  .slice(fromIndex, toIndex)
-                  .forEach((id) => searchParams.append("ids[]", id));
-                break;
+            const ids =
+              type === IllustSortType.USER_ARTWORK
+                ? userIllustrations.artworks
+                : type === IllustSortType.USER_ILLUST
+                  ? userIllustrations.illusts
+                  : userIllustrations.manga;
+            lastPage = Math.ceil(ids.length / USER_TYPE_ARTWORKS_PER_PAGE);
+            if (page > lastPage) {
+              throw new Error(formatText(Texts.sort_emptyWorksPage, page));
             }
+            const fromIndex = (page - 1) * USER_TYPE_ARTWORKS_PER_PAGE;
+            ids
+              .slice(fromIndex, page * USER_TYPE_ARTWORKS_PER_PAGE)
+              .forEach((id) => searchParams.append("ids[]", id));
           } else if ([IllustSortType.USER_BOOKMARK].includes(type)) {
             searchParams.set(
               "offset",
@@ -273,14 +238,9 @@ export const loadIllustSort = (
           this.setProgress(formatText(Texts.sort_getWorks, page));
           const requestUrl = `${api}?${searchParams}`;
           const getIllustRes = await requestWithRetry({
+            ...retryControls,
             url: requestUrl,
             onRetry: (response, retryTimes) => {
-              if (!isCurrentPage()) {
-                throw new DOMException(
-                  "The sorting page changed.",
-                  "AbortError"
-                );
-              }
               iLog.w(
                 `Get illustration list through \`${requestUrl}\` failed:`,
                 response,
@@ -292,15 +252,31 @@ export const loadIllustSort = (
             },
           });
           if (!isCurrentPage()) return;
-          const extractedIllustrations = getIllustrationsFromResponse(
+          const artworkPage = getArtworkPageFromResponse(
             type,
             getIllustRes.response
           );
-          illustrations = illustrations.concat(extractedIllustrations);
+          if (artworkPage.illustrations.length === 0) {
+            // 末页未知时，已取到作品后的空页可作为列表末尾。
+            const expectedLastPage = lastPage ?? artworkPage.lastPage;
+            if (
+              page === startPage ||
+              (expectedLastPage !== undefined && page <= expectedLastPage)
+            ) {
+              throw new Error(formatText(Texts.sort_emptyWorksPage, page));
+            }
+            break;
+          }
+          lastPage = artworkPage.lastPage ?? lastPage;
+          for (const illustration of artworkPage.illustrations) {
+            illustrationsById.set(illustration.id, illustration);
+          }
+          nextPage = page + 1;
         }
         //#endregion
 
         //#region 获取作品详情信息，合并到列表中
+        const illustrations = Array.from(illustrationsById.values());
         const getDetailedIllustrationPromises: (() => Promise<
           IllustrationListItem & { bookmarkUserTotal: number }
         >)[] = [];
@@ -315,12 +291,13 @@ export const loadIllustSort = (
           }
 
           getDetailedIllustrationPromises.push(async () => {
+            retryControls.signal.throwIfAborted();
             this.setProgress(
               formatText(Texts.sort_getDetails, i + 1, illustrations.length)
             );
             const illustrationDetails = await getIllustrationDetailsWithCache(
               illustrationId,
-              true
+              { retry: retryControls }
             );
             return {
               ...illustration,
@@ -381,10 +358,9 @@ export const loadIllustSort = (
         }
         this.illustrations = sortedIllustrations;
         this.showIllustrations();
-        this.nextSortPage = startPage + pageCount;
+        this.nextSortPage = nextPage;
         iLog.i("Sort illustrations successfully.");
       } finally {
-        this.sorting = false;
         this.hideProgress();
         this.sortButtonElement.attr({
           title: Texts.label_sort,
@@ -437,7 +413,11 @@ export const loadIllustSort = (
         illustrationAnchor.setAttribute("data-gtm-value", id);
         illustrationAnchor.setAttribute("data-gtm-user-id", userId);
         illustrationAnchor.href = `/artworks/${id}`;
-        markSortedArtworkLink(illustrationAnchor, getSettings().linkBlank);
+        const illustrationTitle =
+          illustrationAnchor.cloneNode() as HTMLAnchorElement;
+        const linkBlank = getSettings().linkBlank;
+        markSortedArtworkLink(illustrationAnchor, linkBlank);
+        markSortedArtworkLink(illustrationTitle, linkBlank);
         illustrationAnchor.style =
           "display: block; position: relative; width: 184px;";
 
@@ -486,19 +466,25 @@ export const loadIllustSort = (
           }
         `;
 
-        const illustrationToolbar = document.createElement("div");
-        illustrationToolbar.style =
-          "position: absolute; top: 164px; left: 0px; right: 0px; display: flex; align-items: center; padding: 0 4px 4px; pointer-events: none; font-size: 12px;";
-        // TODO: 支持收藏 / 取消收藏作品
-        illustrationToolbar.innerHTML = `
-          <div style="padding: 0px 4px; border-radius: 4px; color: rgb(245, 245, 245); background: ${bookmarkUserTotal > 50000 ? "rgb(159, 18, 57)" : bookmarkUserTotal > 10000 ? "rgb(220, 38, 38)" : bookmarkUserTotal > 5000 ? "rgb(29, 78, 216)" : bookmarkUserTotal > 1000 ? "rgb(21, 128, 61)" : "rgb(71, 85, 105)"}; font-weight: bold; line-height: 16px; user-select: none;">❤ ${bookmarkUserTotal}</div>
-          <div style="margin-left: auto; display: none;">${bookmarkData ? heartFilledIcon : heartIcon}</div>
-        `;
+        const bookmarkCount = document.createElement("span");
+        bookmarkCount.style = `position: absolute; bottom: 4px; left: 4px; padding: 0 4px; border-radius: 4px; color: rgb(245, 245, 245); background: ${bookmarkUserTotal > 50000 ? "rgb(159, 18, 57)" : bookmarkUserTotal > 10000 ? "rgb(220, 38, 38)" : bookmarkUserTotal > 5000 ? "rgb(29, 78, 216)" : bookmarkUserTotal > 1000 ? "rgb(21, 128, 61)" : "rgb(71, 85, 105)"}; font-size: 12px; font-weight: bold; line-height: 16px; pointer-events: none; user-select: none;`;
+        let visibleBookmarkCount = bookmarkUserTotal;
+        bookmarkCount.textContent = `❤ ${visibleBookmarkCount}`;
+        const bookmarkButton = createSortBookmarkButton(
+          id,
+          bookmarkData?.id,
+          (bookmarked) => {
+            visibleBookmarkCount = Math.max(
+              0,
+              visibleBookmarkCount + (bookmarked ? 1 : -1)
+            );
+            bookmarkCount.textContent = `❤ ${visibleBookmarkCount}`;
+          }
+        );
 
-        const illustrationTitle = document.createElement("div");
-        illustrationTitle.innerHTML = title;
+        illustrationTitle.textContent = title;
         illustrationTitle.style =
-          "margin-top: 4px; max-width: 100%; overflow: hidden; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; line-height: 22px; font-size: 14px; font-weight: bold; color: rgb(245, 245, 245); transition: color 0.2s;";
+          "display: block; margin-top: 4px; max-width: 100%; overflow: hidden; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; line-height: 22px; font-size: 14px; font-weight: bold; color: rgb(245, 245, 245); transition: color 0.2s;";
 
         const illustrationAuthor = document.createElement("a");
         illustrationAuthor.setAttribute("data-gtm-value", userId);
@@ -516,10 +502,11 @@ export const loadIllustSort = (
         if (isUgoira) illustrationImageWrapper.appendChild(ugoriaSvg);
         illustrationAnchor.appendChild(illustrationImageWrapper);
         illustrationAnchor.appendChild(illustrationMeta);
-        illustrationAnchor.appendChild(illustrationToolbar);
-        illustrationAnchor.appendChild(illustrationTitle);
-        container.appendChild(illustrationAnchor);
-        container.appendChild(illustrationAuthor);
+        illustrationAnchor.appendChild(bookmarkCount);
+        const thumbnail = document.createElement("div");
+        thumbnail.style.position = "relative";
+        thumbnail.append(illustrationAnchor, bookmarkButton[0]);
+        container.append(thumbnail, illustrationTitle, illustrationAuthor);
         listItem.appendChild(container);
         fragment.appendChild(listItem);
       }
@@ -546,6 +533,8 @@ export const loadIllustSort = (
 
   const illustSorter = new IllustSorter();
   let currentPage: URL | undefined;
+  let activeSort: AbortController | undefined;
+  let cancelAutoSort: (() => void) | undefined;
 
   const diagnoseSortPage = debounce(
     (url: URL, type: IllustSortType) => {
@@ -572,20 +561,53 @@ export const loadIllustSort = (
     if (url.href === currentPage?.href) return;
 
     currentPage = url;
+    cancelAutoSort?.();
+    cancelAutoSort = undefined;
+    activeSort?.abort();
     illustSorter.nextSortPage = undefined;
     illustSorter.progressElement.remove();
-    $(`#${SORT_ERROR_PANEL_ID}`).remove();
+    $(`#${SORT_ERROR_PANEL_ID}, #${SORT_RATE_LIMIT_PANEL_ID}`).remove();
 
     const options = getSortOptionsFromUrl(url);
     setButtonsVisible(Boolean(options));
 
     // 路由变化时页面可能仍保留上一个列表，等异步渲染完成后再检查。
     diagnoseSortPage.cancel();
-    if (options) diagnoseSortPage(url, options.type);
+    const pendingNextPage = takeNextSortPage();
+    if (!options) return;
+
+    if (pendingNextPage !== getSortPageKey(url)) {
+      diagnoseSortPage(url, options.type);
+      return;
+    }
+
+    const isDestination = () =>
+      currentPage === url && location.href === url.href;
+    cancelAutoSort = waitFor(
+      () => {
+        if (activeSort) return false;
+        const list = findIllustrationsListDom(options.type);
+        return list.length === 1 && list.find(ARTWORK_LINK_SELECTOR).length > 0;
+      },
+      () => {
+        if (isDestination()) void sortCurrentPage();
+      },
+      {
+        onGiveUp: () => {
+          cancelAutoSort = undefined;
+          if (!isDestination()) return;
+          const error = new Error(Texts.sort_nextPageNotReady);
+          iLog.e("Next artwork page did not render:", url.href, error);
+          showSortError(error);
+        },
+      }
+    );
   };
 
-  window.addEventListener(SORT_EVENT_NAME, async () => {
-    if (illustSorter.sorting) {
+  const sortCurrentPage = async () => {
+    cancelAutoSort?.();
+    cancelAutoSort = undefined;
+    if (activeSort) {
       iLog.w("Current is in sorting progress.");
       return;
     }
@@ -594,6 +616,22 @@ export const loadIllustSort = (
     const page = currentPage;
     const isCurrentPage = () =>
       page === currentPage && url.href === location.href;
+
+    const controller = new AbortController();
+    let rateLimitPanel: ReturnType<typeof showSortRateLimit> | undefined;
+    let highestRetry = 0;
+    const logRateLimit = debounce(() => {
+      iLog.w("Pixiv rate-limited artwork sorting (HTTP 429):", url.href);
+    }, 250);
+    const onRateLimit = (retryTimes: number) => {
+      logRateLimit();
+      rateLimitPanel ??= showSortRateLimit(() => controller.abort());
+      if (retryTimes <= highestRetry) return;
+      highestRetry = retryTimes;
+      rateLimitPanel.setRetryTimes(highestRetry);
+    };
+
+    activeSort = controller;
     try {
       const options = getSortOptionsFromUrl(url);
       if (!options) return;
@@ -611,18 +649,24 @@ export const loadIllustSort = (
         searchParams,
         settings: getSettings(),
         isCurrentPage,
+        retryControls: { signal: controller.signal, onRateLimit },
       });
     } catch (error) {
-      if (!isCurrentPage()) return;
+      if (controller.signal.aborted || !isCurrentPage()) return;
       iLog.e("Sort illustrations failed:", url.href, error);
       showSortError(error);
+    } finally {
+      controller.abort();
+      rateLimitPanel?.remove();
+      activeSort = undefined;
     }
-  });
+  };
 
+  window.addEventListener(SORT_EVENT_NAME, sortCurrentPage);
   window.addEventListener(SORT_NEXT_PAGE_EVENT_NAME, () => {
     const url = new URL(location.href);
     if (!getSortOptionsFromUrl(url)) return;
-    const { origin, pathname, searchParams } = url;
+    const { searchParams } = url;
 
     const currentPageNumber = Number(searchParams.get("p") ?? 1);
     let nextPage = currentPageNumber + 1;
@@ -639,7 +683,14 @@ export const loadIllustSort = (
     }
 
     searchParams.set("p", String(nextPage));
-    location.href = `${origin}${pathname}?${searchParams}`;
+    url.hash = "";
+    try {
+      sessionStorage.setItem(NEXT_SORT_PAGE_STORAGE_KEY, getSortPageKey(url));
+      location.href = url.href;
+    } catch (error) {
+      iLog.e("Failed to open the next artwork sort page:", url.href, error);
+      showSortError(error);
+    }
   });
 
   window.addEventListener("urlchange", refreshSortPage);
@@ -648,8 +699,8 @@ export const loadIllustSort = (
   isInitialized = true;
 };
 
-/** 获取作品节点 li 的父节点 ul */
-function getIllustrationsListDom(type: IllustSortType) {
+/** 获取作品列表候选节点 */
+function findIllustrationsListDom(type: IllustSortType) {
   const isSearchResult = [
     IllustSortType.TAG_ARTWORK,
     IllustSortType.TAG_ILLUST,
@@ -670,9 +721,13 @@ function getIllustrationsListDom(type: IllustSortType) {
     const selector = isUserArtworkList
       ? ".__top_side_menu_body ul"
       : "section ul";
-    dom = $(selector).has('a[href*="/artworks/"]');
+    dom = $(selector).has(ARTWORK_LINK_SELECTOR);
   }
+  return dom;
+}
 
+function getIllustrationsListDom(type: IllustSortType) {
+  const dom = findIllustrationsListDom(type);
   if (!dom.length) {
     throw new Error(Texts.sort_listMissing);
   }
@@ -686,7 +741,7 @@ function getIllustrationsListDom(type: IllustSortType) {
 /** 根据当前路由获取接口参数 */
 function getSortOptionsFromUrl(url: URL) {
   const { searchParams } = url;
-  const pathname = url.pathname.replace(/^\/en(?=\/)/, "");
+  const pathname = getSortPathname(url);
 
   let type: IllustSortType | undefined;
   let api: string | undefined;
@@ -791,68 +846,75 @@ function getSortOptionsFromUrl(url: URL) {
 }
 
 /** 从响应值里提取作品数据列表 */
-function getIllustrationsFromResponse(
+type RawArtworkPage = { data?: unknown; lastPage?: number };
+
+function getArtworkPageFromResponse(
   type: IllustSortType,
   response: PixivStandardResponse<unknown>
 ) {
-  if (type === IllustSortType.TAG_ARTWORK) {
-    return (
-      (
-        response as PixivStandardResponse<{
-          illustManga: { data: IllustrationListItem[] };
-        }>
-      ).body.illustManga.data ?? []
-    );
-  } else if (
-    type === IllustSortType.TAG_ILLUST ||
-    type === IllustSortType.SEARCH_ILLUST
-  ) {
-    return (
-      (
-        response as PixivStandardResponse<{
-          illust: { data: IllustrationListItem[] };
-        }>
-      ).body.illust.data ?? []
-    );
-  } else if (
-    type === IllustSortType.TAG_MANGA ||
-    type === IllustSortType.SEARCH_MANGA
-  ) {
-    return (
-      (
-        response as PixivStandardResponse<{
-          manga: { data: IllustrationListItem[] };
-        }>
-      ).body.manga.data ?? []
-    );
-  } else if (
-    [IllustSortType.BOOKMARK_NEW, IllustSortType.BOOKMARK_NEW_R18].includes(
-      type
-    )
-  ) {
-    return (
-      (
-        response as PixivStandardResponse<{
-          thumbnails: { illust: IllustrationListItem[] };
-        }>
-      ).body.thumbnails.illust ?? []
-    );
-  } else if (
-    [
-      IllustSortType.USER_ARTWORK,
-      IllustSortType.USER_ILLUST,
-      IllustSortType.USER_MANGA,
-      IllustSortType.USER_BOOKMARK,
-    ].includes(type)
-  ) {
-    return Object.values(
-      (
-        response as PixivStandardResponse<{
-          works: Record<string, IllustrationListItem>;
-        }>
-      ).body.works
-    );
+  const body = response?.body as
+    | {
+        illustManga?: RawArtworkPage;
+        illust?: RawArtworkPage;
+        manga?: RawArtworkPage;
+        thumbnails?: { illust?: unknown };
+        works?: unknown;
+        total?: number;
+      }
+    | null
+    | undefined;
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new Error(Texts.sort_invalidWorksResponse);
   }
 
-  return [];
+  let page: RawArtworkPage | undefined;
+  switch (type) {
+    case IllustSortType.TAG_ARTWORK:
+      page = body.illustManga;
+      break;
+    case IllustSortType.TAG_ILLUST:
+    case IllustSortType.SEARCH_ILLUST:
+      page = body.illust;
+      break;
+    case IllustSortType.TAG_MANGA:
+    case IllustSortType.SEARCH_MANGA:
+      page = body.manga;
+      break;
+    case IllustSortType.BOOKMARK_NEW:
+    case IllustSortType.BOOKMARK_NEW_R18:
+      page = { data: body.thumbnails?.illust };
+      break;
+    case IllustSortType.USER_ARTWORK:
+    case IllustSortType.USER_ILLUST:
+    case IllustSortType.USER_MANGA:
+    case IllustSortType.USER_BOOKMARK:
+      if (body.works && typeof body.works === "object") {
+        page = { data: Object.values(body.works) };
+        if (
+          type === IllustSortType.USER_BOOKMARK &&
+          typeof body.total === "number"
+        ) {
+          page.lastPage = Math.ceil(body.total / USER_TYPE_ARTWORKS_PER_PAGE);
+        }
+      }
+      break;
+  }
+
+  const { data, lastPage } = page ?? {};
+  if (
+    !Array.isArray(data) ||
+    data.some(
+      (work) =>
+        !work || (typeof work.id !== "string" && typeof work.id !== "number")
+    )
+  ) {
+    throw new Error(Texts.sort_invalidWorksResponse);
+  }
+  return {
+    illustrations: data as IllustrationListItem[],
+    lastPage:
+      lastPage !== undefined && Number.isSafeInteger(lastPage) && lastPage >= 0
+        ? lastPage
+        : undefined,
+  };
 }

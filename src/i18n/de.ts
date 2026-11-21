@@ -27,7 +27,24 @@ export default {
   sort_listMissing: "Die zu sortierende Werkliste wurde nicht gefunden.",
   sort_listAmbiguous:
     "Es wurden %1 Werklisten gefunden. Die zu sortierende Liste ist nicht eindeutig.",
+  sort_nextPageNotReady:
+    "Die Werkliste auf der nächsten Seite wurde nicht vollständig geladen.",
+  sort_emptyWorksPage:
+    "Pixiv hat für Seite %1 eine leere Werkliste zurückgegeben. Die Sortierung wurde abgebrochen.",
+  sort_invalidWorksResponse:
+    "Pixiv hat die Werkliste in einem unerwarteten Format zurückgegeben.",
   sort_reportIssue: "Problem auf GitHub melden",
+  sort_rateLimited: "Anfragelimit bei Pixiv (HTTP 429)",
+  sort_rateLimitHelp:
+    "Pixiv hat einige Sortieranfragen begrenzt. Du kannst auf weitere Versuche warten oder die Sortierung abbrechen.",
+  sort_rateLimitRetry: "Wiederholungsversuch %1 läuft.",
+  sort_abort: "Sortierung abbrechen",
+  sort_bookmark: "Werk als Lesezeichen speichern",
+  sort_removeBookmark: "Lesezeichen entfernen",
+  sort_bookmarkFailed: "Lesezeichen konnte nicht geändert werden",
+  sort_bookmarkSignIn:
+    "Melde dich bei Pixiv an, um Werke als Lesezeichen zu speichern.",
+  sort_bookmarkUnconfirmed: "Pixiv hat keine Lesezeichen-ID zurückgegeben.",
   sort_getUserWorks: "Werke dieses Nutzers werden geladen…",
   sort_getWorks: "Werke auf Seite %1 werden geladen…",
   sort_retryWorks: "Seite %1 wird erneut geladen (Versuch %2)…",

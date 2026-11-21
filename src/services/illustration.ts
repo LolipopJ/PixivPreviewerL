@@ -9,6 +9,7 @@ import { getSettings } from "../utils/setting";
 import { convertObjectKeysFromSnakeToCamel } from "../utils/utils";
 import request, {
   type PixivStandardResponse,
+  type RequestControls,
   requestWithRetry,
 } from "./request";
 
@@ -20,10 +21,14 @@ const pendingIllustrationDetails =
   createPendingPromiseCache<IllustrationDetails | null>();
 
 /** 请求指定作品的详细信息 */
-const requestIllustrationDetails = async (id: string, retry: boolean) => {
+const requestIllustrationDetails = async (
+  id: string,
+  retry?: RequestControls
+) => {
   const requestUrl = `/touch/ajax/illust/details?illust_id=${id}`;
   const getIllustDetailsRes = retry
     ? await requestWithRetry({
+        ...retry,
         url: requestUrl,
         onRetry: (response, retryTimes) => {
           iLog.w(
@@ -56,18 +61,18 @@ const requestIllustrationDetails = async (id: string, retry: boolean) => {
  */
 export const getIllustrationDetailsWithCache = (
   id: string,
-  retry = false,
-  { maxStale = 0 }: { maxStale?: number } = {}
-): Promise<IllustrationDetails | null> =>
-  // 去重键必须包含参数：预览（maxStale=24h）与排序（maxStale=0）对缓存新鲜度的
-  // 要求不同，共用同一个 Promise 会让排序拿到过时的收藏数并据此过滤作品
-  pendingIllustrationDetails.run(`${id}|${retry}|${maxStale}`, async () => {
+  { maxStale = 0, retry }: { maxStale?: number; retry?: RequestControls } = {}
+): Promise<IllustrationDetails | null> => {
+  const signal = retry?.signal;
+  const getDetails = async () => {
+    signal?.throwIfAborted();
     const { illustrationMutableCacheTtlMs } = getSettings();
     const cached = await getCachedIllustrationDetails(
       id,
       Date.now(),
       illustrationMutableCacheTtlMs + maxStale
     );
+    signal?.throwIfAborted();
     if (cached?.mutableFresh) {
       iLog.d(`Use cached details of illustration ${id}`, cached.details);
       return cached.details;
@@ -75,12 +80,21 @@ export const getIllustrationDetailsWithCache = (
 
     try {
       const illustDetails = await requestIllustrationDetails(id, retry);
+      signal?.throwIfAborted();
       if (illustDetails) {
         void cacheIllustrationDetails([illustDetails]);
         return illustDetails;
       }
     } catch (error) {
-      iLog.w(`Failed to fetch details of illustration ${id}:`, error);
+      signal?.throwIfAborted();
+      const reportedRateLimit =
+        retry?.onRateLimit &&
+        error instanceof Error &&
+        "status" in error &&
+        error.status === 429;
+      if (!reportedRateLimit) {
+        iLog.w(`Failed to fetch details of illustration ${id}:`, error);
+      }
     }
 
     if (cached) {
@@ -88,11 +102,23 @@ export const getIllustrationDetailsWithCache = (
       return cached.details;
     }
     return null;
-  });
+  };
+
+  // 可中断的请求由当前排序独占，避免中断其它调用方共享的详情请求。
+  // 不同的 maxStale 对缓存新鲜度要求不同，因此分别去重。
+  return retry
+    ? getDetails()
+    : pendingIllustrationDetails.run(`${id}|${maxStale}`, getDetails);
+};
 
 /** 获取用户发布的所有作品，按照发布时间倒叙 */
-const getUserIllustrations = async (userId: string) => {
-  const response = await request({
+const getUserIllustrations = async (
+  userId: string,
+  controls: RequestControls
+) => {
+  const response = await requestWithRetry({
+    ...controls,
+    maxRetryTimes: 1,
     url: `/ajax/user/${userId}/profile/all?sensitiveFilterMode=userSetting&lang=zh`,
   });
   const responseData = (
@@ -195,8 +221,9 @@ const writeUserIllustrationsCache = (
 /** 从 Session Storage 或接口获取指定用户的作品列表 */
 export const getUserIllustrationsWithCache = async (
   userId: string,
-  { onRequesting }: { onRequesting?: () => void } = {}
+  { onRequesting, ...controls }: RequestControls & { onRequesting?: () => void }
 ) => {
+  controls.signal?.throwIfAborted();
   const cached = readUserIllustrationsCache(userId);
   if (cached) {
     return {
@@ -207,7 +234,7 @@ export const getUserIllustrationsWithCache = async (
   }
 
   onRequesting?.();
-  const userIllustrations = await getUserIllustrations(userId);
+  const userIllustrations = await getUserIllustrations(userId, controls);
   writeUserIllustrationsCache(userId, userIllustrations);
   return userIllustrations;
 };

@@ -27,7 +27,23 @@ export default {
   sort_listMissing: "並べ替え対象の作品一覧が見つかりませんでした。",
   sort_listAmbiguous:
     "作品一覧が %1 件見つかったため、並べ替え対象を特定できません。",
+  sort_nextPageNotReady: "次のページの作品一覧を読み込めませんでした。",
+  sort_emptyWorksPage:
+    "Pixiv から %1 ページ目の作品が返されなかったため、並べ替えを中止しました。",
+  sort_invalidWorksResponse:
+    "Pixiv が予期しない形式の作品一覧データを返しました。",
   sort_reportIssue: "GitHub の Issue ページで報告",
+  sort_rateLimited: "Pixiv のアクセス制限（HTTP 429）",
+  sort_rateLimitHelp:
+    "並べ替え中のリクエストが一部制限されました。再試行を待つか、並べ替えを中止できます。",
+  sort_rateLimitRetry: "%1 回目の再試行中です。",
+  sort_abort: "並べ替えを中止",
+  sort_bookmark: "作品をブックマーク",
+  sort_removeBookmark: "ブックマークを解除",
+  sort_bookmarkFailed: "ブックマークを変更できませんでした",
+  sort_bookmarkSignIn:
+    "作品をブックマークするには Pixiv にログインしてください。",
+  sort_bookmarkUnconfirmed: "Pixiv からブックマーク ID が返されませんでした。",
   sort_getUserWorks: "このユーザーの作品を取得中…",
   sort_getWorks: "%1 ページ目の作品を取得中…",
   sort_retryWorks: "%1 ページ目の作品を再取得中（%2 回目）…",

@@ -6,10 +6,21 @@ For versions 1.9.0 and earlier, see the [Greasy Fork version history](https://gr
 
 ## [Unreleased]
 
+### Added
+
+- Show a stop button when Pixiv rate-limits sorting and debounce warnings from parallel requests.
+- Add bookmark hearts to sorted artwork thumbnails for adding and removing bookmarks. The icons have a transparent background and align with the bottom of the bookmark count.
+
+### Changed
+
+- Automatically sort the next page after its artwork list renders.
+- Show the retry attempt number in the sorting rate-limit warning.
+
 ### Fixed
 
 - Show sorting and next-page controls only on supported Pixiv routes, and update them during navigation.
 - Report sorting failures in a bottom-right notice with a link to GitHub Issues, and log artwork-list problems before sorting.
+- Stop sorting and preserve the original list when Pixiv returns an invalid response or an unexpectedly empty artwork page.
 
 ## [1.10.1] - 2026-11-21
 

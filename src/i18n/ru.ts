@@ -26,7 +26,21 @@ export default {
   sort_listMissing: "Не найден список работ для сортировки.",
   sort_listAmbiguous:
     "Найдено несколько списков работ (%1). Не удалось определить, какой список сортировать.",
+  sort_nextPageNotReady: "Список работ на следующей странице не загрузился.",
+  sort_emptyWorksPage:
+    "Pixiv вернул пустой список работ для страницы %1. Сортировка остановлена.",
+  sort_invalidWorksResponse: "Pixiv вернул список работ в неожиданном формате.",
   sort_reportIssue: "Сообщить о проблеме на GitHub",
+  sort_rateLimited: "Ограничение запросов Pixiv (HTTP 429)",
+  sort_rateLimitHelp:
+    "Pixiv ограничил часть запросов сортировки. Можно дождаться повторных попыток или остановить сортировку.",
+  sort_rateLimitRetry: "Выполняется повторная попытка № %1.",
+  sort_abort: "Остановить сортировку",
+  sort_bookmark: "Добавить работу в закладки",
+  sort_removeBookmark: "Убрать из закладок",
+  sort_bookmarkFailed: "Не удалось изменить закладку",
+  sort_bookmarkSignIn: "Войдите в Pixiv, чтобы добавлять работы в закладки.",
+  sort_bookmarkUnconfirmed: "Pixiv не вернул идентификатор закладки.",
   sort_getUserWorks: "Загрузка работ автора…",
   sort_getWorks: "Загрузка работ на странице %1…",
   sort_retryWorks: "Повторная загрузка страницы %1 (попытка %2)…",

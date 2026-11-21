@@ -314,13 +314,9 @@ export const loadIllustPreview = () => {
 
       // 与获取图片/动图信息同时发起，避免因串行等待造成的延迟
       // 预览对收藏数的实时性要求较低，容忍更久的缓存以减少请求
-      const illustDetailsPromise = getIllustrationDetailsWithCache(
-        illustId,
-        false,
-        {
-          maxStale: settings.previewDetailsMaxStaleMs,
-        }
-      ).catch((error) => {
+      const illustDetailsPromise = getIllustrationDetailsWithCache(illustId, {
+        maxStale: settings.previewDetailsMaxStaleMs,
+      }).catch((error) => {
         iLog.e(
           `An error occurred while fetching illustration details of ${illustId}: ${error}`
         );

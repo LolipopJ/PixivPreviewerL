@@ -1,6 +1,16 @@
-export const pause = (ms: number) => {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-};
+export const pause = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    signal?.throwIfAborted();
+    const abort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", abort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", abort, { once: true });
+  });
 
 export const getRandomInt = (min: number, max: number) => {
   min = Math.ceil(min);

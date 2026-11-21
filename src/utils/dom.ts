@@ -62,6 +62,7 @@ export const waitFor = <T>(
   const probeInterval = interval ?? settings.domProbeIntervalMs;
   const probeMaxAttempts = maxAttempts ?? settings.domProbeMaxAttempts;
   let attempt = 1;
+  let timer: ReturnType<typeof setTimeout> | undefined;
 
   const step = () => {
     const value = probe();
@@ -74,7 +75,7 @@ export const waitFor = <T>(
       return;
     }
     attempt += 1;
-    setTimeout(deferredStep, probeInterval);
+    timer = setTimeout(deferredStep, probeInterval);
   };
 
   /**
@@ -90,4 +91,5 @@ export const waitFor = <T>(
   };
 
   step();
+  return () => clearTimeout(timer);
 };

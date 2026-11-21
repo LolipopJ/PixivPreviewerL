@@ -25,7 +25,23 @@ export default {
   sort_failed: "Could not sort artworks",
   sort_listMissing: "Could not find the artwork list to sort.",
   sort_listAmbiguous: "Found %1 artwork lists. The sort target is ambiguous.",
+  sort_nextPageNotReady:
+    "The artwork list on the next page did not finish loading.",
+  sort_emptyWorksPage:
+    "Pixiv returned an empty artwork list for page %1. Sorting stopped.",
+  sort_invalidWorksResponse:
+    "Pixiv returned artwork list data in an unexpected format.",
   sort_reportIssue: "Report this problem on GitHub",
+  sort_rateLimited: "Pixiv rate limit (HTTP 429)",
+  sort_rateLimitHelp:
+    "Pixiv limited some sorting requests. You can wait for retries or stop sorting.",
+  sort_rateLimitRetry: "Retry attempt %1 is in progress.",
+  sort_abort: "Stop sorting",
+  sort_bookmark: "Bookmark artwork",
+  sort_removeBookmark: "Remove bookmark",
+  sort_bookmarkFailed: "Could not update bookmark",
+  sort_bookmarkSignIn: "Sign in to Pixiv to bookmark artworks.",
+  sort_bookmarkUnconfirmed: "Pixiv did not return a bookmark ID.",
   sort_getUserWorks: "Loading this user's artworks…",
   sort_getWorks: "Loading artworks on page %1…",
   sort_retryWorks: "Retrying page %1 (retry %2)…",

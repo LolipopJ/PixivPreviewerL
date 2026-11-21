@@ -26,7 +26,22 @@ export default {
   sort_failed: "작품을 정렬하지 못했습니다",
   sort_listMissing: "정렬할 작품 목록을 찾을 수 없습니다.",
   sort_listAmbiguous: "작품 목록이 %1개 있어 정렬 대상을 확인할 수 없습니다.",
+  sort_nextPageNotReady: "다음 페이지의 작품 목록을 불러오지 못했습니다.",
+  sort_emptyWorksPage:
+    "Pixiv가 %1페이지의 빈 작품 목록을 반환하여 정렬을 중단했습니다.",
+  sort_invalidWorksResponse:
+    "Pixiv의 작품 목록 데이터 형식이 올바르지 않습니다.",
   sort_reportIssue: "GitHub 이슈 페이지에서 문제 신고",
+  sort_rateLimited: "Pixiv 요청 제한(HTTP 429)",
+  sort_rateLimitHelp:
+    "일부 정렬 요청이 제한되었습니다. 재시도를 기다리거나 정렬을 중단할 수 있습니다.",
+  sort_rateLimitRetry: "%1번째 재시도 중입니다.",
+  sort_abort: "정렬 중단",
+  sort_bookmark: "작품 북마크",
+  sort_removeBookmark: "북마크 해제",
+  sort_bookmarkFailed: "북마크를 변경하지 못했습니다",
+  sort_bookmarkSignIn: "작품을 북마크하려면 Pixiv에 로그인하세요.",
+  sort_bookmarkUnconfirmed: "Pixiv가 북마크 ID를 반환하지 않았습니다.",
   sort_getUserWorks: "이 사용자의 작품을 불러오는 중…",
   sort_getWorks: "%1페이지의 작품을 불러오는 중…",
   sort_retryWorks: "%1페이지의 작품을 다시 불러오는 중(%2번째 재시도)…",
