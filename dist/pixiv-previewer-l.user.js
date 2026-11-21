@@ -8,7 +8,7 @@
 // @name:de             Pixiv Previewer L
 // @name:fr             Pixiv Previewer L
 // @namespace           https://github.com/LolipopJ/PixivPreviewer
-// @version             1.10.0-20261119
+// @version             1.10.1-20261121
 // @description         Pixiv userscript to preview illustrations, manga, and Ugoira on hover. Supports sorting by bookmarks, original image downloads with progress tracking, hiding bookmarked artworks, and local tag management.
 // @description:zh-CN   Pixiv 油猴脚本。鼠标悬停即可预览插画、漫画和动图。支持按收藏数排序、原图下载与进度追踪、隐藏已收藏作品和本地标签管理。
 // @description:zh-TW   Pixiv 油猴腳本。滑鼠懸停即可預覽插畫、漫畫與動圖。支援依收藏數排序、原圖下載與進度追蹤、隱藏已收藏作品和本地標籤管理。
@@ -40,7 +40,7 @@
 // ==/UserScript==
 // src/constants/index.ts
 /** 版本号，发生改变时将会弹窗 */
-const g_version = "1.10.0";
+const g_version = "1.10.1";
 /** 默认设置 */
 const g_defaultSettings = {
 	language: "auto",
@@ -3889,13 +3889,6 @@ const waitFor = (probe, action, { interval, maxAttempts, onGiveUp } = {}) => {
 const BUTTON_ID = "pp-downloads-button";
 const PANEL_ID$1 = "pp-downloads-panel";
 const formatBytes = (bytes) => bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.ceil(bytes / 1024)} KB`;
-const formatTime = (timestamp) => new Date(timestamp).toLocaleString(locale, {
-	year: "numeric",
-	month: "2-digit",
-	day: "2-digit",
-	hour: "2-digit",
-	minute: "2-digit"
-});
 const formatDownloadError = (error) => {
 	switch (error) {
 		case "network-error": return texts.download_errorNetwork;
@@ -4069,6 +4062,13 @@ const loadDownloadPanel = (toolbar) => {
 		const records = getDownloads();
 		const active = records.filter((record) => record.status === "downloading").length;
 		const attention = records.filter((record) => ["failed", "interrupted"].includes(record.status)).length;
+		countBadge.text(String(active)).prop("hidden", active === 0);
+		button.attr({
+			"data-active": String(active > 0),
+			"data-attention": String(attention > 0),
+			"aria-busy": String(active > 0)
+		});
+		if (panel.prop("hidden")) return;
 		const completed = records.filter((record) => record.status === "completed").length;
 		clearCompletedButton.prop("disabled", completed === 0);
 		retryFailedButton.prop("disabled", !records.some((record) => record.status === "failed"));
@@ -4080,13 +4080,20 @@ const loadDownloadPanel = (toolbar) => {
 			row.item.remove();
 			rows.delete(id);
 		}
-		countBadge.text(String(active)).prop("hidden", active === 0);
-		button.attr({
-			"data-active": String(active > 0),
-			"data-attention": String(attention > 0),
-			"aria-busy": String(active > 0)
-		});
 		summary.text(records.length ? formatText(texts.download_summary, active, completed, attention) : texts.download_empty);
+		let dateFormatter;
+		const formatTime = (timestamp) => {
+			const date = new Date(timestamp);
+			if (Number.isNaN(date.getTime())) return date.toString();
+			dateFormatter ??= new Intl.DateTimeFormat(locale, {
+				year: "numeric",
+				month: "2-digit",
+				day: "2-digit",
+				hour: "2-digit",
+				minute: "2-digit"
+			});
+			return dateFormatter.format(date);
+		};
 		for (const record of [...records].reverse()) {
 			let row = rows.get(record.id);
 			if (!row) {
@@ -4121,6 +4128,8 @@ const loadDownloadPanel = (toolbar) => {
 			}
 			const running = record.status === "downloading";
 			const local = running && isDownloadingInThisTab(record.id);
+			const previous = row.rendered;
+			if (previous && previous.locale === locale && previous.local === local && previous.record.status === record.status && previous.record.loaded === record.loaded && previous.record.total === record.total && previous.record.completedAt === record.completedAt && previous.record.error === record.error) continue;
 			const retryable = record.status === "failed" || record.status === "interrupted";
 			const percent = record.total > 0 ? Math.min(100, Math.floor(record.loaded / record.total * 100)) : void 0;
 			const progressText = percent === void 0 ? formatBytes(record.loaded) : `${percent}% · ${formatBytes(record.loaded)} / ${formatBytes(record.total)}`;
@@ -4137,13 +4146,17 @@ const loadDownloadPanel = (toolbar) => {
 			row.progress.prop("hidden", !running);
 			if (percent === void 0) row.progress.removeAttr("value");
 			else row.progress.val(percent);
+			row.rendered = {
+				record,
+				local,
+				locale
+			};
 		}
 		if (focusedRemovedIndex >= 0 && !panel.prop("hidden")) {
 			const items = list.children("li");
 			const targetItem = items.length ? items.eq(Math.min(focusedRemovedIndex, items.length - 1)) : void 0;
 			(targetItem?.find(".pp-download-remove:not([hidden])").get(0) ?? targetItem?.find("a").get(0) ?? closeButton.get(0))?.focus({ preventScroll: true });
 		}
-		positionPanel();
 	};
 	const close = (restoreFocus = false) => {
 		moreActions.prop("open", false);
@@ -4153,9 +4166,9 @@ const loadDownloadPanel = (toolbar) => {
 	};
 	button.on("click", () => {
 		if (!panel.prop("hidden")) return close();
-		update();
 		panel.prop("hidden", false);
 		button.attr("aria-expanded", "true");
+		update();
 		positionPanel();
 		closeButton.trigger("focus");
 	});
@@ -4175,6 +4188,7 @@ const loadDownloadPanel = (toolbar) => {
 			} else close(true);
 		}
 	});
+	new ResizeObserver(positionPanel).observe(panel.get(0), { box: "border-box" });
 	window.addEventListener("resize", positionPanel);
 	subscribeDownloads(update);
 	subscribeSettings((next, prev) => {
@@ -8522,7 +8536,7 @@ const ShowUpgradeMessage = () => {
 		"aria-label": texts.close
 	}).text(texts.close).on("click", close);
 	const link = (url, label) => `<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`;
-	const body = formatText(texts.upgrade_body, link("https://greasyfork.org/scripts/30766-pixiv-previewer", "Pixiv Previewer"), link("https://greasyfork.org/scripts/30766-pixiv-previewer/feedback", texts.upgrade_feedback), link("https://github.com/Ocrosoft/PixivPreviewer/issues", texts.upgrade_issue), link("https://greasyfork.org/scripts/533844-pixiv-previewer-l/versions", texts.upgrade_versions));
+	const body = formatText(texts.upgrade_body, link("https://greasyfork.org/scripts/30766-pixiv-previewer", "Pixiv Previewer"), link("https://greasyfork.org/scripts/30766-pixiv-previewer/feedback", texts.upgrade_feedback), link("https://github.com/Ocrosoft/PixivPreviewer/issues", texts.upgrade_issue), link("https://github.com/LolipopJ/PixivPreviewerL/blob/master/CHANGELOG.md", texts.upgrade_versions));
 	const panel = $("<div>").attr({
 		id: panelId,
 		role: "dialog",
@@ -8645,7 +8659,7 @@ const initializeDom = () => {
 			if (next.enableLocalTags) loadLocalTags();
 			else unloadLocalTags();
 		});
-		if (g_settings.version !== "1.10.0") ShowUpgradeMessage();
+		if (g_settings.version !== "1.10.1") ShowUpgradeMessage();
 		if (g_pageType === void 0) return;
 		if (g_pageType === 3) waitFor(() => matchPageType() === 3 && document.querySelector("span[to]"), () => showSearchLinksForDeletedArtworks());
 		const page = Pages[g_pageType];

@@ -6,6 +6,8 @@ For versions 1.9.0 and earlier, see the [Greasy Fork version history](https://gr
 
 ## [Unreleased]
 
+## [1.10.1] - 2026-11-21
+
 ### Changed
 
 - Updated the upgrade notice to link to the project changelog on GitHub.
@@ -33,5 +35,6 @@ This section covers the `1.10.0-20261119` userscript on Greasy Fork, including t
 
 - Fixed missing local tag controls on English, Japanese, and Korean Pixiv tag pages.
 
-[unreleased]: https://github.com/LolipopJ/PixivPreviewerL/compare/2b125ffdb0f0c175757c0d4a1ba7aa3d92477ec4...master
-[1.10.0]: https://github.com/LolipopJ/PixivPreviewerL/compare/1.9.0...2b125ffdb0f0c175757c0d4a1ba7aa3d92477ec4
+[unreleased]: https://github.com/LolipopJ/PixivPreviewerL/compare/1.10.1...master
+[1.10.1]: https://github.com/LolipopJ/PixivPreviewerL/compare/1.10.0...1.10.1
+[1.10.0]: https://github.com/LolipopJ/PixivPreviewerL/compare/1.9.0...1.10.0

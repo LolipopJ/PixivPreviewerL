@@ -1,6 +1,6 @@
 {
   "name": "pixiv-previewer-l",
-  "version": "1.10.0",
+  "version": "1.10.1",
   "type": "module",
   "description": "Pixiv userscript to preview illustrations, manga, and Ugoira on hover. Supports sorting by bookmarks, original image downloads with progress tracking, hiding bookmarked artworks, and local tag management.",
   "private": true,
